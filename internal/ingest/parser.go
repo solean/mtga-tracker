@@ -19,9 +19,13 @@ import (
 )
 
 var (
-	reOutgoing = regexp.MustCompile(`^\[UnityCrossThreadLogger\]==>\s+([A-Za-z0-9_]+)\s+(.*)$`)
-	reComplete = regexp.MustCompile(`^<==\s+([A-Za-z0-9_]+)\(([^)]*)\)`)
-	rePersona  = regexp.MustCompile(`"PersonaId":"([A-Za-z0-9_\-]+)"`)
+	reOutgoing       = regexp.MustCompile(`^\[UnityCrossThreadLogger\]==>\s+([A-Za-z0-9_]+)\s+(.*)$`)
+	reComplete       = regexp.MustCompile(`^<==\s+([A-Za-z0-9_]+)\(([^)]*)\)`)
+	rePersonaPlain   = regexp.MustCompile(`"PersonaId":"([A-Za-z0-9_\-]+)"`)
+	rePersonaEscaped = regexp.MustCompile(`\\\"PersonaId\\\":\\\"([A-Za-z0-9_\-]+)\\\"`)
+	rePersonaMatchTo = regexp.MustCompile(`Match to ([A-Za-z0-9_\-]+):`)
+	reClientID       = regexp.MustCompile(`"clientId"\s*:\s*"([A-Za-z0-9_\-]+)"`)
+	reScreenName     = regexp.MustCompile(`"screenName"\s*:\s*"([^"]+)"`)
 )
 
 type Parser struct {
@@ -33,7 +37,8 @@ func NewParser(store *db.Store) *Parser {
 }
 
 type parseState struct {
-	personaID string
+	personaID  string
+	playerName string
 }
 
 type outgoingEnvelope struct {
@@ -116,22 +121,36 @@ type logBusinessEvent struct {
 	SecondsCount  int64  `json:"SecondsCount"`
 }
 
+type roomPlayer struct {
+	UserID       string `json:"userId"`
+	PlayerName   string `json:"playerName"`
+	SystemSeatID int64  `json:"systemSeatId"`
+	TeamID       int64  `json:"teamId"`
+	EventID      string `json:"eventId"`
+}
+
+type roomResultEntry struct {
+	Scope         string `json:"scope"`
+	Result        string `json:"result"`
+	WinningTeamID int64  `json:"winningTeamId"`
+	Reason        string `json:"reason"`
+}
+
 type roomStateEnvelope struct {
+	Timestamp                      string `json:"timestamp"`
 	MatchGameRoomStateChangedEvent *struct {
 		GameRoomInfo *struct {
 			GameRoomConfig *struct {
-				MatchID         string `json:"matchId"`
-				ReservedPlayers []struct {
-					UserID       string `json:"userId"`
-					PlayerName   string `json:"playerName"`
-					SystemSeatID int64  `json:"systemSeatId"`
-				} `json:"reservedPlayers"`
+				MatchID         string       `json:"matchId"`
+				ReservedPlayers []roomPlayer `json:"reservedPlayers"`
 			} `json:"gameRoomConfig"`
-			Players []struct {
-				UserID       string `json:"userId"`
-				PlayerName   string `json:"playerName"`
-				SystemSeatID int64  `json:"systemSeatId"`
-			} `json:"players"`
+			StateType        string `json:"stateType"`
+			FinalMatchResult *struct {
+				MatchID              string            `json:"matchId"`
+				MatchCompletedReason string            `json:"matchCompletedReason"`
+				ResultList           []roomResultEntry `json:"resultList"`
+			} `json:"finalMatchResult"`
+			Players []roomPlayer `json:"players"`
 		} `json:"gameRoomInfo"`
 	} `json:"matchGameRoomStateChangedEvent"`
 }
@@ -246,11 +265,30 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 	}
 
 	if state.personaID == "" {
-		if m := rePersona.FindStringSubmatch(line); len(m) == 2 {
-			id := m[1]
+		match := rePersonaPlain.FindStringSubmatch(line)
+		if len(match) != 2 {
+			match = rePersonaEscaped.FindStringSubmatch(line)
+		}
+		if len(match) == 2 {
+			id := match[1]
 			if !strings.HasPrefix(id, "NoInstallID") {
 				state.personaID = id
 			}
+		}
+		if state.personaID == "" {
+			if m := rePersonaMatchTo.FindStringSubmatch(line); len(m) == 2 {
+				state.personaID = strings.TrimSpace(m[1])
+			}
+		}
+		if state.personaID == "" {
+			if m := reClientID.FindStringSubmatch(line); len(m) == 2 {
+				state.personaID = strings.TrimSpace(m[1])
+			}
+		}
+	}
+	if state.playerName == "" {
+		if m := reScreenName.FindStringSubmatch(line); len(m) == 2 {
+			state.playerName = strings.TrimSpace(m[1])
 		}
 	}
 
@@ -347,6 +385,64 @@ func parseStringIDsToInt64(in []string) []int64 {
 		out = append(out, v)
 	}
 	return out
+}
+
+func parseRoomTimestamp(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return ""
+	}
+
+	var ts time.Time
+	switch {
+	case v >= 1_000_000_000_000 && v < 10_000_000_000_000:
+		ts = time.UnixMilli(v)
+	case v >= 1_000_000_000 && v < 10_000_000_000:
+		ts = time.Unix(v, 0)
+	default:
+		return ""
+	}
+	return ts.UTC().Format(time.RFC3339Nano)
+}
+
+func roomEventName(players []roomPlayer) string {
+	for _, pl := range players {
+		eventID := strings.TrimSpace(pl.EventID)
+		if eventID != "" {
+			return eventID
+		}
+	}
+	return ""
+}
+
+func normalizeWinningReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	reason = strings.TrimPrefix(reason, "ResultReason_")
+	reason = strings.TrimPrefix(reason, "WinningReason_")
+	return reason
+}
+
+func chooseMatchResult(results []roomResultEntry) (int64, string) {
+	var fallbackTeamID int64
+	var fallbackReason string
+	for _, r := range results {
+		if r.WinningTeamID <= 0 {
+			continue
+		}
+		reason := normalizeWinningReason(r.Reason)
+		if strings.EqualFold(strings.TrimSpace(r.Scope), "MatchScope_Match") {
+			return r.WinningTeamID, reason
+		}
+		if fallbackTeamID == 0 {
+			fallbackTeamID = r.WinningTeamID
+			fallbackReason = reason
+		}
+	}
+	return fallbackTeamID, fallbackReason
 }
 
 func (p *Parser) handleOutgoing(ctx context.Context, tx *sql.Tx, stats *model.ParseStats, state *parseState, logPath string, lineNo, byteOffset int64, method, envelopeJSON string) error {
@@ -504,46 +600,76 @@ func (p *Parser) handleRoomStateJSON(ctx context.Context, tx *sql.Tx, stats *mod
 		return nil
 	}
 
-	config := env.MatchGameRoomStateChangedEvent.GameRoomInfo.GameRoomConfig
+	info := env.MatchGameRoomStateChangedEvent.GameRoomInfo
+	config := info.GameRoomConfig
 	if config.MatchID == "" {
 		return nil
 	}
 
-	if _, err := p.store.UpsertMatchStart(ctx, tx, config.MatchID, "", 0, ""); err != nil {
-		return err
-	}
-
-	var players []struct {
-		UserID       string `json:"userId"`
-		PlayerName   string `json:"playerName"`
-		SystemSeatID int64  `json:"systemSeatId"`
-	}
+	players := info.Players
 	if len(config.ReservedPlayers) > 0 {
 		players = config.ReservedPlayers
-	} else {
-		players = env.MatchGameRoomStateChangedEvent.GameRoomInfo.Players
 	}
 
+	eventName := roomEventName(config.ReservedPlayers)
+	if eventName == "" {
+		eventName = roomEventName(players)
+	}
+	matchTS := parseRoomTimestamp(env.Timestamp)
+
+	selfSeen := false
+	var selfSeatID int64
+	var selfTeamID int64
 	opponentName := ""
 	opponentUserID := ""
-	if len(players) > 0 {
-		for _, pl := range players {
-			if state.personaID != "" && pl.UserID == state.personaID {
-				continue
+	personaID := strings.TrimSpace(state.personaID)
+
+	for _, pl := range players {
+		playerUserID := strings.TrimSpace(pl.UserID)
+		playerName := strings.TrimSpace(pl.PlayerName)
+
+		if personaID != "" && playerUserID == personaID {
+			selfSeen = true
+			if pl.SystemSeatID > 0 {
+				selfSeatID = pl.SystemSeatID
 			}
-			opponentName = pl.PlayerName
-			opponentUserID = pl.UserID
-			break
+			if pl.TeamID > 0 {
+				selfTeamID = pl.TeamID
+			}
+			if state.playerName == "" && playerName != "" {
+				state.playerName = playerName
+			}
+			continue
 		}
 		if opponentName == "" {
-			opponentName = players[0].PlayerName
-			opponentUserID = players[0].UserID
+			// Avoid ever setting self as opponent by name when known.
+			if state.playerName != "" && strings.EqualFold(playerName, strings.TrimSpace(state.playerName)) {
+				continue
+			}
+			opponentName = playerName
+			opponentUserID = playerUserID
 		}
 	}
 
-	if opponentName != "" || opponentUserID != "" {
+	if _, err := p.store.UpsertMatchStart(ctx, tx, config.MatchID, eventName, selfSeatID, matchTS); err != nil {
+		return err
+	}
+	if eventName != "" {
+		_ = p.store.LinkMatchToLatestDeckByEvent(ctx, tx, config.MatchID, eventName, "room_state")
+	}
+
+	if selfSeen && (strings.TrimSpace(opponentName) != "" || strings.TrimSpace(opponentUserID) != "") {
 		if err := p.store.UpdateMatchOpponent(ctx, tx, config.MatchID, opponentName, opponentUserID); err != nil {
 			return err
+		}
+	}
+
+	if strings.EqualFold(strings.TrimSpace(info.StateType), "MatchGameRoomStateType_MatchCompleted") && selfTeamID > 0 && info.FinalMatchResult != nil {
+		winningTeamID, reason := chooseMatchResult(info.FinalMatchResult.ResultList)
+		if winningTeamID > 0 {
+			if _, _, err := p.store.UpdateMatchEnd(ctx, tx, config.MatchID, selfTeamID, winningTeamID, 0, 0, reason, matchTS); err != nil {
+				return err
+			}
 		}
 	}
 

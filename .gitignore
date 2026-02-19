@@ -1,3 +1,7 @@
 data/
 web/node_modules/
 web/dist/
+web/package-lock.json
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts

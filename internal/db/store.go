@@ -336,11 +336,11 @@ func (s *Store) UpsertMatchStart(ctx context.Context, tx *sql.Tx, arenaMatchID, 
 func (s *Store) UpdateMatchOpponent(ctx context.Context, tx *sql.Tx, arenaMatchID, opponentName, opponentUserID string) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE matches
-		SET opponent_name = COALESCE(?, opponent_name),
-			opponent_user_id = COALESCE(?, opponent_user_id),
+		SET opponent_name = COALESCE(NULLIF(?, ''), opponent_name),
+			opponent_user_id = COALESCE(NULLIF(?, ''), opponent_user_id),
 			updated_at = ?
 		WHERE arena_match_id = ?
-	`, nullIfEmpty(opponentName), nullIfEmpty(opponentUserID), nowUTC(), arenaMatchID)
+	`, strings.TrimSpace(opponentName), strings.TrimSpace(opponentUserID), nowUTC(), arenaMatchID)
 	if err != nil {
 		return fmt.Errorf("update match opponent: %w", err)
 	}
@@ -351,7 +351,12 @@ func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID str
 	endedAt = normalizeTS(endedAt)
 
 	var eventName string
-	err := tx.QueryRowContext(ctx, `SELECT COALESCE(event_name, '') FROM matches WHERE arena_match_id = ?`, arenaMatchID).Scan(&eventName)
+	var priorResult string
+	err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(event_name, ''), COALESCE(result, '')
+		FROM matches
+		WHERE arena_match_id = ?
+	`, arenaMatchID).Scan(&eventName, &priorResult)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO matches (arena_match_id, ended_at, created_at, updated_at)
@@ -387,7 +392,8 @@ func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID str
 		return "", "", fmt.Errorf("update match end: %w", err)
 	}
 
-	if eventName != "" && (result == "win" || result == "loss") {
+	// Idempotency guard: only increment run record when match result changes into a terminal result.
+	if eventName != "" && (result == "win" || result == "loss") && result != priorResult {
 		if err := s.BumpEventRunRecord(ctx, tx, eventName, result); err != nil {
 			return "", "", err
 		}

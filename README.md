@@ -30,22 +30,40 @@ go build ./...
 
 ## Parse a Log File
 
+Default (recommended on macOS):
+- Parses `~/Library/Logs/Wizards Of The Coast/MTGA/Player-prev.log`
+- Then parses `~/Library/Logs/Wizards Of The Coast/MTGA/Player.log`
+
 ```bash
 cd /Users/cschnabel/dev/mtgdata
-go run ./cmd/mtgdata parse -db data/mtgdata.db -log data/Player-prev.log -resume=false
+go run ./cmd/mtgdata parse -db data/mtgdata.db -resume=false
 ```
 
 Use `-resume=true` for incremental ingestion:
 
 ```bash
-go run ./cmd/mtgdata parse -db data/mtgdata.db -log data/Player-prev.log -resume=true
+go run ./cmd/mtgdata parse -db data/mtgdata.db -resume=true
+```
+
+Optional explicit log path:
+
+```bash
+go run ./cmd/mtgdata parse -db data/mtgdata.db -log /absolute/path/to/Player.log -resume=true
 ```
 
 ## Tail a Live Log
 
+Default (recommended on macOS): tails `~/Library/Logs/Wizards Of The Coast/MTGA/Player.log`
+
 ```bash
 cd /Users/cschnabel/dev/mtgdata
-go run ./cmd/mtgdata tail -db data/mtgdata.db -log data/Player.log -interval=2s
+go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s
+```
+
+Optional explicit log path:
+
+```bash
+go run ./cmd/mtgdata tail -db data/mtgdata.db -log /absolute/path/to/Player.log -interval=2s
 ```
 
 ## Run API Server
@@ -67,14 +85,14 @@ API endpoints:
 ## Frontend Setup
 
 Requirements:
-- Node 18+
+- Bun 1.3+
 
 Commands:
 
 ```bash
 cd /Users/cschnabel/dev/mtgdata/web
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 Vite dev server runs at `http://127.0.0.1:5173` and proxies `/api` to `http://127.0.0.1:8080`.
@@ -83,7 +101,7 @@ Production build:
 
 ```bash
 cd /Users/cschnabel/dev/mtgdata/web
-npm run build
+bun run build
 ```
 
 When `web/dist` exists, backend `serve` will also host built assets from `/`.

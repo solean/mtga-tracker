@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -49,15 +51,20 @@ func main() {
 
 func printUsage() {
 	fmt.Println("mtgdata commands:")
-	fmt.Println("  parse -db <path> -log <path> [-resume=true]")
-	fmt.Println("  tail  -db <path> -log <path> [-interval=2s]")
+	fmt.Println("  parse -db <path> [-log <path>] [-include-prev=true] [-resume=true]")
+	fmt.Println("  tail  -db <path> [-log <path>] [-interval=2s]")
 	fmt.Println("  serve -db <path> [-addr=:8080] [-web-dist=<path>]")
+	fmt.Println("")
+	fmt.Println("If -log is omitted, parse/tail default to:")
+	fmt.Println("  ~/Library/Logs/Wizards Of The Coast/MTGA/Player.log")
+	fmt.Println("parse also includes Player-prev.log by default.")
 }
 
 func runParse(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("parse", flag.ContinueOnError)
 	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
-	logPath := fs.String("log", "data/Player-prev.log", "arena log path")
+	logPath := fs.String("log", "", "arena log path (optional; defaults to MTGA macOS path)")
+	includePrev := fs.Bool("include-prev", true, "when -log is omitted, parse Player-prev.log before Player.log")
 	resume := fs.Bool("resume", true, "resume from previous offset")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -74,20 +81,55 @@ func runParse(ctx context.Context, args []string) error {
 	}
 
 	parser := ingest.NewParser(db.NewStore(database))
-	stats, err := parser.ParseFile(ctx, *logPath, *resume)
+
+	logPaths, err := resolveParseLogPaths(*logPath, *includePrev)
 	if err != nil {
 		return err
 	}
 
-	duration := stats.CompletedAt.Sub(stats.StartedAt)
-	log.Printf("parse complete: lines=%d bytes=%d raw_events=%d matches=%d decks=%d draft_picks=%d duration=%s",
-		stats.LinesRead,
-		stats.BytesRead,
-		stats.RawEventsStored,
-		stats.MatchesUpserted,
-		stats.DecksUpserted,
-		stats.DraftPicksAdded,
-		duration,
+	var totalLines int64
+	var totalBytes int64
+	var totalRawEvents int64
+	var totalMatches int64
+	var totalDecks int64
+	var totalDraftPicks int64
+	startedAt := time.Now().UTC()
+
+	for _, path := range logPaths {
+		stats, err := parser.ParseFile(ctx, path, *resume)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+
+		duration := stats.CompletedAt.Sub(stats.StartedAt)
+		log.Printf("parsed %s: lines=%d bytes=%d raw_events=%d matches=%d decks=%d draft_picks=%d duration=%s",
+			path,
+			stats.LinesRead,
+			stats.BytesRead,
+			stats.RawEventsStored,
+			stats.MatchesUpserted,
+			stats.DecksUpserted,
+			stats.DraftPicksAdded,
+			duration,
+		)
+
+		totalLines += stats.LinesRead
+		totalBytes += stats.BytesRead
+		totalRawEvents += stats.RawEventsStored
+		totalMatches += stats.MatchesUpserted
+		totalDecks += stats.DecksUpserted
+		totalDraftPicks += stats.DraftPicksAdded
+	}
+
+	log.Printf("parse complete (files=%d): lines=%d bytes=%d raw_events=%d matches=%d decks=%d draft_picks=%d duration=%s",
+		len(logPaths),
+		totalLines,
+		totalBytes,
+		totalRawEvents,
+		totalMatches,
+		totalDecks,
+		totalDraftPicks,
+		time.Since(startedAt),
 	)
 
 	return nil
@@ -96,7 +138,7 @@ func runParse(ctx context.Context, args []string) error {
 func runTail(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("tail", flag.ContinueOnError)
 	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
-	logPath := fs.String("log", "data/Player-prev.log", "arena log path")
+	logPath := fs.String("log", "", "arena log path (optional; defaults to MTGA macOS Player.log)")
 	interval := fs.Duration("interval", 2*time.Second, "poll interval")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -113,13 +155,25 @@ func runTail(ctx context.Context, args []string) error {
 	}
 
 	parser := ingest.NewParser(db.NewStore(database))
-	log.Printf("tailing %s every %s", *logPath, interval.String())
+	activeLogPath := strings.TrimSpace(*logPath)
+	if activeLogPath == "" {
+		current, _, err := defaultMTGALogPaths()
+		if err != nil {
+			return err
+		}
+		activeLogPath = current
+	}
+	if _, err := os.Stat(activeLogPath); err != nil {
+		return fmt.Errorf("tail log path not found: %s (%w)", activeLogPath, err)
+	}
+
+	log.Printf("tailing %s every %s", activeLogPath, interval.String())
 
 	ticker := time.NewTicker(*interval)
 	defer ticker.Stop()
 
 	for {
-		if _, err := parser.ParseFile(ctx, *logPath, true); err != nil {
+		if _, err := parser.ParseFile(ctx, activeLogPath, true); err != nil {
 			log.Printf("tail parse error: %v", err)
 		}
 
@@ -163,4 +217,57 @@ func runServe(ctx context.Context, args []string) error {
 
 	server := api.NewServer(db.NewStore(database), staticDir)
 	return server.Run(ctx, *addr)
+}
+
+func defaultMTGALogPaths() (current, prev string, err error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("resolve user home dir: %w", err)
+	}
+	base := filepath.Join(home, "Library", "Logs", "Wizards Of The Coast", "MTGA")
+	current = filepath.Join(base, "Player.log")
+	prev = filepath.Join(base, "Player-prev.log")
+	return current, prev, nil
+}
+
+func resolveParseLogPaths(explicitPath string, includePrev bool) ([]string, error) {
+	explicitPath = strings.TrimSpace(explicitPath)
+	if explicitPath != "" {
+		return []string{explicitPath}, nil
+	}
+
+	current, prev, err := defaultMTGALogPaths()
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := make([]string, 0, 2)
+	if includePrev {
+		candidates = append(candidates, prev)
+	}
+	candidates = append(candidates, current)
+
+	found := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			found = append(found, candidate)
+			continue
+		}
+		if err != nil && errors.Is(err, os.ErrNotExist) {
+			log.Printf("default log not found, skipping: %s", candidate)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stat %s: %w", candidate, err)
+		}
+	}
+
+	if len(found) == 0 {
+		return nil, fmt.Errorf(
+			"no default MTGA logs found in ~/Library/Logs/Wizards Of The Coast/MTGA (use -log to specify a path)",
+		)
+	}
+
+	return found, nil
 }
