@@ -27,8 +27,8 @@ export function OverviewPage() {
         avoidLabelOverlap: false,
         label: { show: false },
         data: [
-          { value: data.wins, name: "Wins", itemStyle: { color: "#4fb286" } },
-          { value: data.losses, name: "Losses", itemStyle: { color: "#d96c5f" } },
+          { value: data.wins, name: "Wins", itemStyle: { color: "#76c9a2" } },
+          { value: data.losses, name: "Losses", itemStyle: { color: "#e18f85" } },
         ],
       },
     ],
