@@ -15,6 +15,18 @@ This MVP includes:
 - `/Users/cschnabel/dev/mtgdata/web` - frontend app
 - `/Users/cschnabel/dev/mtgdata/spec.md` - planning/spec document
 
+## Root Scripts
+
+From `/Users/cschnabel/dev/mtgdata`:
+
+```bash
+./scripts/start-web.sh
+./scripts/start-backend.sh
+./scripts/start-parse.sh
+```
+
+Each script also forwards any additional CLI flags you pass through to the underlying command.
+
 ## Backend Setup
 
 Requirements:
