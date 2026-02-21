@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 
@@ -42,7 +43,17 @@ export function MatchesPage() {
       }),
       columnHelper.accessor("deckName", {
         header: "Deck",
-        cell: (info) => info.getValue() || "-",
+        cell: (info) => {
+          const deckId = info.row.original.deckId;
+          const deckName = info.getValue();
+          const label = deckName || (deckId ? `Deck ${deckId}` : "-");
+          if (!deckId) return label;
+          return (
+            <Link className="text-link" to={`/decks/${deckId}`}>
+              {label}
+            </Link>
+          );
+        },
       }),
       columnHelper.accessor("winReason", {
         header: "Reason",
