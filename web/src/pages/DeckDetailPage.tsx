@@ -15,6 +15,8 @@ type DeckListCard = {
 };
 
 type PopoverPlacement = "left" | "right";
+type PopoverPlacementMode = "auto" | "force-right";
+type ManaCostPart = { kind: "symbol"; token: string } | { kind: "separator"; value: string };
 
 type MainboardCategory = "creatures" | "spells" | "artifacts" | "enchantments" | "lands";
 
@@ -23,7 +25,19 @@ type MainboardDeckListCard = DeckListCard & {
   manaValue: number | null;
 };
 
+type SideboardDeckListCard = DeckListCard & {
+  manaCost: string;
+};
+
 const MAINBOARD_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "artifacts", "enchantments", "lands"];
+const SCRYFALL_SYMBOL_BASE_URL = "https://svgs.scryfall.io/card-symbols";
+const BASIC_LAND_ORDER: Record<string, number> = {
+  island: 0,
+  swamp: 1,
+  forest: 2,
+  mountain: 3,
+  plains: 4,
+};
 
 function cardDisplayName(card: DeckListCard): string {
   return card.cardName?.trim() || `Card ${card.cardId}`;
@@ -63,6 +77,29 @@ function compareMainboardCards(a: MainboardDeckListCard, b: MainboardDeckListCar
   return a.cardId - b.cardId;
 }
 
+function basicLandRank(card: DeckListCard): number {
+  const normalized = cardDisplayName(card).trim().toLowerCase();
+  const rank = BASIC_LAND_ORDER[normalized];
+  if (typeof rank === "number") {
+    return rank;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function compareLandCards(a: MainboardDeckListCard, b: MainboardDeckListCard): number {
+  const basicRankA = basicLandRank(a);
+  const basicRankB = basicLandRank(b);
+  if (basicRankA !== basicRankB) {
+    return basicRankA - basicRankB;
+  }
+
+  const byName = cardDisplayName(a).localeCompare(cardDisplayName(b), undefined, { sensitivity: "base" });
+  if (byName !== 0) {
+    return byName;
+  }
+  return a.cardId - b.cardId;
+}
+
 function formatSectionLabel(section: string): string {
   const trimmed = section.trim();
   if (!trimmed) {
@@ -71,22 +108,102 @@ function formatSectionLabel(section: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
-function formatManaCost(manaCost: string): string {
+function sectionTotal(cards: DeckListCard[]): number {
+  return cards.reduce((sum, card) => sum + card.quantity, 0);
+}
+
+function parseManaCostParts(manaCost: string): ManaCostPart[] {
   const trimmed = manaCost.trim();
-  return trimmed || "-";
+  if (!trimmed) {
+    return [];
+  }
+
+  const parts: ManaCostPart[] = [];
+  const tokenPattern = /\{([^}]+)\}/g;
+  let lastIndex = 0;
+
+  while (true) {
+    const match = tokenPattern.exec(trimmed);
+    if (!match) {
+      break;
+    }
+
+    const between = trimmed.slice(lastIndex, match.index).trim();
+    if (between) {
+      parts.push({ kind: "separator", value: between });
+    }
+
+    const token = match[1]?.trim();
+    if (token) {
+      parts.push({ kind: "symbol", token });
+    }
+
+    lastIndex = tokenPattern.lastIndex;
+  }
+
+  const tail = trimmed.slice(lastIndex).trim();
+  if (tail) {
+    parts.push({ kind: "separator", value: tail });
+  }
+
+  return parts;
 }
 
-function formatManaValue(manaValue: number | null): string {
-  if (manaValue === null || Number.isNaN(manaValue)) {
-    return "?";
-  }
-  if (Number.isInteger(manaValue)) {
-    return `${manaValue}`;
-  }
-  return manaValue.toFixed(1).replace(/\.0$/, "");
+function manaSymbolURL(token: string): string {
+  return `${SCRYFALL_SYMBOL_BASE_URL}/${encodeURIComponent(token)}.svg`;
 }
 
-function DeckCardPreviewName({ card }: { card: DeckListCard }) {
+function ManaSymbol({ token }: { token: string }) {
+  const [didFail, setDidFail] = useState(false);
+  const label = `{${token}}`;
+
+  if (didFail) {
+    return (
+      <code className="mana-symbol-fallback" aria-label={label}>
+        {label}
+      </code>
+    );
+  }
+
+  return (
+    <img
+      className="mana-symbol-icon"
+      src={manaSymbolURL(token)}
+      alt={label}
+      loading="lazy"
+      decoding="async"
+      onError={() => setDidFail(true)}
+    />
+  );
+}
+
+function ManaCostDisplay({ manaCost }: { manaCost: string }) {
+  const trimmed = manaCost.trim();
+  if (!trimmed) {
+    return <code className="deck-card-mana-cost">-</code>;
+  }
+
+  const parts = parseManaCostParts(trimmed);
+  if (parts.length === 0) {
+    return <code className="deck-card-mana-cost">{trimmed}</code>;
+  }
+
+  return (
+    <span className="deck-card-mana-cost deck-card-mana-icons" aria-label={`Mana cost ${trimmed}`}>
+      {parts.map((part, index) =>
+        part.kind === "symbol" ? (
+          <ManaSymbol key={`symbol-${part.token}-${index}`} token={part.token} />
+        ) : (
+          <span className="mana-symbol-separator" key={`sep-${part.value}-${index}`}>
+            {part.value}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
+
+function DeckCardPreviewName({ card, placementMode = "auto" }: { card: DeckListCard; placementMode?: PopoverPlacementMode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPlacement, setPopoverPlacement] = useState<PopoverPlacement>("right");
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -96,6 +213,11 @@ function DeckCardPreviewName({ card }: { card: DeckListCard }) {
     : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
 
   const updatePopoverPlacement = () => {
+    if (placementMode === "force-right") {
+      setPopoverPlacement("right");
+      return;
+    }
+
     if (typeof window === "undefined") {
       return;
     }
@@ -112,11 +234,11 @@ function DeckCardPreviewName({ card }: { card: DeckListCard }) {
     const availableRight = viewportWidth - rect.right;
     const availableLeft = rect.left;
 
-    if (availableRight >= popoverWidth+horizontalGap) {
+    if (availableRight >= popoverWidth + horizontalGap) {
       setPopoverPlacement("right");
       return;
     }
-    if (availableLeft >= popoverWidth+horizontalGap) {
+    if (availableLeft >= popoverWidth + horizontalGap) {
       setPopoverPlacement("left");
       return;
     }
@@ -144,7 +266,7 @@ function DeckCardPreviewName({ card }: { card: DeckListCard }) {
     const onResize = () => updatePopoverPlacement();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [isOpen]);
+  }, [isOpen, placementMode]);
 
   return (
     <div
@@ -259,7 +381,11 @@ export function DeckDetailPage() {
     }
 
     for (const category of MAINBOARD_CATEGORY_ORDER) {
-      byCategory[category].sort(compareMainboardCards);
+      if (category === "lands") {
+        byCategory[category].sort(compareLandCards);
+      } else {
+        byCategory[category].sort(compareMainboardCards);
+      }
     }
 
     return byCategory;
@@ -284,7 +410,47 @@ export function DeckDetailPage() {
     return bySection;
   }, [cards]);
 
+  const sideboardCards = nonMainSections.sideboard ?? [];
+  const auxiliarySections = useMemo(() => {
+    return Object.entries(nonMainSections).filter(([section]) => section !== "sideboard");
+  }, [nonMainSections]);
+
+  const sideboardPreviewQueries = useQueries({
+    queries: sideboardCards.map((card) => ({
+      queryKey: cardPreviewQueryKey(card),
+      queryFn: () => fetchCardPreview(card.cardId, card.cardName),
+      enabled: card.cardId > 0,
+      staleTime: 1000 * 60 * 60 * 24,
+      gcTime: 1000 * 60 * 60 * 24,
+      retry: 1,
+    })),
+  });
+
+  const sideboardMetadataByCardID = useMemo(() => {
+    const out = new Map<number, CardPreview>();
+    for (let i = 0; i < sideboardCards.length; i += 1) {
+      const card = sideboardCards[i];
+      const preview = sideboardPreviewQueries[i]?.data;
+      if (!preview) {
+        continue;
+      }
+      out.set(card.cardId, preview);
+    }
+    return out;
+  }, [sideboardCards, sideboardPreviewQueries]);
+
+  const enrichedSideboardCards = useMemo(() => {
+    return sideboardCards.map((card): SideboardDeckListCard => {
+      const metadata = sideboardMetadataByCardID.get(card.cardId);
+      return {
+        ...card,
+        manaCost: metadata?.manaCost?.trim() ?? "",
+      };
+    });
+  }, [sideboardCards, sideboardMetadataByCardID]);
+
   const isMainboardMetadataLoading = mainCardPreviewQueries.some((query) => query.isPending);
+  const isSideboardMetadataLoading = sideboardPreviewQueries.some((query) => query.isPending);
 
   if (!Number.isFinite(deckId)) return <p className="state error">Invalid deck id.</p>;
   if (isLoading) return <p className="state">Loading deck…</p>;
@@ -306,47 +472,76 @@ export function DeckDetailPage() {
           </Link>
         </div>
 
-        <div className="grid-cards">
-          {MAINBOARD_CATEGORY_ORDER.map((category) => {
-            const categoryCards = groupedMainboardCards[category];
-            if (categoryCards.length === 0) {
-              return null;
-            }
-            return (
-              <article className="deck-card" key={`main-${category}`}>
-                <h4>{formatSectionLabel(category)}</h4>
-                <ul>
-                  {categoryCards.map((card) => (
-                    <li key={`main-${category}-${card.cardId}`}>
-                      <span className="deck-card-qty">{card.quantity}x</span>
-                      <DeckCardPreviewName card={card} />
-                      <span className="deck-card-mana">
-                        <code className="deck-card-mana-cost">{formatManaCost(card.manaCost)}</code>
-                        {category !== "lands" ? (
-                          <span className="deck-card-mv">MV {formatManaValue(card.manaValue)}</span>
-                        ) : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            );
-          })}
-          {Object.entries(nonMainSections).map(([section, sectionCards]) => (
-            <article className="deck-card" key={section}>
-              <h4>{formatSectionLabel(section)}</h4>
+        <div className="stack-md">
+          <div className="grid-cards">
+            {MAINBOARD_CATEGORY_ORDER.map((category) => {
+              const categoryCards = groupedMainboardCards[category];
+              if (categoryCards.length === 0) {
+                return null;
+              }
+              return (
+                <article className="deck-card" key={`main-${category}`}>
+                  <h4>
+                    {formatSectionLabel(category)} ({sectionTotal(categoryCards)})
+                  </h4>
+                  <ul>
+                    {categoryCards.map((card) => (
+                      <li key={`main-${category}-${card.cardId}`}>
+                        <span className="deck-card-qty">{card.quantity}x</span>
+                        <DeckCardPreviewName card={card} />
+                        <span className="deck-card-mana">
+                          <ManaCostDisplay manaCost={card.manaCost} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              );
+            })}
+          </div>
+
+          {sideboardCards.length > 0 ? (
+            <article className="deck-card">
+              <h4>
+                {formatSectionLabel("sideboard")} ({sectionTotal(enrichedSideboardCards)})
+              </h4>
               <ul>
-                {sectionCards.map((card) => (
-                  <li key={`${section}-${card.cardId}`}>
+                {enrichedSideboardCards.map((card) => (
+                  <li key={`sideboard-${card.cardId}`}>
                     <span className="deck-card-qty">{card.quantity}x</span>
-                    <DeckCardPreviewName card={card} />
+                    <DeckCardPreviewName card={card} placementMode="force-right" />
+                    <span className="deck-card-mana">
+                      <ManaCostDisplay manaCost={card.manaCost} />
+                    </span>
                   </li>
                 ))}
               </ul>
             </article>
-          ))}
+          ) : null}
+
+          {auxiliarySections.length > 0 ? (
+            <div className="grid-cards">
+              {auxiliarySections.map(([section, sectionCards]) => (
+                <article className="deck-card" key={section}>
+                  <h4>
+                    {formatSectionLabel(section)} ({sectionTotal(sectionCards)})
+                  </h4>
+                  <ul>
+                    {sectionCards.map((card) => (
+                      <li key={`${section}-${card.cardId}`}>
+                        <span className="deck-card-qty">{card.quantity}x</span>
+                        <DeckCardPreviewName card={card} />
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {isMainboardMetadataLoading ? <p className="state">Loading mainboard mana/type details…</p> : null}
+        {isMainboardMetadataLoading || isSideboardMetadataLoading ? (
+          <p className="state">Loading deck mana/type details…</p>
+        ) : null}
       </section>
 
       <section className="panel">

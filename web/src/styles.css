@@ -707,6 +707,9 @@ h1 {
 .card-preview-anchor {
   position: relative;
   min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
 }
 
 .card-preview-trigger {
@@ -736,10 +739,27 @@ h1 {
   color: var(--muted);
 }
 
-.deck-card-mv {
-  font-size: 0.7rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+.deck-card-mana-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.14rem;
+}
+
+.mana-symbol-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
+}
+
+.mana-symbol-fallback {
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.mana-symbol-separator {
+  font-size: 0.66rem;
+  color: var(--muted);
+  margin: 0 0.08rem;
 }
 
 .card-preview-trigger:hover,
