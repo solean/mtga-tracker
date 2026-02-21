@@ -2,6 +2,9 @@ export type CardPreview = {
   name: string;
   imageUrl: string;
   scryfallUrl?: string;
+  manaCost?: string;
+  manaValue?: number;
+  typeLine?: string;
 };
 
 type ScryfallImageURIs = {
@@ -13,6 +16,8 @@ type ScryfallImageURIs = {
 
 type ScryfallCardFace = {
   image_uris?: ScryfallImageURIs | null;
+  mana_cost?: string;
+  type_line?: string;
 };
 
 type ScryfallCard = {
@@ -20,6 +25,9 @@ type ScryfallCard = {
   scryfall_uri?: string;
   image_uris?: ScryfallImageURIs | null;
   card_faces?: ScryfallCardFace[] | null;
+  mana_cost?: string;
+  cmc?: number;
+  type_line?: string;
 };
 
 const SCRYFALL_BASE_URL = "https://api.scryfall.com";
@@ -45,6 +53,36 @@ function pickImageURL(card: ScryfallCard): string {
   }
 
   return "";
+}
+
+function pickManaCost(card: ScryfallCard): string {
+  const rootCost = card.mana_cost?.trim();
+  if (rootCost) {
+    return rootCost;
+  }
+
+  const faceCosts = (card.card_faces ?? [])
+    .map((face) => face.mana_cost?.trim() ?? "")
+    .filter((cost) => cost.length > 0);
+  if (faceCosts.length === 0) {
+    return "";
+  }
+  return faceCosts.join(" // ");
+}
+
+function pickTypeLine(card: ScryfallCard): string {
+  const rootType = card.type_line?.trim();
+  if (rootType) {
+    return rootType;
+  }
+
+  const faceTypes = (card.card_faces ?? [])
+    .map((face) => face.type_line?.trim() ?? "")
+    .filter((value) => value.length > 0);
+  if (faceTypes.length === 0) {
+    return "";
+  }
+  return faceTypes.join(" // ");
 }
 
 async function fetchScryfallCard(path: string): Promise<ScryfallCard | null> {
@@ -108,5 +146,8 @@ export async function fetchCardPreview(cardID: number, cardName?: string): Promi
     name: card.name?.trim() || cardName?.trim() || `Card ${cardID}`,
     imageUrl: imageURL,
     scryfallUrl: card.scryfall_uri,
+    manaCost: pickManaCost(card),
+    manaValue: typeof card.cmc === "number" && Number.isFinite(card.cmc) ? card.cmc : undefined,
+    typeLine: pickTypeLine(card),
   };
 }

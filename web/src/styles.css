@@ -692,10 +692,10 @@ h1 {
 }
 
 .deck-card li {
-  display: flex;
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
   font-size: 0.86rem;
 }
 
@@ -705,8 +705,8 @@ h1 {
 }
 
 .card-preview-anchor {
-  margin-left: auto;
   position: relative;
+  min-width: 0;
 }
 
 .card-preview-trigger {
@@ -715,6 +715,31 @@ h1 {
   padding: 0;
   text-decoration: none;
   text-align: left;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deck-card-mana {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.deck-card-mana-cost {
+  font-size: 0.71rem;
+  color: var(--muted);
+}
+
+.deck-card-mv {
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .card-preview-trigger:hover,
@@ -729,8 +754,9 @@ h1 {
 
 .card-preview-popover {
   position: absolute;
-  top: calc(100% + 0.4rem);
-  right: 0;
+  top: 50%;
+  left: calc(100% + 0.55rem);
+  transform: translateY(-50%);
   width: 245px;
   border: 1px solid var(--line-strong);
   border-radius: 13px;
@@ -741,6 +767,11 @@ h1 {
   display: grid;
   gap: 0.35rem;
   backdrop-filter: blur(10px);
+}
+
+.card-preview-anchor[data-popover-placement="left"] .card-preview-popover {
+  left: auto;
+  right: calc(100% + 0.55rem);
 }
 
 .card-preview-popover img {

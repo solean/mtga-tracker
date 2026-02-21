@@ -1,28 +1,135 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { ResultPill } from "../components/ResultPill";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
-import { fetchCardPreview } from "../lib/scryfall";
+import { fetchCardPreview, type CardPreview } from "../lib/scryfall";
 
 type DeckListCard = {
+  section: string;
   cardId: number;
   cardName?: string;
   quantity: number;
 };
 
+type PopoverPlacement = "left" | "right";
+
+type MainboardCategory = "creatures" | "spells" | "artifacts" | "enchantments" | "lands";
+
+type MainboardDeckListCard = DeckListCard & {
+  manaCost: string;
+  manaValue: number | null;
+};
+
+const MAINBOARD_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "artifacts", "enchantments", "lands"];
+
+function cardDisplayName(card: DeckListCard): string {
+  return card.cardName?.trim() || `Card ${card.cardId}`;
+}
+
+function cardPreviewQueryKey(card: DeckListCard): [string, number, string] {
+  return ["card-preview", card.cardId, cardDisplayName(card)];
+}
+
+function classifyMainboardCard(typeLine?: string): MainboardCategory {
+  const lower = typeLine?.toLowerCase() ?? "";
+  if (lower.includes("land")) {
+    return "lands";
+  }
+  if (lower.includes("creature")) {
+    return "creatures";
+  }
+  if (lower.includes("artifact")) {
+    return "artifacts";
+  }
+  if (lower.includes("enchantment")) {
+    return "enchantments";
+  }
+  return "spells";
+}
+
+function compareMainboardCards(a: MainboardDeckListCard, b: MainboardDeckListCard): number {
+  const manaA = a.manaValue ?? Number.POSITIVE_INFINITY;
+  const manaB = b.manaValue ?? Number.POSITIVE_INFINITY;
+  if (manaA !== manaB) {
+    return manaA - manaB;
+  }
+  const byName = cardDisplayName(a).localeCompare(cardDisplayName(b), undefined, { sensitivity: "base" });
+  if (byName !== 0) {
+    return byName;
+  }
+  return a.cardId - b.cardId;
+}
+
+function formatSectionLabel(section: string): string {
+  const trimmed = section.trim();
+  if (!trimmed) {
+    return "Other";
+  }
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+}
+
+function formatManaCost(manaCost: string): string {
+  const trimmed = manaCost.trim();
+  return trimmed || "-";
+}
+
+function formatManaValue(manaValue: number | null): string {
+  if (manaValue === null || Number.isNaN(manaValue)) {
+    return "?";
+  }
+  if (Number.isInteger(manaValue)) {
+    return `${manaValue}`;
+  }
+  return manaValue.toFixed(1).replace(/\.0$/, "");
+}
+
 function DeckCardPreviewName({ card }: { card: DeckListCard }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [popoverPlacement, setPopoverPlacement] = useState<PopoverPlacement>("right");
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const name = card.cardName?.trim() || `Card ${card.cardId}`;
+  const name = cardDisplayName(card);
   const fallbackHref = card.cardName?.trim()
     ? `https://scryfall.com/search?q=${encodeURIComponent(`!"${name}"`)}`
     : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
 
+  const updatePopoverPlacement = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const wrapper = wrapperRef.current;
+    if (!wrapper) {
+      return;
+    }
+
+    const rect = wrapper.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const popoverWidth = window.matchMedia("(max-width: 640px)").matches ? 195 : 245;
+    const horizontalGap = 14;
+    const availableRight = viewportWidth - rect.right;
+    const availableLeft = rect.left;
+
+    if (availableRight >= popoverWidth+horizontalGap) {
+      setPopoverPlacement("right");
+      return;
+    }
+    if (availableLeft >= popoverWidth+horizontalGap) {
+      setPopoverPlacement("left");
+      return;
+    }
+    setPopoverPlacement(availableRight >= availableLeft ? "right" : "left");
+  };
+
+  const openPopover = () => {
+    updatePopoverPlacement();
+    setIsOpen(true);
+  };
+
   const previewQuery = useQuery({
-    queryKey: ["card-preview", card.cardId, name],
+    queryKey: cardPreviewQueryKey(card),
     queryFn: () => fetchCardPreview(card.cardId, card.cardName),
     enabled: isOpen,
     staleTime: 1000 * 60 * 60 * 24,
@@ -30,11 +137,21 @@ function DeckCardPreviewName({ card }: { card: DeckListCard }) {
     retry: 1,
   });
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const onResize = () => updatePopoverPlacement();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isOpen]);
+
   return (
     <div
       className="card-preview-anchor"
+      data-popover-placement={popoverPlacement}
       ref={wrapperRef}
-      onMouseEnter={() => setIsOpen(true)}
+      onMouseEnter={openPopover}
       onMouseLeave={() => setIsOpen(false)}
     >
       <a
@@ -42,7 +159,7 @@ function DeckCardPreviewName({ card }: { card: DeckListCard }) {
         href={previewQuery.data?.scryfallUrl ?? fallbackHref}
         target="_blank"
         rel="noreferrer"
-        onFocus={() => setIsOpen(true)}
+        onFocus={openPopover}
         onBlur={(event) => {
           if (wrapperRef.current && event.relatedTarget instanceof Node && wrapperRef.current.contains(event.relatedTarget)) {
             return;
@@ -84,16 +201,90 @@ export function DeckDetailPage() {
     enabled: Number.isFinite(deckId),
   });
 
-  const groupedCards = useMemo(() => {
+  const cards = useMemo(() => {
+    return (data?.cards ?? []).map((card) => ({
+      section: card.section,
+      cardId: card.cardId,
+      cardName: card.cardName,
+      quantity: card.quantity,
+    }));
+  }, [data?.cards]);
+
+  const mainboardCards = useMemo(() => {
+    return cards.filter((card) => card.section === "main");
+  }, [cards]);
+
+  const mainCardPreviewQueries = useQueries({
+    queries: mainboardCards.map((card) => ({
+      queryKey: cardPreviewQueryKey(card),
+      queryFn: () => fetchCardPreview(card.cardId, card.cardName),
+      enabled: card.cardId > 0,
+      staleTime: 1000 * 60 * 60 * 24,
+      gcTime: 1000 * 60 * 60 * 24,
+      retry: 1,
+    })),
+  });
+
+  const mainboardMetadataByCardID = useMemo(() => {
+    const out = new Map<number, CardPreview>();
+    for (let i = 0; i < mainboardCards.length; i += 1) {
+      const card = mainboardCards[i];
+      const preview = mainCardPreviewQueries[i]?.data;
+      if (!preview) {
+        continue;
+      }
+      out.set(card.cardId, preview);
+    }
+    return out;
+  }, [mainboardCards, mainCardPreviewQueries]);
+
+  const groupedMainboardCards = useMemo(() => {
+    const byCategory: Record<MainboardCategory, MainboardDeckListCard[]> = {
+      creatures: [],
+      spells: [],
+      artifacts: [],
+      enchantments: [],
+      lands: [],
+    };
+
+    for (const card of mainboardCards) {
+      const metadata = mainboardMetadataByCardID.get(card.cardId);
+      const category = classifyMainboardCard(metadata?.typeLine);
+      byCategory[category].push({
+        ...card,
+        manaCost: metadata?.manaCost?.trim() ?? "",
+        manaValue:
+          typeof metadata?.manaValue === "number" && Number.isFinite(metadata.manaValue) ? metadata.manaValue : null,
+      });
+    }
+
+    for (const category of MAINBOARD_CATEGORY_ORDER) {
+      byCategory[category].sort(compareMainboardCards);
+    }
+
+    return byCategory;
+  }, [mainboardCards, mainboardMetadataByCardID]);
+
+  const nonMainSections = useMemo(() => {
     const bySection: Record<string, DeckListCard[]> = {};
-    for (const card of data?.cards ?? []) {
+    for (const card of cards) {
+      if (card.section === "main") {
+        continue;
+      }
       if (!bySection[card.section]) {
         bySection[card.section] = [];
       }
-      bySection[card.section].push({ cardId: card.cardId, cardName: card.cardName, quantity: card.quantity });
+      bySection[card.section].push(card);
     }
+
+    for (const entries of Object.values(bySection)) {
+      entries.sort((a, b) => cardDisplayName(a).localeCompare(cardDisplayName(b), undefined, { sensitivity: "base" }));
+    }
+
     return bySection;
-  }, [data?.cards]);
+  }, [cards]);
+
+  const isMainboardMetadataLoading = mainCardPreviewQueries.some((query) => query.isPending);
 
   if (!Number.isFinite(deckId)) return <p className="state error">Invalid deck id.</p>;
   if (isLoading) return <p className="state">Loading deck…</p>;
@@ -116,11 +307,36 @@ export function DeckDetailPage() {
         </div>
 
         <div className="grid-cards">
-          {Object.entries(groupedCards).map(([section, cards]) => (
+          {MAINBOARD_CATEGORY_ORDER.map((category) => {
+            const categoryCards = groupedMainboardCards[category];
+            if (categoryCards.length === 0) {
+              return null;
+            }
+            return (
+              <article className="deck-card" key={`main-${category}`}>
+                <h4>{formatSectionLabel(category)}</h4>
+                <ul>
+                  {categoryCards.map((card) => (
+                    <li key={`main-${category}-${card.cardId}`}>
+                      <span className="deck-card-qty">{card.quantity}x</span>
+                      <DeckCardPreviewName card={card} />
+                      <span className="deck-card-mana">
+                        <code className="deck-card-mana-cost">{formatManaCost(card.manaCost)}</code>
+                        {category !== "lands" ? (
+                          <span className="deck-card-mv">MV {formatManaValue(card.manaValue)}</span>
+                        ) : null}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            );
+          })}
+          {Object.entries(nonMainSections).map(([section, sectionCards]) => (
             <article className="deck-card" key={section}>
-              <h4>{section}</h4>
+              <h4>{formatSectionLabel(section)}</h4>
               <ul>
-                {cards.map((card) => (
+                {sectionCards.map((card) => (
                   <li key={`${section}-${card.cardId}`}>
                     <span className="deck-card-qty">{card.quantity}x</span>
                     <DeckCardPreviewName card={card} />
@@ -130,6 +346,7 @@ export function DeckDetailPage() {
             </article>
           ))}
         </div>
+        {isMainboardMetadataLoading ? <p className="state">Loading mainboard mana/type details…</p> : null}
       </section>
 
       <section className="panel">
