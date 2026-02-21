@@ -110,4 +110,7 @@ When `web/dist` exists, backend `serve` will also host built assets from `/`.
 
 - Event aliasing is implemented for common Arena naming differences (e.g. `FIN_Quick_Draft` to `QuickDraft_FIN_...`).
 - Draft parsing supports both `BotDraftDraftPick` and `EventPlayerDraftMakePick`.
-- Card IDs are currently stored as Arena integer IDs (no card metadata join yet).
+- Deck card names are resolved on demand and cached in the local `card_catalog` table:
+  - First from the local MTGA raw card DB (`Raw_CardDatabase*.mtga`) if found.
+  - Then from Scryfall for any remaining unresolved IDs.
+- You can override the raw card DB path with `MTGA_RAW_CARD_DB=/absolute/path/to/Raw_CardDatabase_*.mtga`.

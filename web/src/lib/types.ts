@@ -36,6 +36,7 @@ export type DeckCard = {
   section: string;
   cardId: number;
   quantity: number;
+  cardName?: string;
 };
 
 export type DeckDetail = {

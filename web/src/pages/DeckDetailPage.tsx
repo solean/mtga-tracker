@@ -17,12 +17,12 @@ export function DeckDetailPage() {
   });
 
   const groupedCards = useMemo(() => {
-    const bySection: Record<string, { cardId: number; quantity: number }[]> = {};
+    const bySection: Record<string, { cardId: number; cardName?: string; quantity: number }[]> = {};
     for (const card of data?.cards ?? []) {
       if (!bySection[card.section]) {
         bySection[card.section] = [];
       }
-      bySection[card.section].push({ cardId: card.cardId, quantity: card.quantity });
+      bySection[card.section].push({ cardId: card.cardId, cardName: card.cardName, quantity: card.quantity });
     }
     return bySection;
   }, [data?.cards]);
@@ -55,7 +55,7 @@ export function DeckDetailPage() {
                 {cards.map((card) => (
                   <li key={`${section}-${card.cardId}`}>
                     <span>{card.quantity}x</span>
-                    <code>{card.cardId}</code>
+                    <code>{card.cardName || card.cardId}</code>
                   </li>
                 ))}
               </ul>

@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS deck_cards (
 
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);
 
+CREATE TABLE IF NOT EXISTS card_catalog (
+  arena_id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_catalog_name ON card_catalog(name);
+
 CREATE TABLE IF NOT EXISTS matches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   arena_match_id TEXT NOT NULL UNIQUE,

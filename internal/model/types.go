@@ -44,6 +44,7 @@ type DeckCardRow struct {
 	Section  string `json:"section"`
 	CardID   int64  `json:"cardId"`
 	Quantity int64  `json:"quantity"`
+	CardName string `json:"cardName,omitempty"`
 }
 
 type DeckDetail struct {
