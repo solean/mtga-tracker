@@ -89,6 +89,7 @@ API endpoints:
 - `GET /api/health`
 - `GET /api/overview`
 - `GET /api/matches?limit=500`
+- `GET /api/matches/:id`
 - `GET /api/decks`
 - `GET /api/decks/:id`
 - `GET /api/drafts`
@@ -125,4 +126,6 @@ When `web/dist` exists, backend `serve` will also host built assets from `/`.
 - Deck card names are resolved on demand and cached in the local `card_catalog` table:
   - First from the local MTGA raw card DB (`Raw_CardDatabase*.mtga`) if found.
   - Then from Scryfall for any remaining unresolved IDs.
+- Match detail (`GET /api/matches/:id`) includes a partial opponent list from public GRE game objects
+  (cards seen on stack/battlefield/exile/graveyard/revealed zones).
 - You can override the raw card DB path with `MTGA_RAW_CARD_DB=/absolute/path/to/Raw_CardDatabase_*.mtga`.

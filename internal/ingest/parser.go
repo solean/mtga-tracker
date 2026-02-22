@@ -37,8 +37,29 @@ func NewParser(store *db.Store) *Parser {
 }
 
 type parseState struct {
-	personaID  string
-	playerName string
+	personaID       string
+	playerName      string
+	activeMatchID   string
+	selfSeatByMatch map[string]int64
+}
+
+func (s *parseState) rememberSelfSeat(matchID string, seatID int64) {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || seatID <= 0 {
+		return
+	}
+	if s.selfSeatByMatch == nil {
+		s.selfSeatByMatch = make(map[string]int64)
+	}
+	s.selfSeatByMatch[matchID] = seatID
+}
+
+func (s *parseState) selfSeat(matchID string) int64 {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || s.selfSeatByMatch == nil {
+		return 0
+	}
+	return s.selfSeatByMatch[matchID]
 }
 
 type outgoingEnvelope struct {
@@ -153,6 +174,34 @@ type roomStateEnvelope struct {
 			Players []roomPlayer `json:"players"`
 		} `json:"gameRoomInfo"`
 	} `json:"matchGameRoomStateChangedEvent"`
+}
+
+type greEnvelope struct {
+	Timestamp        string `json:"timestamp"`
+	GREToClientEvent *struct {
+		Messages []greMessage `json:"greToClientMessages"`
+	} `json:"greToClientEvent"`
+}
+
+type greMessage struct {
+	SystemSeatIDs    []int64          `json:"systemSeatIds"`
+	GameStateMessage *greGameStateMsg `json:"gameStateMessage"`
+}
+
+type greGameStateMsg struct {
+	GameInfo *struct {
+		MatchID string `json:"matchID"`
+	} `json:"gameInfo"`
+	GameObjects []greGameObject `json:"gameObjects"`
+}
+
+type greGameObject struct {
+	InstanceID  int64  `json:"instanceId"`
+	GrpID       int64  `json:"grpId"`
+	Type        string `json:"type"`
+	Visibility  string `json:"visibility"`
+	OwnerSeatID int64  `json:"ownerSeatId"`
+	IsToken     bool   `json:"isToken"`
 }
 
 func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (model.ParseStats, error) {
@@ -316,6 +365,12 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 			}
 			return nil
 		}
+		if strings.Contains(line, "\"greToClientEvent\"") {
+			if err := p.handleGREJSON(ctx, tx, line, state); err != nil {
+				return err
+			}
+			return nil
+		}
 	}
 
 	return nil
@@ -443,6 +498,69 @@ func chooseMatchResult(results []roomResultEntry) (int64, string) {
 		}
 	}
 	return fallbackTeamID, fallbackReason
+}
+
+func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, state *parseState) error {
+	var env greEnvelope
+	if err := json.Unmarshal([]byte(line), &env); err != nil {
+		return nil
+	}
+	if env.GREToClientEvent == nil {
+		return nil
+	}
+
+	eventTS := parseRoomTimestamp(env.Timestamp)
+	for _, msg := range env.GREToClientEvent.Messages {
+		if msg.GameStateMessage == nil {
+			continue
+		}
+
+		matchID := strings.TrimSpace(state.activeMatchID)
+		if msg.GameStateMessage.GameInfo != nil && strings.TrimSpace(msg.GameStateMessage.GameInfo.MatchID) != "" {
+			matchID = strings.TrimSpace(msg.GameStateMessage.GameInfo.MatchID)
+			selfSeat := state.selfSeat(matchID)
+			if selfSeat <= 0 && len(msg.SystemSeatIDs) == 1 && msg.SystemSeatIDs[0] > 0 {
+				selfSeat = msg.SystemSeatIDs[0]
+			}
+			if _, err := p.store.UpsertMatchStart(ctx, tx, matchID, "", selfSeat, eventTS); err != nil {
+				return err
+			}
+			state.activeMatchID = matchID
+			state.rememberSelfSeat(matchID, selfSeat)
+		}
+		if matchID == "" {
+			continue
+		}
+
+		selfSeat := state.selfSeat(matchID)
+		if selfSeat <= 0 && len(msg.SystemSeatIDs) == 1 && msg.SystemSeatIDs[0] > 0 {
+			selfSeat = msg.SystemSeatIDs[0]
+			state.rememberSelfSeat(matchID, selfSeat)
+		}
+		if selfSeat <= 0 {
+			continue
+		}
+
+		for _, obj := range msg.GameStateMessage.GameObjects {
+			if obj.InstanceID <= 0 || obj.GrpID <= 0 || obj.OwnerSeatID <= 0 {
+				continue
+			}
+			if !strings.EqualFold(strings.TrimSpace(obj.Type), "GameObjectType_Card") {
+				continue
+			}
+			if !strings.EqualFold(strings.TrimSpace(obj.Visibility), "Visibility_Public") {
+				continue
+			}
+			if obj.IsToken || obj.OwnerSeatID == selfSeat {
+				continue
+			}
+			if err := p.store.UpsertMatchOpponentCardInstance(ctx, tx, matchID, obj.InstanceID, obj.GrpID, eventTS, "gre_public_gameobject"); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (p *Parser) handleOutgoing(ctx context.Context, tx *sql.Tx, stats *model.ParseStats, state *parseState, logPath string, lineNo, byteOffset int64, method, envelopeJSON string) error {
@@ -575,6 +693,8 @@ func (p *Parser) handleOutgoing(ctx context.Context, tx *sql.Tx, stats *model.Pa
 			if err != nil {
 				return err
 			}
+			state.activeMatchID = strings.TrimSpace(evt.MatchID)
+			state.rememberSelfSeat(evt.MatchID, evt.SeatID)
 			_ = p.store.LinkMatchToLatestDeckByEvent(ctx, tx, evt.MatchID, eventName, "pre_match")
 			stats.MatchesUpserted++
 		case 4:
@@ -654,6 +774,8 @@ func (p *Parser) handleRoomStateJSON(ctx context.Context, tx *sql.Tx, stats *mod
 	if _, err := p.store.UpsertMatchStart(ctx, tx, config.MatchID, eventName, selfSeatID, matchTS); err != nil {
 		return err
 	}
+	state.activeMatchID = strings.TrimSpace(config.MatchID)
+	state.rememberSelfSeat(config.MatchID, selfSeatID)
 	if eventName != "" {
 		_ = p.store.LinkMatchToLatestDeckByEvent(ctx, tx, config.MatchID, eventName, "room_state")
 	}

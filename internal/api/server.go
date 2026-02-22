@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -40,6 +41,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/overview", s.handleOverview)
 	mux.HandleFunc("/api/matches", s.handleMatches)
+	mux.HandleFunc("/api/matches/", s.handleMatchDetail)
 	mux.HandleFunc("/api/decks", s.handleDecks)
 	mux.HandleFunc("/api/decks/", s.handleDeckDetail)
 	mux.HandleFunc("/api/drafts", s.handleDrafts)
@@ -111,6 +113,9 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
+	if status >= http.StatusInternalServerError {
+		log.Printf("http %d: %s", status, message)
+	}
 	writeJSON(w, status, map[string]any{
 		"error": message,
 	})
@@ -151,6 +156,37 @@ func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
+	prefix := "/api/matches/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	idStr := strings.TrimSpace(strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/"))
+	if idStr == "" {
+		writeError(w, http.StatusBadRequest, "missing match id")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid match id")
+		return
+	}
+
+	out, err := s.store.GetMatchDetail(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "match not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.enrichOpponentObservedCardNames(r.Context(), out.OpponentObservedCards)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleDecks(w http.ResponseWriter, r *http.Request) {
@@ -310,6 +346,81 @@ func (s *Server) enrichDeckCardNames(ctx context.Context, cards []model.DeckCard
 			}
 		}
 	}
+	if len(newlyResolved) > 0 {
+		if err := s.store.UpsertCardNames(ctx, newlyResolved); err != nil {
+			log.Printf("card name cache upsert failed: %v", err)
+		}
+	}
+
+	for i := range cards {
+		if strings.TrimSpace(cards[i].CardName) != "" {
+			continue
+		}
+		if name, ok := resolvedNames[cards[i].CardID]; ok {
+			cards[i].CardName = name
+		}
+	}
+}
+
+func (s *Server) enrichOpponentObservedCardNames(ctx context.Context, cards []model.OpponentObservedCardRow) {
+	if len(cards) == 0 {
+		return
+	}
+
+	unique := make(map[int64]struct{}, len(cards))
+	missingCardIDs := make([]int64, 0, len(cards))
+	for _, card := range cards {
+		if strings.TrimSpace(card.CardName) != "" {
+			continue
+		}
+		if _, seen := unique[card.CardID]; seen {
+			continue
+		}
+		unique[card.CardID] = struct{}{}
+		missingCardIDs = append(missingCardIDs, card.CardID)
+	}
+	if len(missingCardIDs) == 0 {
+		return
+	}
+
+	resolvedNames, err := s.store.LookupCardNames(ctx, missingCardIDs)
+	if err != nil {
+		log.Printf("card name lookup failed: %v", err)
+		resolvedNames = map[int64]string{}
+	}
+	newlyResolved := make(map[int64]string, len(missingCardIDs))
+
+	unresolved := make([]int64, 0, len(missingCardIDs))
+	for _, cardID := range missingCardIDs {
+		if _, ok := resolvedNames[cardID]; !ok {
+			unresolved = append(unresolved, cardID)
+		}
+	}
+
+	if len(unresolved) > 0 {
+		localNames, localErr := s.fetchCardNamesFromMTGARaw(ctx, unresolved)
+		if localErr != nil {
+			log.Printf("local MTGA card lookup failed: %v", localErr)
+		}
+		for cardID, name := range localNames {
+			resolvedNames[cardID] = name
+			newlyResolved[cardID] = name
+		}
+
+		unresolved = unresolvedCardIDs(missingCardIDs, resolvedNames)
+	}
+
+	if len(unresolved) > 0 {
+		fetchedNames, fetchErr := s.fetchCardNamesFromScryfall(ctx, unresolved)
+		if fetchErr != nil {
+			log.Printf("scryfall card name lookup failed: %v", fetchErr)
+		}
+		for cardID, name := range fetchedNames {
+			resolvedNames[cardID] = name
+			newlyResolved[cardID] = name
+		}
+	}
+
 	if len(newlyResolved) > 0 {
 		if err := s.store.UpsertCardNames(ctx, newlyResolved); err != nil {
 			log.Printf("card name cache upsert failed: %v", err)

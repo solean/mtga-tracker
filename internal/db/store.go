@@ -347,6 +347,28 @@ func (s *Store) UpdateMatchOpponent(ctx context.Context, tx *sql.Tx, arenaMatchI
 	return nil
 }
 
+func (s *Store) UpsertMatchOpponentCardInstance(ctx context.Context, tx *sql.Tx, arenaMatchID string, instanceID, cardID int64, firstSeenAt, source string) error {
+	arenaMatchID = strings.TrimSpace(arenaMatchID)
+	if arenaMatchID == "" || instanceID <= 0 || cardID <= 0 {
+		return nil
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO match_opponent_card_instances (
+			match_id, instance_id, card_id, source, first_seen_at, created_at
+		)
+		SELECT
+			m.id, ?, ?, ?, ?, ?
+		FROM matches m
+		WHERE m.arena_match_id = ?
+		ON CONFLICT(match_id, instance_id) DO NOTHING
+	`, instanceID, cardID, nullIfEmpty(source), nullIfEmpty(normalizeTS(firstSeenAt)), nowUTC(), arenaMatchID)
+	if err != nil {
+		return fmt.Errorf("upsert match opponent card instance: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID string, teamID, winningTeamID, turnCount, secondsCount int64, winReason, endedAt string) (string, string, error) {
 	endedAt = normalizeTS(endedAt)
 
@@ -585,8 +607,8 @@ func (s *Store) Overview(ctx context.Context, recentLimit int64) (model.Overview
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(*) AS total,
-			SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) AS wins,
-			SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) AS losses
+			COALESCE(SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END), 0) AS wins,
+			COALESCE(SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END), 0) AS losses
 		FROM matches
 	`).Scan(&out.TotalMatches, &out.Wins, &out.Losses)
 	if err != nil {
@@ -662,6 +684,79 @@ func (s *Store) ListMatches(ctx context.Context, limit int64, eventName, result 
 	}
 
 	return resultRows, nil
+}
+
+func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchDetail, error) {
+	var out model.MatchDetail
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			m.id,
+			m.arena_match_id,
+			COALESCE(m.event_name, ''),
+			COALESCE(m.opponent_name, ''),
+			COALESCE(m.started_at, ''),
+			COALESCE(m.ended_at, ''),
+			COALESCE(m.result, 'unknown'),
+			COALESCE(m.win_reason, ''),
+			m.turn_count,
+			m.seconds_count,
+			d.id,
+			d.name
+		FROM matches m
+		LEFT JOIN match_decks md ON md.match_id = m.id
+		LEFT JOIN decks d ON d.id = md.deck_id
+		WHERE m.id = ?
+		LIMIT 1
+	`, matchID).Scan(
+		&out.Match.ID,
+		&out.Match.ArenaMatchID,
+		&out.Match.EventName,
+		&out.Match.Opponent,
+		&out.Match.StartedAt,
+		&out.Match.EndedAt,
+		&out.Match.Result,
+		&out.Match.WinReason,
+		&out.Match.TurnCount,
+		&out.Match.SecondsCount,
+		&out.Match.DeckID,
+		&out.Match.DeckName,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, sql.ErrNoRows
+	}
+	if err != nil {
+		return out, fmt.Errorf("get match detail: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			oc.card_id,
+			COUNT(*) AS quantity,
+			COALESCE(cc.name, '')
+		FROM match_opponent_card_instances oc
+		LEFT JOIN card_catalog cc ON cc.arena_id = oc.card_id
+		WHERE oc.match_id = ?
+		GROUP BY oc.card_id, cc.name
+		ORDER BY quantity DESC, cc.name ASC, oc.card_id ASC
+	`, matchID)
+	if err != nil {
+		return out, fmt.Errorf("get observed opponent cards: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var card model.OpponentObservedCardRow
+		if err := rows.Scan(&card.CardID, &card.Quantity, &card.CardName); err != nil {
+			return out, fmt.Errorf("scan observed opponent card: %w", err)
+		}
+		out.OpponentObservedCards = append(out.OpponentObservedCards, card)
+	}
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("iterate observed opponent cards: %w", err)
+	}
+
+	return out, nil
 }
 
 func (s *Store) ListDecks(ctx context.Context) ([]model.DeckSummaryRow, error) {

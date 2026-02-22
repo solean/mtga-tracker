@@ -59,6 +59,15 @@ export function MatchesPage() {
         header: "Reason",
         cell: (info) => info.getValue() || "-",
       }),
+      columnHelper.display({
+        id: "details",
+        header: "Details",
+        cell: (info) => (
+          <Link className="text-link" to={`/matches/${info.row.original.id}`}>
+            View
+          </Link>
+        ),
+      }),
     ],
     [],
   );

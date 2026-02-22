@@ -29,6 +29,17 @@ type MatchRow struct {
 	DeckName     *string `json:"deckName"`
 }
 
+type OpponentObservedCardRow struct {
+	CardID   int64  `json:"cardId"`
+	Quantity int64  `json:"quantity"`
+	CardName string `json:"cardName,omitempty"`
+}
+
+type MatchDetail struct {
+	Match                 MatchRow                  `json:"match"`
+	OpponentObservedCards []OpponentObservedCardRow `json:"opponentObservedCards"`
+}
+
 type DeckSummaryRow struct {
 	DeckID    int64   `json:"deckId"`
 	DeckName  string  `json:"deckName"`

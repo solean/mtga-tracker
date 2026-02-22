@@ -13,6 +13,17 @@ export type Match = {
   deckName?: string | null;
 };
 
+export type OpponentObservedCard = {
+  cardId: number;
+  quantity: number;
+  cardName?: string;
+};
+
+export type MatchDetail = {
+  match: Match;
+  opponentObservedCards: OpponentObservedCard[];
+};
+
 export type Overview = {
   totalMatches: number;
   wins: number;
