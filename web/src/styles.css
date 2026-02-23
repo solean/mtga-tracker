@@ -63,6 +63,8 @@
   --table-row-hover: rgba(213, 188, 132, 0.06);
   --deck-card-bg-a: rgba(17, 32, 29, 0.76);
   --deck-card-bg-b: rgba(13, 24, 22, 0.9);
+  --skeleton-base: rgba(128, 164, 146, 0.2);
+  --skeleton-highlight: rgba(213, 188, 132, 0.3);
   --card-trigger-hover: #f4e3bf;
   --popover-bg: rgba(7, 13, 12, 0.96);
   --popover-card-bg: rgba(18, 35, 48, 0.95);
@@ -130,6 +132,8 @@
   --table-row-hover: rgba(127, 104, 64, 0.08);
   --deck-card-bg-a: rgba(231, 240, 232, 0.84);
   --deck-card-bg-b: rgba(224, 235, 225, 0.96);
+  --skeleton-base: rgba(70, 92, 80, 0.18);
+  --skeleton-highlight: rgba(127, 104, 64, 0.3);
   --card-trigger-hover: #5f4e2f;
   --popover-bg: rgba(236, 244, 237, 0.98);
   --popover-card-bg: rgba(214, 230, 217, 0.96);
@@ -388,6 +392,11 @@ h1 {
 .stack-lg {
   display: grid;
   gap: 1.02rem;
+}
+
+.deck-detail-stack {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .stack-md {
@@ -672,6 +681,10 @@ h1 {
   gap: 0.8rem;
 }
 
+.deck-mainboard-skeleton-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .deck-card {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -743,6 +756,101 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 0.14rem;
+}
+
+.deck-skeleton-head {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.deck-card.is-skeleton ul {
+  margin-top: 0.62rem;
+  gap: 0.4rem;
+}
+
+.deck-card.is-skeleton li {
+  min-height: 1.03rem;
+}
+
+.skeleton-line,
+.skeleton-chip {
+  display: inline-block;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      100deg,
+      var(--skeleton-base) 18%,
+      var(--skeleton-highlight) 50%,
+      var(--skeleton-base) 82%
+    );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1400ms linear infinite;
+}
+
+.skeleton-line {
+  height: 0.74rem;
+}
+
+.skeleton-chip {
+  height: 0.7rem;
+}
+
+.skeleton-heading {
+  width: min(18.5rem, 52vw);
+  height: 1.05rem;
+}
+
+.skeleton-subheading {
+  width: min(12.5rem, 44vw);
+}
+
+.skeleton-heading-sm {
+  width: min(11rem, 38vw);
+  height: 0.95rem;
+}
+
+.skeleton-link {
+  width: 5.8rem;
+}
+
+.skeleton-count {
+  width: 4.2rem;
+}
+
+.skeleton-title {
+  width: 44%;
+  min-width: 6.5rem;
+  height: 0.88rem;
+}
+
+.skeleton-card-name {
+  width: 72%;
+}
+
+.skeleton-qty {
+  width: 1.85rem;
+}
+
+.skeleton-mana {
+  width: 2.25rem;
+}
+
+.skeleton-table-line {
+  width: 72%;
+}
+
+.skeleton-table-line.is-wide {
+  width: 86%;
+}
+
+.skeleton-table-line.is-short {
+  width: 56%;
+}
+
+.deck-matches-skeleton-table {
+  width: 100%;
+  min-width: 100%;
+  table-layout: fixed;
 }
 
 .mana-symbol-icon {
@@ -834,6 +942,16 @@ h1 {
   }
 }
 
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .metric-card,
   .panel,
@@ -845,6 +963,11 @@ h1 {
     animation: none;
     transition: none;
   }
+
+  .skeleton-line,
+  .skeleton-chip {
+    animation: none;
+  }
 }
 
 @media (max-width: 1120px) {
@@ -854,6 +977,10 @@ h1 {
 
   .two-col {
     grid-template-columns: 1fr;
+  }
+
+  .deck-mainboard-skeleton-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -897,6 +1024,10 @@ h1 {
 
   .tab {
     padding: 0.42rem 0.82rem;
+  }
+
+  .deck-mainboard-skeleton-grid {
+    grid-template-columns: 1fr;
   }
 }
 
