@@ -228,6 +228,18 @@ func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (mo
 	}
 	defer file.Close()
 
+	info, err := file.Stat()
+	if err != nil {
+		return stats, fmt.Errorf("stat log file: %w", err)
+	}
+
+	// MTGA rotates/truncates Player.log. If our saved offset points past EOF,
+	// restart from the beginning of the current file so tailing can recover.
+	if startOffset > info.Size() {
+		startOffset = 0
+		startLine = 0
+	}
+
 	if startOffset > 0 {
 		if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
 			return stats, fmt.Errorf("seek to offset %d: %w", startOffset, err)

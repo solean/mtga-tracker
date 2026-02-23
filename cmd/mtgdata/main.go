@@ -52,7 +52,7 @@ func main() {
 func printUsage() {
 	fmt.Println("mtgdata commands:")
 	fmt.Println("  parse -db <path> [-log <path>] [-include-prev=true] [-resume=true]")
-	fmt.Println("  tail  -db <path> [-log <path>] [-interval=2s]")
+	fmt.Println("  tail  -db <path> [-log <path>] [-interval=2s] [-verbose=false]")
 	fmt.Println("  serve -db <path> [-addr=:8080] [-web-dist=<path>]")
 	fmt.Println("")
 	fmt.Println("If -log is omitted, parse/tail default to:")
@@ -140,6 +140,7 @@ func runTail(ctx context.Context, args []string) error {
 	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
 	logPath := fs.String("log", "", "arena log path (optional; defaults to MTGA macOS Player.log)")
 	interval := fs.Duration("interval", 2*time.Second, "poll interval")
+	verbose := fs.Bool("verbose", false, "log each poll, including idle polls")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -173,8 +174,30 @@ func runTail(ctx context.Context, args []string) error {
 	defer ticker.Stop()
 
 	for {
-		if _, err := parser.ParseFile(ctx, activeLogPath, true); err != nil {
+		stats, err := parser.ParseFile(ctx, activeLogPath, true)
+		if err != nil {
 			log.Printf("tail parse error: %v", err)
+		} else {
+			hasActivity := stats.LinesRead > 0 ||
+				stats.RawEventsStored > 0 ||
+				stats.MatchesUpserted > 0 ||
+				stats.DecksUpserted > 0 ||
+				stats.DraftPicksAdded > 0
+
+			if hasActivity {
+				log.Printf(
+					"tail activity: lines=%d bytes=%d raw_events=%d matches=%d decks=%d draft_picks=%d duration=%s",
+					stats.LinesRead,
+					stats.BytesRead,
+					stats.RawEventsStored,
+					stats.MatchesUpserted,
+					stats.DecksUpserted,
+					stats.DraftPicksAdded,
+					stats.CompletedAt.Sub(stats.StartedAt),
+				)
+			} else if *verbose {
+				log.Printf("tail idle: no new lines")
+			}
 		}
 
 		select {

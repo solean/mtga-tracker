@@ -23,6 +23,7 @@ From `/Users/cschnabel/dev/mtgdata`:
 ./scripts/start-web.sh
 ./scripts/start-backend.sh
 ./scripts/start-parse.sh
+./scripts/start-tail.sh
 ```
 
 Each script also forwards any additional CLI flags you pass through to the underlying command.
@@ -70,6 +71,14 @@ Default (recommended on macOS): tails `~/Library/Logs/Wizards Of The Coast/MTGA/
 ```bash
 cd /Users/cschnabel/dev/mtgdata
 go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s
+```
+
+`tail` now logs activity summaries whenever new log lines are ingested (for example when matches/decks/events are picked up).
+
+Enable idle heartbeat logs (every poll):
+
+```bash
+go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s -verbose=true
 ```
 
 Optional explicit log path:
