@@ -15,7 +15,8 @@ export const api = {
   overview: () => getJSON<Overview>("/api/overview"),
   matches: (limit = 500) => getJSON<Match[]>(`/api/matches?limit=${limit}`),
   matchDetail: (matchId: number) => getJSON<MatchDetail>(`/api/matches/${matchId}`),
-  decks: () => getJSON<DeckSummary[]>("/api/decks"),
+  decks: (scope: "constructed" | "draft" | "all" = "constructed") =>
+    getJSON<DeckSummary[]>(scope === "constructed" ? "/api/decks" : `/api/decks?scope=${scope}`),
   deckDetail: (deckId: number) => getJSON<DeckDetail>(`/api/decks/${deckId}`),
   drafts: () => getJSON<DraftSession[]>("/api/drafts"),
   draftPicks: (draftId: number) => getJSON<DraftPick[]>(`/api/drafts/${draftId}/picks`),

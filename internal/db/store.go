@@ -119,6 +119,45 @@ func detectEventType(eventName string) string {
 	}
 }
 
+func isDraftDeck(format, eventName string) bool {
+	if strings.EqualFold(strings.TrimSpace(format), "draft") {
+		return true
+	}
+
+	e := strings.ToLower(strings.TrimSpace(eventName))
+	if e == "" {
+		return false
+	}
+
+	return strings.Contains(e, "draft")
+}
+
+func normalizeDeckScope(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "", "constructed":
+		return "constructed"
+	case "draft":
+		return "draft"
+	case "all":
+		return "all"
+	default:
+		return "constructed"
+	}
+}
+
+func deckInScope(scope, format, eventName string) bool {
+	scope = normalizeDeckScope(scope)
+	isDraft := isDraftDeck(format, eventName)
+	switch scope {
+	case "draft":
+		return isDraft
+	case "all":
+		return true
+	default:
+		return !isDraft
+	}
+}
+
 var reSetKindEvent = regexp.MustCompile(`^([A-Za-z0-9]+)_(Quick_Draft|Premier_Draft|Sealed)$`)
 
 func (s *Store) resolveEventNameAlias(ctx context.Context, tx *sql.Tx, eventName string) (string, error) {
@@ -760,6 +799,12 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 }
 
 func (s *Store) ListDecks(ctx context.Context) ([]model.DeckSummaryRow, error) {
+	return s.ListDecksByScope(ctx, "constructed")
+}
+
+func (s *Store) ListDecksByScope(ctx context.Context, scope string) ([]model.DeckSummaryRow, error) {
+	scope = normalizeDeckScope(scope)
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			d.id,
@@ -785,6 +830,9 @@ func (s *Store) ListDecks(ctx context.Context) ([]model.DeckSummaryRow, error) {
 		var r model.DeckSummaryRow
 		if err := rows.Scan(&r.DeckID, &r.DeckName, &r.Format, &r.EventName, &r.Matches, &r.Wins, &r.Losses); err != nil {
 			return nil, fmt.Errorf("scan deck summary: %w", err)
+		}
+		if !deckInScope(scope, r.Format, r.EventName) {
+			continue
 		}
 		if r.Matches > 0 {
 			r.WinRate = float64(r.Wins) / float64(r.Matches)

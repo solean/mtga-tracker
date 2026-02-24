@@ -194,7 +194,15 @@ func (s *Server) handleDecks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	rows, err := s.store.ListDecks(r.Context())
+	scope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("scope")))
+	switch scope {
+	case "", "constructed", "draft", "all":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid scope (use constructed, draft, or all)")
+		return
+	}
+
+	rows, err := s.store.ListDecksByScope(r.Context(), scope)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

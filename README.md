@@ -99,7 +99,9 @@ API endpoints:
 - `GET /api/overview`
 - `GET /api/matches?limit=500`
 - `GET /api/matches/:id`
-- `GET /api/decks`
+- `GET /api/decks` (constructed decks only)
+- `GET /api/decks?scope=draft`
+- `GET /api/decks?scope=all`
 - `GET /api/decks/:id`
 - `GET /api/drafts`
 - `GET /api/drafts/:id/picks`

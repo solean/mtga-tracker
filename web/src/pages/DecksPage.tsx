@@ -7,7 +7,7 @@ import { pct } from "../lib/format";
 export function DecksPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["decks"],
-    queryFn: api.decks,
+    queryFn: () => api.decks(),
   });
 
   if (isLoading) return <p className="state">Loading decks…</p>;
