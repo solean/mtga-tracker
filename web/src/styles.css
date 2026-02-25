@@ -888,12 +888,10 @@ h1 {
   width: 245px;
   border: 1px solid var(--line-strong);
   border-radius: 13px;
-  padding: 0.5rem;
+  padding: 0;
   background: var(--popover-bg);
   box-shadow: var(--shadow-lg);
   z-index: 30;
-  display: grid;
-  gap: 0.35rem;
   backdrop-filter: blur(10px);
 }
 
@@ -909,12 +907,6 @@ h1 {
   background: var(--popover-card-bg);
 }
 
-.card-preview-meta {
-  display: grid;
-  gap: 0.18rem;
-}
-
-.card-preview-name,
 .card-preview-status {
   margin: 0;
   color: var(--muted);

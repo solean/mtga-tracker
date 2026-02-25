@@ -207,12 +207,7 @@ function OpponentCardPreviewName({ card }: { card: OpponentDeckCard }) {
           {previewQuery.isLoading ? (
             <p className="card-preview-status">Loading preview…</p>
           ) : previewQuery.data ? (
-            <>
-              <img src={previewQuery.data.imageUrl} alt={previewQuery.data.name} loading="lazy" />
-              <div className="card-preview-meta">
-                <p className="card-preview-name">{previewQuery.data.name}</p>
-              </div>
-            </>
+            <img src={previewQuery.data.imageUrl} alt={previewQuery.data.name} loading="lazy" />
           ) : (
             <p className="card-preview-status">Preview unavailable.</p>
           )}
