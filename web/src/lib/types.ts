@@ -91,4 +91,11 @@ export type DraftPick = {
   pickedCardIds: string;
   packCardIds: string;
   pickTs: string;
+  pickedCards?: DraftPickCard[];
+  packCards?: DraftPickCard[];
+};
+
+export type DraftPickCard = {
+  cardId: number;
+  cardName?: string;
 };

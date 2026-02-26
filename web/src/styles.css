@@ -725,6 +725,11 @@ h1 {
   justify-self: start;
 }
 
+.card-preview-anchor:hover,
+.card-preview-anchor:focus-within {
+  z-index: 40;
+}
+
 .card-preview-trigger {
   display: inline-block;
   color: var(--text);
@@ -735,6 +740,22 @@ h1 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.draft-card-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.55rem;
+  min-width: 0;
+}
+
+.draft-card-list .card-preview-anchor {
+  max-width: 100%;
+}
+
+.draft-card-empty {
+  color: var(--muted);
 }
 
 .deck-card-mana {
@@ -893,6 +914,15 @@ h1 {
   box-shadow: var(--shadow-lg);
   z-index: 30;
   backdrop-filter: blur(10px);
+}
+
+.card-preview-popover-floating {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform: none;
+  z-index: 1200;
+  pointer-events: none;
 }
 
 .card-preview-anchor[data-popover-placement="left"] .card-preview-popover {

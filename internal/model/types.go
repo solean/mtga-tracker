@@ -93,12 +93,19 @@ type DraftSessionRow struct {
 }
 
 type DraftPickRow struct {
-	ID            int64  `json:"id"`
-	PackNumber    int64  `json:"packNumber"`
-	PickNumber    int64  `json:"pickNumber"`
-	PickedCardIDs string `json:"pickedCardIds"`
-	PackCardIDs   string `json:"packCardIds"`
-	PickTs        string `json:"pickTs"`
+	ID            int64           `json:"id"`
+	PackNumber    int64           `json:"packNumber"`
+	PickNumber    int64           `json:"pickNumber"`
+	PickedCardIDs string          `json:"pickedCardIds"`
+	PackCardIDs   string          `json:"packCardIds"`
+	PickTs        string          `json:"pickTs"`
+	PickedCards   []DraftPickCard `json:"pickedCards,omitempty"`
+	PackCards     []DraftPickCard `json:"packCards,omitempty"`
+}
+
+type DraftPickCard struct {
+	CardID   int64  `json:"cardId"`
+	CardName string `json:"cardName,omitempty"`
 }
 
 type Overview struct {

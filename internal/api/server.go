@@ -292,6 +292,7 @@ func (s *Server) handleDraftPicks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.enrichDraftPickCardNames(r.Context(), rows)
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -314,6 +315,159 @@ const (
 	scryfallSearchBatchMax = 40
 	mtgaRawCardDBEnvVar    = "MTGA_RAW_CARD_DB"
 )
+
+func parseDraftCardIDs(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return nil
+	}
+
+	var ids []int64
+	if err := json.Unmarshal([]byte(raw), &ids); err == nil {
+		out := make([]int64, 0, len(ids))
+		for _, id := range ids {
+			if id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+
+	var stringIDs []string
+	if err := json.Unmarshal([]byte(raw), &stringIDs); err == nil {
+		out := make([]int64, 0, len(stringIDs))
+		for _, rawID := range stringIDs {
+			id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+			if err == nil && id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+
+	return nil
+}
+
+func uniqueCardIDs(cardIDs []int64) []int64 {
+	if len(cardIDs) == 0 {
+		return nil
+	}
+
+	out := make([]int64, 0, len(cardIDs))
+	seen := make(map[int64]struct{}, len(cardIDs))
+	for _, cardID := range cardIDs {
+		if cardID <= 0 {
+			continue
+		}
+		if _, ok := seen[cardID]; ok {
+			continue
+		}
+		seen[cardID] = struct{}{}
+		out = append(out, cardID)
+	}
+	return out
+}
+
+func (s *Server) resolveCardNames(ctx context.Context, cardIDs []int64) map[int64]string {
+	cardIDs = uniqueCardIDs(cardIDs)
+	if len(cardIDs) == 0 {
+		return map[int64]string{}
+	}
+
+	resolvedNames, err := s.store.LookupCardNames(ctx, cardIDs)
+	if err != nil {
+		log.Printf("card name lookup failed: %v", err)
+		resolvedNames = map[int64]string{}
+	}
+
+	newlyResolved := make(map[int64]string, len(cardIDs))
+	unresolved := unresolvedCardIDs(cardIDs, resolvedNames)
+
+	if len(unresolved) > 0 {
+		localNames, localErr := s.fetchCardNamesFromMTGARaw(ctx, unresolved)
+		if localErr != nil {
+			log.Printf("local MTGA card lookup failed: %v", localErr)
+		}
+		for cardID, name := range localNames {
+			trimmed := strings.TrimSpace(name)
+			if trimmed == "" {
+				continue
+			}
+			resolvedNames[cardID] = trimmed
+			newlyResolved[cardID] = trimmed
+		}
+
+		unresolved = unresolvedCardIDs(cardIDs, resolvedNames)
+	}
+
+	if len(unresolved) > 0 {
+		fetchedNames, fetchErr := s.fetchCardNamesFromScryfall(ctx, unresolved)
+		if fetchErr != nil {
+			log.Printf("scryfall card name lookup failed: %v", fetchErr)
+		}
+		for cardID, name := range fetchedNames {
+			trimmed := strings.TrimSpace(name)
+			if trimmed == "" {
+				continue
+			}
+			resolvedNames[cardID] = trimmed
+			newlyResolved[cardID] = trimmed
+		}
+	}
+
+	if len(newlyResolved) > 0 {
+		if err := s.store.UpsertCardNames(ctx, newlyResolved); err != nil {
+			log.Printf("card name cache upsert failed: %v", err)
+		}
+	}
+
+	return resolvedNames
+}
+
+func (s *Server) enrichDraftPickCardNames(ctx context.Context, picks []model.DraftPickRow) {
+	if len(picks) == 0 {
+		return
+	}
+
+	allCardIDs := make([]int64, 0, len(picks)*10)
+	for i := range picks {
+		pickedIDs := parseDraftCardIDs(picks[i].PickedCardIDs)
+		packIDs := parseDraftCardIDs(picks[i].PackCardIDs)
+
+		picks[i].PickedCards = make([]model.DraftPickCard, 0, len(pickedIDs))
+		for _, cardID := range pickedIDs {
+			picks[i].PickedCards = append(picks[i].PickedCards, model.DraftPickCard{CardID: cardID})
+			allCardIDs = append(allCardIDs, cardID)
+		}
+
+		picks[i].PackCards = make([]model.DraftPickCard, 0, len(packIDs))
+		for _, cardID := range packIDs {
+			picks[i].PackCards = append(picks[i].PackCards, model.DraftPickCard{CardID: cardID})
+			allCardIDs = append(allCardIDs, cardID)
+		}
+	}
+
+	resolvedNames := s.resolveCardNames(ctx, allCardIDs)
+	if len(resolvedNames) == 0 {
+		return
+	}
+
+	for i := range picks {
+		for j := range picks[i].PickedCards {
+			cardID := picks[i].PickedCards[j].CardID
+			if name, ok := resolvedNames[cardID]; ok {
+				picks[i].PickedCards[j].CardName = name
+			}
+		}
+
+		for j := range picks[i].PackCards {
+			cardID := picks[i].PackCards[j].CardID
+			if name, ok := resolvedNames[cardID]; ok {
+				picks[i].PackCards[j].CardName = name
+			}
+		}
+	}
+}
 
 func (s *Server) enrichDeckCardNames(ctx context.Context, cards []model.DeckCardRow) {
 	if len(cards) == 0 {
