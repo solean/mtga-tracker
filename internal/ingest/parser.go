@@ -41,6 +41,9 @@ type parseState struct {
 	playerName      string
 	activeMatchID   string
 	selfSeatByMatch map[string]int64
+	turnByMatch     map[string]int64
+	phaseByMatch    map[string]string
+	zoneTypeByMatch map[string]map[int64]string
 }
 
 func (s *parseState) rememberSelfSeat(matchID string, seatID int64) {
@@ -60,6 +63,74 @@ func (s *parseState) selfSeat(matchID string) int64 {
 		return 0
 	}
 	return s.selfSeatByMatch[matchID]
+}
+
+func (s *parseState) rememberTurn(matchID string, turnNumber int64) {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || turnNumber <= 0 {
+		return
+	}
+	if s.turnByMatch == nil {
+		s.turnByMatch = make(map[string]int64)
+	}
+	s.turnByMatch[matchID] = turnNumber
+}
+
+func (s *parseState) turn(matchID string) int64 {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || s.turnByMatch == nil {
+		return 0
+	}
+	return s.turnByMatch[matchID]
+}
+
+func (s *parseState) rememberPhase(matchID, phase string) {
+	matchID = strings.TrimSpace(matchID)
+	phase = normalizeGREPhase(phase)
+	if matchID == "" || phase == "" {
+		return
+	}
+	if s.phaseByMatch == nil {
+		s.phaseByMatch = make(map[string]string)
+	}
+	s.phaseByMatch[matchID] = phase
+}
+
+func (s *parseState) phase(matchID string) string {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || s.phaseByMatch == nil {
+		return ""
+	}
+	return s.phaseByMatch[matchID]
+}
+
+func (s *parseState) rememberZoneType(matchID string, zoneID int64, zoneType string) {
+	matchID = strings.TrimSpace(matchID)
+	zoneType = normalizeGREZoneType(zoneType)
+	if matchID == "" || zoneID <= 0 || zoneType == "" {
+		return
+	}
+	if s.zoneTypeByMatch == nil {
+		s.zoneTypeByMatch = make(map[string]map[int64]string)
+	}
+	byZone, ok := s.zoneTypeByMatch[matchID]
+	if !ok {
+		byZone = make(map[int64]string)
+		s.zoneTypeByMatch[matchID] = byZone
+	}
+	byZone[zoneID] = zoneType
+}
+
+func (s *parseState) zoneType(matchID string, zoneID int64) string {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || zoneID <= 0 || s.zoneTypeByMatch == nil {
+		return ""
+	}
+	byZone := s.zoneTypeByMatch[matchID]
+	if byZone == nil {
+		return ""
+	}
+	return byZone[zoneID]
 }
 
 type outgoingEnvelope struct {
@@ -192,13 +263,26 @@ type greGameStateMsg struct {
 	GameInfo *struct {
 		MatchID string `json:"matchID"`
 	} `json:"gameInfo"`
+	TurnInfo    *greTurnInfo    `json:"turnInfo"`
+	Zones       []greZone       `json:"zones"`
 	GameObjects []greGameObject `json:"gameObjects"`
+}
+
+type greTurnInfo struct {
+	TurnNumber int64  `json:"turnNumber"`
+	Phase      string `json:"phase"`
+}
+
+type greZone struct {
+	ZoneID int64  `json:"zoneId"`
+	Type   string `json:"type"`
 }
 
 type greGameObject struct {
 	InstanceID  int64  `json:"instanceId"`
 	GrpID       int64  `json:"grpId"`
 	Type        string `json:"type"`
+	ZoneID      int64  `json:"zoneId"`
 	Visibility  string `json:"visibility"`
 	OwnerSeatID int64  `json:"ownerSeatId"`
 	IsToken     bool   `json:"isToken"`
@@ -512,6 +596,43 @@ func chooseMatchResult(results []roomResultEntry) (int64, string) {
 	return fallbackTeamID, fallbackReason
 }
 
+func normalizeGREPhase(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "Phase_")
+	raw = strings.TrimPrefix(raw, "Step_")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	return strings.ToLower(raw)
+}
+
+func normalizeGREZoneType(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "ZoneType_")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	return strings.ToLower(raw)
+}
+
+func isTimelinePlayableZone(zoneType string) bool {
+	zoneType = strings.TrimSpace(strings.ToLower(zoneType))
+	return zoneType == "stack" || zoneType == "battlefield"
+}
+
+func fallbackGREZoneType(zoneID int64) string {
+	switch zoneID {
+	case 27:
+		return "stack"
+	case 28:
+		return "battlefield"
+	default:
+		return ""
+	}
+}
+
 func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, state *parseState) error {
 	var env greEnvelope
 	if err := json.Unmarshal([]byte(line), &env); err != nil {
@@ -544,14 +665,21 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			continue
 		}
 
+		if msg.GameStateMessage.TurnInfo != nil {
+			state.rememberTurn(matchID, msg.GameStateMessage.TurnInfo.TurnNumber)
+			state.rememberPhase(matchID, msg.GameStateMessage.TurnInfo.Phase)
+		}
+		for _, zone := range msg.GameStateMessage.Zones {
+			state.rememberZoneType(matchID, zone.ZoneID, zone.Type)
+		}
+
 		selfSeat := state.selfSeat(matchID)
 		if selfSeat <= 0 && len(msg.SystemSeatIDs) == 1 && msg.SystemSeatIDs[0] > 0 {
 			selfSeat = msg.SystemSeatIDs[0]
 			state.rememberSelfSeat(matchID, selfSeat)
 		}
-		if selfSeat <= 0 {
-			continue
-		}
+		turnNumber := state.turn(matchID)
+		phase := state.phase(matchID)
 
 		for _, obj := range msg.GameStateMessage.GameObjects {
 			if obj.InstanceID <= 0 || obj.GrpID <= 0 || obj.OwnerSeatID <= 0 {
@@ -563,9 +691,23 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			if !strings.EqualFold(strings.TrimSpace(obj.Visibility), "Visibility_Public") {
 				continue
 			}
-			if obj.IsToken || obj.OwnerSeatID == selfSeat {
+
+			if !obj.IsToken {
+				zoneType := state.zoneType(matchID, obj.ZoneID)
+				if zoneType == "" {
+					zoneType = fallbackGREZoneType(obj.ZoneID)
+				}
+				if isTimelinePlayableZone(zoneType) {
+					if err := p.store.UpsertMatchCardPlay(ctx, tx, matchID, obj.InstanceID, obj.GrpID, obj.OwnerSeatID, turnNumber, phase, zoneType, eventTS, "gre_public_gameobject"); err != nil {
+						return err
+					}
+				}
+			}
+
+			if selfSeat <= 0 || obj.IsToken || obj.OwnerSeatID == selfSeat {
 				continue
 			}
+
 			if err := p.store.UpsertMatchOpponentCardInstance(ctx, tx, matchID, obj.InstanceID, obj.GrpID, eventTS, "gre_public_gameobject"); err != nil {
 				return err
 			}

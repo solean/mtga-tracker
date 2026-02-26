@@ -6,6 +6,7 @@ import { ResultPill } from "../components/ResultPill";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import { fetchCardPreview } from "../lib/scryfall";
+import type { MatchCardPlay } from "../lib/types";
 
 type OpponentDeckCard = {
   cardId: number;
@@ -20,6 +21,36 @@ const SCRYFALL_SYMBOL_BASE_URL = "https://svgs.scryfall.io/card-symbols";
 
 function cardDisplayName(card: OpponentDeckCard): string {
   return card.cardName?.trim() || `Card ${card.cardId}`;
+}
+
+function timelineCardName(play: MatchCardPlay): string {
+  return play.cardName?.trim() || `Card ${play.cardId}`;
+}
+
+function timelinePlayerLabel(playerSide: MatchCardPlay["playerSide"]): string {
+  if (playerSide === "self") return "You";
+  if (playerSide === "opponent") return "Opponent";
+  return "Unknown";
+}
+
+function timelineZoneLabel(zone: string): string {
+  const trimmed = zone.trim();
+  if (!trimmed) return "-";
+  return trimmed
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function timelinePhaseLabel(phase: string | undefined): string {
+  const trimmed = phase?.trim() ?? "";
+  if (!trimmed) return "-";
+  return trimmed
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function cardPreviewQueryKey(card: OpponentDeckCard): [string, number, string] {
@@ -227,6 +258,11 @@ export function MatchDetailPage() {
     queryFn: () => api.matchDetail(matchId),
     enabled: isValidMatchID,
   });
+  const timelineQuery = useQuery({
+    queryKey: ["match-timeline", matchId],
+    queryFn: () => api.matchTimeline(matchId),
+    enabled: isValidMatchID,
+  });
 
   const opponentObservedCards = query.data?.opponentObservedCards ?? [];
   const opponentCards = useMemo<OpponentDeckCard[]>(() => {
@@ -266,6 +302,7 @@ export function MatchDetailPage() {
   if (!query.data) return <p className="state">Match not found.</p>;
 
   const { match } = query.data;
+  const timelineRows = timelineQuery.data ?? query.data.cardPlays ?? [];
 
   return (
     <div className="stack-lg">
@@ -324,6 +361,49 @@ export function MatchDetailPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Card Play Timeline</h3>
+          <p>{timelineRows.length} observed plays</p>
+        </div>
+        {timelineQuery.error ? (
+          <p className="state error">{(timelineQuery.error as Error).message}</p>
+        ) : timelineRows.length === 0 ? (
+          <p className="state">No observed card plays for this match yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Turn</th>
+                  <th>Player</th>
+                  <th>Card</th>
+                  <th>Zone</th>
+                  <th>Phase</th>
+                  <th>Seen At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timelineRows.map((play, index) => (
+                  <tr key={play.id}>
+                    <td>{index + 1}</td>
+                    <td>{play.turnNumber ?? "-"}</td>
+                    <td>{timelinePlayerLabel(play.playerSide)}</td>
+                    <td>
+                      <code>{timelineCardName(play)}</code>
+                    </td>
+                    <td>{timelineZoneLabel(play.firstPublicZone)}</td>
+                    <td>{timelinePhaseLabel(play.phase)}</td>
+                    <td>{formatDateTime(play.playedAt ?? "")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="panel">

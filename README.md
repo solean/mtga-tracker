@@ -99,6 +99,7 @@ API endpoints:
 - `GET /api/overview`
 - `GET /api/matches?limit=500`
 - `GET /api/matches/:id`
+- `GET /api/matches/:id/timeline`
 - `GET /api/decks` (constructed decks only)
 - `GET /api/decks?scope=draft`
 - `GET /api/decks?scope=all`
@@ -139,4 +140,6 @@ When `web/dist` exists, backend `serve` will also host built assets from `/`.
   - Then from Scryfall for any remaining unresolved IDs.
 - Match detail (`GET /api/matches/:id`) includes a partial opponent list from public GRE game objects
   (cards seen on stack/battlefield/exile/graveyard/revealed zones).
+- Match timeline (`GET /api/matches/:id/timeline`) includes first observed public card plays (both players)
+  with turn/phase when available.
 - You can override the raw card DB path with `MTGA_RAW_CARD_DB=/absolute/path/to/Raw_CardDatabase_*.mtga`.

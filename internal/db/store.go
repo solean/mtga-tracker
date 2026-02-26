@@ -408,6 +408,40 @@ func (s *Store) UpsertMatchOpponentCardInstance(ctx context.Context, tx *sql.Tx,
 	return nil
 }
 
+func (s *Store) UpsertMatchCardPlay(ctx context.Context, tx *sql.Tx, arenaMatchID string, instanceID, cardID, ownerSeatID, turnNumber int64, phase, firstPublicZone, playedAt, source string) error {
+	arenaMatchID = strings.TrimSpace(arenaMatchID)
+	firstPublicZone = strings.TrimSpace(firstPublicZone)
+	if arenaMatchID == "" || instanceID <= 0 || cardID <= 0 || firstPublicZone == "" {
+		return nil
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO match_card_plays (
+			match_id, instance_id, card_id, owner_seat_id, first_public_zone, turn_number, phase, source, played_at, created_at
+		)
+		SELECT
+			m.id, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		FROM matches m
+		WHERE m.arena_match_id = ?
+		ON CONFLICT(match_id, instance_id) DO UPDATE SET
+			owner_seat_id = COALESCE(match_card_plays.owner_seat_id, excluded.owner_seat_id),
+			turn_number = COALESCE(match_card_plays.turn_number, excluded.turn_number),
+			phase = COALESCE(match_card_plays.phase, excluded.phase),
+			source = COALESCE(match_card_plays.source, excluded.source),
+			played_at = COALESCE(match_card_plays.played_at, excluded.played_at)
+		WHERE
+			match_card_plays.owner_seat_id IS NULL
+			OR match_card_plays.turn_number IS NULL
+			OR match_card_plays.phase IS NULL
+			OR match_card_plays.source IS NULL
+			OR match_card_plays.played_at IS NULL
+	`, instanceID, cardID, nullableInt(ownerSeatID), firstPublicZone, nullableInt(turnNumber), nullIfEmpty(phase), nullIfEmpty(source), nullIfEmpty(normalizeTS(playedAt)), nowUTC(), arenaMatchID)
+	if err != nil {
+		return fmt.Errorf("upsert match card play: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID string, teamID, winningTeamID, turnCount, secondsCount int64, winReason, endedAt string) (string, string, error) {
 	endedAt = normalizeTS(endedAt)
 
@@ -795,6 +829,11 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 		return out, fmt.Errorf("iterate observed opponent cards: %w", err)
 	}
 
+	out.CardPlays, err = s.ListMatchCardPlays(ctx, matchID)
+	if err != nil {
+		return out, err
+	}
+
 	return out, nil
 }
 
@@ -1069,6 +1108,70 @@ func (s *Store) ListDraftPicks(ctx context.Context, draftSessionID int64) ([]mod
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate draft picks: %w", err)
+	}
+
+	return out, nil
+}
+
+func (s *Store) ListMatchCardPlays(ctx context.Context, matchID int64) ([]model.MatchCardPlayRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			cp.id,
+			cp.instance_id,
+			cp.card_id,
+			COALESCE(cc.name, ''),
+			cp.owner_seat_id,
+			CASE
+				WHEN m.player_seat_id IS NOT NULL AND cp.owner_seat_id = m.player_seat_id THEN 'self'
+				WHEN cp.owner_seat_id IS NOT NULL AND cp.owner_seat_id > 0 THEN 'opponent'
+				ELSE 'unknown'
+			END AS player_side,
+			COALESCE(cp.first_public_zone, ''),
+			cp.turn_number,
+			COALESCE(cp.phase, ''),
+			COALESCE(cp.played_at, '')
+		FROM match_card_plays cp
+		JOIN matches m ON m.id = cp.match_id
+		LEFT JOIN card_catalog cc ON cc.arena_id = cp.card_id
+		WHERE cp.match_id = ?
+		ORDER BY COALESCE(cp.turn_number, 1000000) ASC, COALESCE(cp.played_at, '') ASC, cp.id ASC
+	`, matchID)
+	if err != nil {
+		return nil, fmt.Errorf("list match card plays: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]model.MatchCardPlayRow, 0)
+	for rows.Next() {
+		var row model.MatchCardPlayRow
+		var ownerSeat sql.NullInt64
+		var turnNo sql.NullInt64
+		if err := rows.Scan(
+			&row.ID,
+			&row.InstanceID,
+			&row.CardID,
+			&row.CardName,
+			&ownerSeat,
+			&row.PlayerSide,
+			&row.FirstPublicZone,
+			&turnNo,
+			&row.Phase,
+			&row.PlayedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan match card play row: %w", err)
+		}
+		if ownerSeat.Valid {
+			v := ownerSeat.Int64
+			row.OwnerSeatID = &v
+		}
+		if turnNo.Valid {
+			v := turnNo.Int64
+			row.TurnNumber = &v
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate match card plays: %w", err)
 	}
 
 	return out, nil

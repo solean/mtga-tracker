@@ -19,9 +19,23 @@ export type OpponentObservedCard = {
   cardName?: string;
 };
 
+export type MatchCardPlay = {
+  id: number;
+  instanceId: number;
+  cardId: number;
+  cardName?: string;
+  ownerSeatId?: number;
+  playerSide: "self" | "opponent" | "unknown";
+  firstPublicZone: string;
+  turnNumber?: number;
+  phase?: string;
+  playedAt?: string;
+};
+
 export type MatchDetail = {
   match: Match;
   opponentObservedCards: OpponentObservedCard[];
+  cardPlays: MatchCardPlay[];
 };
 
 export type Overview = {

@@ -118,6 +118,26 @@ CREATE TABLE IF NOT EXISTS match_opponent_card_instances (
 CREATE INDEX IF NOT EXISTS idx_match_opponent_cards_match_id ON match_opponent_card_instances(match_id);
 CREATE INDEX IF NOT EXISTS idx_match_opponent_cards_card_id ON match_opponent_card_instances(card_id);
 
+CREATE TABLE IF NOT EXISTS match_card_plays (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id INTEGER NOT NULL,
+  instance_id INTEGER NOT NULL,
+  card_id INTEGER NOT NULL,
+  owner_seat_id INTEGER,
+  first_public_zone TEXT,
+  turn_number INTEGER,
+  phase TEXT,
+  source TEXT,
+  played_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(match_id, instance_id),
+  FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_card_plays_match_id ON match_card_plays(match_id);
+CREATE INDEX IF NOT EXISTS idx_match_card_plays_card_id ON match_card_plays(card_id);
+CREATE INDEX IF NOT EXISTS idx_match_card_plays_turn_order ON match_card_plays(match_id, turn_number, played_at, id);
+
 CREATE TABLE IF NOT EXISTS draft_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_name TEXT,

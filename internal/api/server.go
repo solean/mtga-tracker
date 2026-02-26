@@ -164,14 +164,34 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	idStr := strings.TrimSpace(strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/"))
-	if idStr == "" {
+	rawPath := strings.TrimSpace(strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/"))
+	if rawPath == "" {
 		writeError(w, http.StatusBadRequest, "missing match id")
 		return
 	}
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	parts := strings.Split(rawPath, "/")
+	if len(parts) > 2 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid match id")
+		return
+	}
+	if len(parts) == 2 {
+		if parts[1] != "timeline" {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+
+		rows, err := s.store.ListMatchCardPlays(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.enrichMatchCardPlayNames(r.Context(), rows)
+		writeJSON(w, http.StatusOK, rows)
 		return
 	}
 
@@ -186,6 +206,7 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.enrichOpponentObservedCardNames(r.Context(), out.OpponentObservedCards)
+	s.enrichMatchCardPlayNames(r.Context(), out.CardPlays)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -441,6 +462,81 @@ func (s *Server) enrichOpponentObservedCardNames(ctx context.Context, cards []mo
 		}
 		if name, ok := resolvedNames[cards[i].CardID]; ok {
 			cards[i].CardName = name
+		}
+	}
+}
+
+func (s *Server) enrichMatchCardPlayNames(ctx context.Context, plays []model.MatchCardPlayRow) {
+	if len(plays) == 0 {
+		return
+	}
+
+	unique := make(map[int64]struct{}, len(plays))
+	missingCardIDs := make([]int64, 0, len(plays))
+	for _, play := range plays {
+		if strings.TrimSpace(play.CardName) != "" {
+			continue
+		}
+		if _, seen := unique[play.CardID]; seen {
+			continue
+		}
+		unique[play.CardID] = struct{}{}
+		missingCardIDs = append(missingCardIDs, play.CardID)
+	}
+	if len(missingCardIDs) == 0 {
+		return
+	}
+
+	resolvedNames, err := s.store.LookupCardNames(ctx, missingCardIDs)
+	if err != nil {
+		log.Printf("card name lookup failed: %v", err)
+		resolvedNames = map[int64]string{}
+	}
+	newlyResolved := make(map[int64]string, len(missingCardIDs))
+
+	unresolved := make([]int64, 0, len(missingCardIDs))
+	for _, cardID := range missingCardIDs {
+		if _, ok := resolvedNames[cardID]; !ok {
+			unresolved = append(unresolved, cardID)
+		}
+	}
+
+	if len(unresolved) > 0 {
+		localNames, localErr := s.fetchCardNamesFromMTGARaw(ctx, unresolved)
+		if localErr != nil {
+			log.Printf("local MTGA card lookup failed: %v", localErr)
+		}
+		for cardID, name := range localNames {
+			resolvedNames[cardID] = name
+			newlyResolved[cardID] = name
+		}
+
+		unresolved = unresolvedCardIDs(missingCardIDs, resolvedNames)
+	}
+
+	if len(unresolved) > 0 {
+		fetchedNames, fetchErr := s.fetchCardNamesFromScryfall(ctx, unresolved)
+		if fetchErr != nil {
+			log.Printf("scryfall card name lookup failed: %v", fetchErr)
+		}
+		for cardID, name := range fetchedNames {
+			resolvedNames[cardID] = name
+			newlyResolved[cardID] = name
+		}
+	}
+
+	if len(newlyResolved) > 0 {
+		if err := s.store.UpsertCardNames(ctx, newlyResolved); err != nil {
+			log.Printf("card name cache upsert failed: %v", err)
+		}
+	}
+
+	for i := range plays {
+		if strings.TrimSpace(plays[i].CardName) != "" {
+			continue
+		}
+		if name, ok := resolvedNames[plays[i].CardID]; ok {
+			plays[i].CardName = name
 		}
 	}
 }

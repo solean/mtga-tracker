@@ -35,9 +35,23 @@ type OpponentObservedCardRow struct {
 	CardName string `json:"cardName,omitempty"`
 }
 
+type MatchCardPlayRow struct {
+	ID              int64  `json:"id"`
+	InstanceID      int64  `json:"instanceId"`
+	CardID          int64  `json:"cardId"`
+	CardName        string `json:"cardName,omitempty"`
+	OwnerSeatID     *int64 `json:"ownerSeatId,omitempty"`
+	PlayerSide      string `json:"playerSide"`
+	FirstPublicZone string `json:"firstPublicZone"`
+	TurnNumber      *int64 `json:"turnNumber,omitempty"`
+	Phase           string `json:"phase,omitempty"`
+	PlayedAt        string `json:"playedAt,omitempty"`
+}
+
 type MatchDetail struct {
 	Match                 MatchRow                  `json:"match"`
 	OpponentObservedCards []OpponentObservedCardRow `json:"opponentObservedCards"`
+	CardPlays             []MatchCardPlayRow        `json:"cardPlays"`
 }
 
 type DeckSummaryRow struct {
