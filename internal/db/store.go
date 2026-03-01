@@ -719,8 +719,26 @@ func (s *Store) ListMatches(ctx context.Context, limit int64, eventName, result 
 			COALESCE(m.ended_at, ''),
 			COALESCE(m.result, 'unknown'),
 			COALESCE(m.win_reason, ''),
-			m.turn_count,
-			m.seconds_count,
+			COALESCE(
+				m.turn_count,
+				(
+					SELECT SUM(game_turns)
+					FROM (
+						SELECT MAX(cp.turn_number) AS game_turns
+						FROM match_card_plays cp
+						WHERE cp.match_id = m.id AND cp.turn_number IS NOT NULL
+						GROUP BY cp.game_number
+					)
+				)
+			),
+			COALESCE(
+				m.seconds_count,
+				CASE
+					WHEN m.started_at IS NOT NULL AND m.ended_at IS NOT NULL THEN
+						CAST(ROUND((julianday(m.ended_at) - julianday(m.started_at)) * 86400.0) AS INTEGER)
+					ELSE NULL
+				END
+			),
 			d.id,
 			d.name
 		FROM matches m
@@ -778,8 +796,26 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 			COALESCE(m.ended_at, ''),
 			COALESCE(m.result, 'unknown'),
 			COALESCE(m.win_reason, ''),
-			m.turn_count,
-			m.seconds_count,
+			COALESCE(
+				m.turn_count,
+				(
+					SELECT SUM(game_turns)
+					FROM (
+						SELECT MAX(cp.turn_number) AS game_turns
+						FROM match_card_plays cp
+						WHERE cp.match_id = m.id AND cp.turn_number IS NOT NULL
+						GROUP BY cp.game_number
+					)
+				)
+			),
+			COALESCE(
+				m.seconds_count,
+				CASE
+					WHEN m.started_at IS NOT NULL AND m.ended_at IS NOT NULL THEN
+						CAST(ROUND((julianday(m.ended_at) - julianday(m.started_at)) * 86400.0) AS INTEGER)
+					ELSE NULL
+				END
+			),
 			d.id,
 			d.name
 		FROM matches m
@@ -946,8 +982,26 @@ func (s *Store) GetDeckDetail(ctx context.Context, deckID int64, matchLimit int6
 			COALESCE(m.ended_at, ''),
 			COALESCE(m.result, 'unknown'),
 			COALESCE(m.win_reason, ''),
-			m.turn_count,
-			m.seconds_count
+			COALESCE(
+				m.turn_count,
+				(
+					SELECT SUM(game_turns)
+					FROM (
+						SELECT MAX(cp.turn_number) AS game_turns
+						FROM match_card_plays cp
+						WHERE cp.match_id = m.id AND cp.turn_number IS NOT NULL
+						GROUP BY cp.game_number
+					)
+				)
+			),
+			COALESCE(
+				m.seconds_count,
+				CASE
+					WHEN m.started_at IS NOT NULL AND m.ended_at IS NOT NULL THEN
+						CAST(ROUND((julianday(m.ended_at) - julianday(m.started_at)) * 86400.0) AS INTEGER)
+					ELSE NULL
+				END
+			)
 		FROM matches m
 		JOIN match_decks md ON md.match_id = m.id
 		WHERE md.deck_id = ?
