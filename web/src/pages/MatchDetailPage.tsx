@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 
 import { ResultPill } from "../components/ResultPill";
 import { api } from "../lib/api";
@@ -13,18 +14,18 @@ type OpponentDeckCard = {
   cardName?: string;
   quantity: number;
 };
+type PreviewCard = {
+  cardId: number;
+  cardName?: string;
+};
 
 type PopoverPlacement = "left" | "right";
 type ManaCostPart = { kind: "symbol"; token: string } | { kind: "separator"; value: string };
 
 const SCRYFALL_SYMBOL_BASE_URL = "https://svgs.scryfall.io/card-symbols";
 
-function cardDisplayName(card: OpponentDeckCard): string {
+function cardDisplayName(card: PreviewCard): string {
   return card.cardName?.trim() || `Card ${card.cardId}`;
-}
-
-function timelineCardName(play: MatchCardPlay): string {
-  return play.cardName?.trim() || `Card ${play.cardId}`;
 }
 
 function timelinePlayerLabel(playerSide: MatchCardPlay["playerSide"]): string {
@@ -53,7 +54,7 @@ function timelinePhaseLabel(phase: string | undefined): string {
     .join(" ");
 }
 
-function cardPreviewQueryKey(card: OpponentDeckCard): [string, number, string] {
+function cardPreviewQueryKey(card: PreviewCard): [string, number, string] {
   return ["card-preview", card.cardId, cardDisplayName(card)];
 }
 
@@ -148,9 +149,10 @@ function ManaCostDisplay({ manaCost }: { manaCost: string }) {
   );
 }
 
-function OpponentCardPreviewName({ card }: { card: OpponentDeckCard }) {
+function CardPreviewName({ card }: { card: PreviewCard }) {
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPlacement, setPopoverPlacement] = useState<PopoverPlacement>("right");
+  const [popoverStyle, setPopoverStyle] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const name = cardDisplayName(card);
   const fallbackHref = card.cardName?.trim()
@@ -169,20 +171,31 @@ function OpponentCardPreviewName({ card }: { card: OpponentDeckCard }) {
 
     const rect = wrapper.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
     const popoverWidth = window.matchMedia("(max-width: 640px)").matches ? 195 : 245;
+    const popoverHeight = window.matchMedia("(max-width: 640px)").matches ? 272 : 341;
     const horizontalGap = 14;
+    const verticalMargin = 10;
     const availableRight = viewportWidth - rect.right;
     const availableLeft = rect.left;
+    let placement: PopoverPlacement;
 
     if (availableRight >= popoverWidth + horizontalGap) {
-      setPopoverPlacement("right");
-      return;
+      placement = "right";
+    } else if (availableLeft >= popoverWidth + horizontalGap) {
+      placement = "left";
+    } else {
+      placement = availableRight >= availableLeft ? "right" : "left";
     }
-    if (availableLeft >= popoverWidth + horizontalGap) {
-      setPopoverPlacement("left");
-      return;
-    }
-    setPopoverPlacement(availableRight >= availableLeft ? "right" : "left");
+
+    const left =
+      placement === "right" ? rect.right + horizontalGap : rect.left - popoverWidth - horizontalGap;
+    const maxTop = Math.max(verticalMargin, viewportHeight - popoverHeight - verticalMargin);
+    const centeredTop = rect.top + rect.height / 2 - popoverHeight / 2;
+    const top = Math.max(verticalMargin, Math.min(centeredTop, maxTop));
+
+    setPopoverPlacement(placement);
+    setPopoverStyle({ top, left });
   };
 
   const openPopover = () => {
@@ -204,8 +217,13 @@ function OpponentCardPreviewName({ card }: { card: OpponentDeckCard }) {
       return;
     }
     const onResize = () => updatePopoverPlacement();
+    const onScroll = () => updatePopoverPlacement();
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+    };
   }, [isOpen]);
 
   return (
@@ -233,17 +251,24 @@ function OpponentCardPreviewName({ card }: { card: OpponentDeckCard }) {
         <code>{name}</code>
       </a>
 
-      {isOpen ? (
-        <div className="card-preview-popover" role="tooltip">
-          {previewQuery.isLoading ? (
-            <p className="card-preview-status">Loading preview…</p>
-          ) : previewQuery.data ? (
-            <img src={previewQuery.data.imageUrl} alt={previewQuery.data.name} loading="lazy" />
-          ) : (
-            <p className="card-preview-status">Preview unavailable.</p>
-          )}
-        </div>
-      ) : null}
+      {isOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="card-preview-popover card-preview-popover-floating"
+              style={{ top: `${popoverStyle.top}px`, left: `${popoverStyle.left}px` }}
+              role="tooltip"
+            >
+              {previewQuery.isLoading ? (
+                <p className="card-preview-status">Loading preview…</p>
+              ) : previewQuery.data ? (
+                <img src={previewQuery.data.imageUrl} alt={previewQuery.data.name} loading="lazy" />
+              ) : (
+                <p className="card-preview-status">Preview unavailable.</p>
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -414,7 +439,7 @@ export function MatchDetailPage() {
                           <td>{play.turnNumber ?? "-"}</td>
                           <td>{timelinePlayerLabel(play.playerSide)}</td>
                           <td>
-                            <code>{timelineCardName(play)}</code>
+                            <CardPreviewName card={{ cardId: play.cardId, cardName: play.cardName }} />
                           </td>
                           <td>{timelineZoneLabel(play.firstPublicZone)}</td>
                           <td>{timelinePhaseLabel(play.phase)}</td>
@@ -452,7 +477,7 @@ export function MatchDetailPage() {
                   <tr key={card.cardId}>
                     <td>{card.quantity}</td>
                     <td>
-                      <OpponentCardPreviewName card={card} />
+                      <CardPreviewName card={card} />
                     </td>
                     <td>
                       <span className="deck-card-mana">
