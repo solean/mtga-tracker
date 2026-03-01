@@ -378,6 +378,7 @@ function DeckDetailSkeleton() {
                 <th>Result</th>
                 <th>Turns</th>
                 <th>Duration</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody>
@@ -400,6 +401,9 @@ function DeckDetailSkeleton() {
                   </td>
                   <td>
                     <span className="skeleton-line skeleton-table-line" />
+                  </td>
+                  <td>
+                    <span className="skeleton-line skeleton-table-line is-short" />
                   </td>
                 </tr>
               ))}
@@ -672,6 +676,7 @@ export function DeckDetailPage() {
                 <th>Result</th>
                 <th>Turns</th>
                 <th>Duration</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody>
@@ -685,6 +690,11 @@ export function DeckDetailPage() {
                   </td>
                   <td>{match.turnCount ?? "-"}</td>
                   <td>{formatDuration(match.secondsCount ?? undefined)}</td>
+                  <td>
+                    <Link className="text-link" to={`/matches/${match.id}`}>
+                      View
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
