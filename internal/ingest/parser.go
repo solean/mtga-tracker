@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cschnabel/mtgdata/internal/db"
@@ -29,11 +30,39 @@ var (
 )
 
 type Parser struct {
-	store *db.Store
+	store      *db.Store
+	stateMu    sync.Mutex
+	stateByLog map[string]*parseState
 }
 
 func NewParser(store *db.Store) *Parser {
-	return &Parser{store: store}
+	return &Parser{
+		store:      store,
+		stateByLog: make(map[string]*parseState),
+	}
+}
+
+func (p *Parser) stateForLog(logPath string, reset bool) *parseState {
+	key := strings.TrimSpace(logPath)
+	if key == "" {
+		return &parseState{}
+	}
+
+	p.stateMu.Lock()
+	defer p.stateMu.Unlock()
+
+	if reset {
+		state := &parseState{}
+		p.stateByLog[key] = state
+		return state
+	}
+
+	state, ok := p.stateByLog[key]
+	if !ok || state == nil {
+		state = &parseState{}
+		p.stateByLog[key] = state
+	}
+	return state
 }
 
 type parseState struct {
@@ -291,10 +320,9 @@ type greGameObject struct {
 func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (model.ParseStats, error) {
 	stats := model.ParseStats{LogPath: logPath, StartedAt: time.Now().UTC()}
 
-	state := parseState{}
-
 	startOffset := int64(0)
 	startLine := int64(0)
+	resetState := !resume
 	if resume {
 		ingestState, err := p.store.GetIngestState(ctx, logPath)
 		if err != nil {
@@ -303,6 +331,9 @@ func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (mo
 		if ingestState.Found {
 			startOffset = ingestState.Offset
 			startLine = ingestState.LineNo
+			if startOffset == 0 && startLine == 0 {
+				resetState = true
+			}
 		}
 	}
 
@@ -322,7 +353,10 @@ func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (mo
 	if startOffset > info.Size() {
 		startOffset = 0
 		startLine = 0
+		resetState = true
 	}
+
+	state := p.stateForLog(logPath, resetState)
 
 	if startOffset > 0 {
 		if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
@@ -377,7 +411,7 @@ func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (mo
 		linesSinceCommit++
 
 		trimmed := strings.TrimRight(line, "\r\n")
-		if err := p.processLine(ctx, tx, &stats, &state, logPath, lineNo, lineStartOffset, trimmed); err != nil {
+		if err := p.processLine(ctx, tx, &stats, state, logPath, lineNo, lineStartOffset, trimmed); err != nil {
 			return stats, fmt.Errorf("process line %d: %w", lineNo, err)
 		}
 
