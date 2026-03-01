@@ -386,44 +386,50 @@ func (s *Store) UpdateMatchOpponent(ctx context.Context, tx *sql.Tx, arenaMatchI
 	return nil
 }
 
-func (s *Store) UpsertMatchOpponentCardInstance(ctx context.Context, tx *sql.Tx, arenaMatchID string, instanceID, cardID int64, firstSeenAt, source string) error {
+func (s *Store) UpsertMatchOpponentCardInstance(ctx context.Context, tx *sql.Tx, arenaMatchID string, gameNumber, instanceID, cardID int64, firstSeenAt, source string) error {
 	arenaMatchID = strings.TrimSpace(arenaMatchID)
 	if arenaMatchID == "" || instanceID <= 0 || cardID <= 0 {
 		return nil
 	}
+	if gameNumber <= 0 {
+		gameNumber = 1
+	}
 
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO match_opponent_card_instances (
-			match_id, instance_id, card_id, source, first_seen_at, created_at
+			match_id, game_number, instance_id, card_id, source, first_seen_at, created_at
 		)
 		SELECT
-			m.id, ?, ?, ?, ?, ?
+			m.id, ?, ?, ?, ?, ?, ?
 		FROM matches m
 		WHERE m.arena_match_id = ?
-		ON CONFLICT(match_id, instance_id) DO NOTHING
-	`, instanceID, cardID, nullIfEmpty(source), nullIfEmpty(normalizeTS(firstSeenAt)), nowUTC(), arenaMatchID)
+		ON CONFLICT(match_id, game_number, instance_id) DO NOTHING
+	`, gameNumber, instanceID, cardID, nullIfEmpty(source), nullIfEmpty(normalizeTS(firstSeenAt)), nowUTC(), arenaMatchID)
 	if err != nil {
 		return fmt.Errorf("upsert match opponent card instance: %w", err)
 	}
 	return nil
 }
 
-func (s *Store) UpsertMatchCardPlay(ctx context.Context, tx *sql.Tx, arenaMatchID string, instanceID, cardID, ownerSeatID, turnNumber int64, phase, firstPublicZone, playedAt, source string) error {
+func (s *Store) UpsertMatchCardPlay(ctx context.Context, tx *sql.Tx, arenaMatchID string, gameNumber, instanceID, cardID, ownerSeatID, turnNumber int64, phase, firstPublicZone, playedAt, source string) error {
 	arenaMatchID = strings.TrimSpace(arenaMatchID)
 	firstPublicZone = strings.TrimSpace(firstPublicZone)
 	if arenaMatchID == "" || instanceID <= 0 || cardID <= 0 || firstPublicZone == "" {
 		return nil
 	}
+	if gameNumber <= 0 {
+		gameNumber = 1
+	}
 
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO match_card_plays (
-			match_id, instance_id, card_id, owner_seat_id, first_public_zone, turn_number, phase, source, played_at, created_at
+			match_id, game_number, instance_id, card_id, owner_seat_id, first_public_zone, turn_number, phase, source, played_at, created_at
 		)
 		SELECT
-			m.id, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			m.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		FROM matches m
 		WHERE m.arena_match_id = ?
-		ON CONFLICT(match_id, instance_id) DO UPDATE SET
+		ON CONFLICT(match_id, game_number, instance_id) DO UPDATE SET
 			owner_seat_id = COALESCE(match_card_plays.owner_seat_id, excluded.owner_seat_id),
 			turn_number = COALESCE(match_card_plays.turn_number, excluded.turn_number),
 			phase = COALESCE(match_card_plays.phase, excluded.phase),
@@ -435,7 +441,7 @@ func (s *Store) UpsertMatchCardPlay(ctx context.Context, tx *sql.Tx, arenaMatchI
 			OR match_card_plays.phase IS NULL
 			OR match_card_plays.source IS NULL
 			OR match_card_plays.played_at IS NULL
-	`, instanceID, cardID, nullableInt(ownerSeatID), firstPublicZone, nullableInt(turnNumber), nullIfEmpty(phase), nullIfEmpty(source), nullIfEmpty(normalizeTS(playedAt)), nowUTC(), arenaMatchID)
+	`, gameNumber, instanceID, cardID, nullableInt(ownerSeatID), firstPublicZone, nullableInt(turnNumber), nullIfEmpty(phase), nullIfEmpty(source), nullIfEmpty(normalizeTS(playedAt)), nowUTC(), arenaMatchID)
 	if err != nil {
 		return fmt.Errorf("upsert match card play: %w", err)
 	}
@@ -803,15 +809,23 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
+		WITH per_game AS (
+			SELECT
+				oc.card_id,
+				oc.game_number,
+				COUNT(*) AS quantity_in_game
+			FROM match_opponent_card_instances oc
+			WHERE oc.match_id = ?
+			GROUP BY oc.card_id, oc.game_number
+		)
 		SELECT
-			oc.card_id,
-			COUNT(*) AS quantity,
+			pg.card_id,
+			MAX(pg.quantity_in_game) AS quantity,
 			COALESCE(cc.name, '')
-		FROM match_opponent_card_instances oc
-		LEFT JOIN card_catalog cc ON cc.arena_id = oc.card_id
-		WHERE oc.match_id = ?
-		GROUP BY oc.card_id, cc.name
-		ORDER BY quantity DESC, cc.name ASC, oc.card_id ASC
+		FROM per_game pg
+		LEFT JOIN card_catalog cc ON cc.arena_id = pg.card_id
+		GROUP BY pg.card_id, cc.name
+		ORDER BY quantity DESC, cc.name ASC, pg.card_id ASC
 	`, matchID)
 	if err != nil {
 		return out, fmt.Errorf("get observed opponent cards: %w", err)
@@ -1117,6 +1131,7 @@ func (s *Store) ListMatchCardPlays(ctx context.Context, matchID int64) ([]model.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			cp.id,
+			cp.game_number,
 			cp.instance_id,
 			cp.card_id,
 			COALESCE(cc.name, ''),
@@ -1134,7 +1149,7 @@ func (s *Store) ListMatchCardPlays(ctx context.Context, matchID int64) ([]model.
 		JOIN matches m ON m.id = cp.match_id
 		LEFT JOIN card_catalog cc ON cc.arena_id = cp.card_id
 		WHERE cp.match_id = ?
-		ORDER BY COALESCE(cp.turn_number, 1000000) ASC, COALESCE(cp.played_at, '') ASC, cp.id ASC
+		ORDER BY cp.game_number ASC, COALESCE(cp.turn_number, 1000000) ASC, COALESCE(cp.played_at, '') ASC, cp.id ASC
 	`, matchID)
 	if err != nil {
 		return nil, fmt.Errorf("list match card plays: %w", err)
@@ -1144,10 +1159,12 @@ func (s *Store) ListMatchCardPlays(ctx context.Context, matchID int64) ([]model.
 	out := make([]model.MatchCardPlayRow, 0)
 	for rows.Next() {
 		var row model.MatchCardPlayRow
+		var gameNo sql.NullInt64
 		var ownerSeat sql.NullInt64
 		var turnNo sql.NullInt64
 		if err := rows.Scan(
 			&row.ID,
+			&gameNo,
 			&row.InstanceID,
 			&row.CardID,
 			&row.CardName,
@@ -1159,6 +1176,10 @@ func (s *Store) ListMatchCardPlays(ctx context.Context, matchID int64) ([]model.
 			&row.PlayedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan match card play row: %w", err)
+		}
+		if gameNo.Valid {
+			v := gameNo.Int64
+			row.GameNumber = &v
 		}
 		if ownerSeat.Valid {
 			v := ownerSeat.Int64

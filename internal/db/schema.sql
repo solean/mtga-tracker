@@ -106,12 +106,13 @@ CREATE TABLE IF NOT EXISTS match_decks (
 CREATE TABLE IF NOT EXISTS match_opponent_card_instances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   match_id INTEGER NOT NULL,
+  game_number INTEGER NOT NULL DEFAULT 1,
   instance_id INTEGER NOT NULL,
   card_id INTEGER NOT NULL,
   source TEXT,
   first_seen_at TEXT,
   created_at TEXT NOT NULL,
-  UNIQUE(match_id, instance_id),
+  UNIQUE(match_id, game_number, instance_id),
   FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
 );
 
@@ -121,6 +122,7 @@ CREATE INDEX IF NOT EXISTS idx_match_opponent_cards_card_id ON match_opponent_ca
 CREATE TABLE IF NOT EXISTS match_card_plays (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   match_id INTEGER NOT NULL,
+  game_number INTEGER NOT NULL DEFAULT 1,
   instance_id INTEGER NOT NULL,
   card_id INTEGER NOT NULL,
   owner_seat_id INTEGER,
@@ -130,7 +132,7 @@ CREATE TABLE IF NOT EXISTS match_card_plays (
   source TEXT,
   played_at TEXT,
   created_at TEXT NOT NULL,
-  UNIQUE(match_id, instance_id),
+  UNIQUE(match_id, game_number, instance_id),
   FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
 );
 

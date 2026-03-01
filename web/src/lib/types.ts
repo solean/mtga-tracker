@@ -21,6 +21,7 @@ export type OpponentObservedCard = {
 
 export type MatchCardPlay = {
   id: number;
+  gameNumber?: number;
   instanceId: number;
   cardId: number;
   cardName?: string;

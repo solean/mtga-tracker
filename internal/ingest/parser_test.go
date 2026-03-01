@@ -80,6 +80,63 @@ func TestTailParsePersistsStateAcrossResumeCalls(t *testing.T) {
 	}
 }
 
+func TestBestOfThreeTimelineAndOpponentCountsAreGameAware(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test-bo3.db")
+	logPath := filepath.Join(tmpDir, "Player.log")
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+
+	parser := NewParser(db.NewStore(database))
+
+	lines := []string{
+		`{"clientId":"self-user","screenName":"Self"}`,
+		`{"timestamp":"1772330782273","matchGameRoomStateChangedEvent":{"gameRoomInfo":{"gameRoomConfig":{"reservedPlayers":[{"userId":"opp-user","playerName":"Opp","systemSeatId":1,"teamId":1,"eventId":"Traditional_Ladder"},{"userId":"self-user","playerName":"Self","systemSeatId":2,"teamId":2,"eventId":"Traditional_Ladder"}],"matchId":"match-bo3"},"stateType":"MatchGameRoomStateType_Playing"}}}`,
+		`{"timestamp":"1772330782309","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[2],"gameStateMessage":{"gameInfo":{"matchID":"match-bo3","gameNumber":1},"turnInfo":{"phase":"Phase_Main1","turnNumber":2},"zones":[{"zoneId":28,"type":"ZoneType_Battlefield"}],"gameObjects":[{"instanceId":101,"grpId":5001,"type":"GameObjectType_Card","zoneId":28,"visibility":"Visibility_Public","ownerSeatId":1}]}}]}}`,
+		`{"timestamp":"1772330782310","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[2],"gameStateMessage":{"gameInfo":{"matchID":"match-bo3","gameNumber":2},"turnInfo":{"phase":"Phase_Main1","turnNumber":1},"zones":[{"zoneId":28,"type":"ZoneType_Battlefield"}],"gameObjects":[{"instanceId":101,"grpId":5001,"type":"GameObjectType_Card","zoneId":28,"visibility":"Visibility_Public","ownerSeatId":1}]}}]}}`,
+	}
+
+	if err := writeLogLines(logPath, lines, false); err != nil {
+		t.Fatalf("write log lines: %v", err)
+	}
+
+	if _, err := parser.ParseFile(ctx, logPath, false); err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+
+	store := db.NewStore(database)
+	detail, err := store.GetMatchDetail(ctx, 1)
+	if err != nil {
+		t.Fatalf("get match detail: %v", err)
+	}
+
+	if len(detail.CardPlays) != 2 {
+		t.Fatalf("expected 2 card plays, got %d", len(detail.CardPlays))
+	}
+	if detail.CardPlays[0].GameNumber == nil || *detail.CardPlays[0].GameNumber != 1 {
+		t.Fatalf("expected first card play in game 1, got %#v", detail.CardPlays[0].GameNumber)
+	}
+	if detail.CardPlays[1].GameNumber == nil || *detail.CardPlays[1].GameNumber != 2 {
+		t.Fatalf("expected second card play in game 2, got %#v", detail.CardPlays[1].GameNumber)
+	}
+
+	if len(detail.OpponentObservedCards) != 1 {
+		t.Fatalf("expected 1 observed opponent card, got %d", len(detail.OpponentObservedCards))
+	}
+	if detail.OpponentObservedCards[0].Quantity != 1 {
+		t.Fatalf("expected observed quantity 1 (max per game), got %d", detail.OpponentObservedCards[0].Quantity)
+	}
+}
+
 func writeLogLines(path string, lines []string, appendMode bool) error {
 	if len(lines) == 0 {
 		return nil

@@ -66,13 +66,14 @@ func (p *Parser) stateForLog(logPath string, reset bool) *parseState {
 }
 
 type parseState struct {
-	personaID       string
-	playerName      string
-	activeMatchID   string
-	selfSeatByMatch map[string]int64
-	turnByMatch     map[string]int64
-	phaseByMatch    map[string]string
-	zoneTypeByMatch map[string]map[int64]string
+	personaID         string
+	playerName        string
+	activeMatchID     string
+	selfSeatByMatch   map[string]int64
+	turnByMatch       map[string]int64
+	phaseByMatch      map[string]string
+	zoneTypeByMatch   map[string]map[int64]string
+	gameNumberByMatch map[string]int64
 }
 
 func (s *parseState) rememberSelfSeat(matchID string, seatID int64) {
@@ -160,6 +161,25 @@ func (s *parseState) zoneType(matchID string, zoneID int64) string {
 		return ""
 	}
 	return byZone[zoneID]
+}
+
+func (s *parseState) rememberGameNumber(matchID string, gameNumber int64) {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || gameNumber <= 0 {
+		return
+	}
+	if s.gameNumberByMatch == nil {
+		s.gameNumberByMatch = make(map[string]int64)
+	}
+	s.gameNumberByMatch[matchID] = gameNumber
+}
+
+func (s *parseState) gameNumber(matchID string) int64 {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || s.gameNumberByMatch == nil {
+		return 0
+	}
+	return s.gameNumberByMatch[matchID]
 }
 
 type outgoingEnvelope struct {
@@ -290,7 +310,8 @@ type greMessage struct {
 
 type greGameStateMsg struct {
 	GameInfo *struct {
-		MatchID string `json:"matchID"`
+		MatchID    string `json:"matchID"`
+		GameNumber int64  `json:"gameNumber"`
 	} `json:"gameInfo"`
 	TurnInfo    *greTurnInfo    `json:"turnInfo"`
 	Zones       []greZone       `json:"zones"`
@@ -683,8 +704,15 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 		}
 
 		matchID := strings.TrimSpace(state.activeMatchID)
+		if msg.GameStateMessage.GameInfo != nil {
+			if strings.TrimSpace(msg.GameStateMessage.GameInfo.MatchID) != "" {
+				matchID = strings.TrimSpace(msg.GameStateMessage.GameInfo.MatchID)
+			}
+			if matchID != "" && msg.GameStateMessage.GameInfo.GameNumber > 0 {
+				state.rememberGameNumber(matchID, msg.GameStateMessage.GameInfo.GameNumber)
+			}
+		}
 		if msg.GameStateMessage.GameInfo != nil && strings.TrimSpace(msg.GameStateMessage.GameInfo.MatchID) != "" {
-			matchID = strings.TrimSpace(msg.GameStateMessage.GameInfo.MatchID)
 			selfSeat := state.selfSeat(matchID)
 			if selfSeat <= 0 && len(msg.SystemSeatIDs) == 1 && msg.SystemSeatIDs[0] > 0 {
 				selfSeat = msg.SystemSeatIDs[0]
@@ -714,6 +742,10 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 		}
 		turnNumber := state.turn(matchID)
 		phase := state.phase(matchID)
+		gameNumber := state.gameNumber(matchID)
+		if gameNumber <= 0 {
+			gameNumber = 1
+		}
 
 		for _, obj := range msg.GameStateMessage.GameObjects {
 			if obj.InstanceID <= 0 || obj.GrpID <= 0 || obj.OwnerSeatID <= 0 {
@@ -732,7 +764,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 					zoneType = fallbackGREZoneType(obj.ZoneID)
 				}
 				if isTimelinePlayableZone(zoneType) {
-					if err := p.store.UpsertMatchCardPlay(ctx, tx, matchID, obj.InstanceID, obj.GrpID, obj.OwnerSeatID, turnNumber, phase, zoneType, eventTS, "gre_public_gameobject"); err != nil {
+					if err := p.store.UpsertMatchCardPlay(ctx, tx, matchID, gameNumber, obj.InstanceID, obj.GrpID, obj.OwnerSeatID, turnNumber, phase, zoneType, eventTS, "gre_public_gameobject"); err != nil {
 						return err
 					}
 				}
@@ -742,7 +774,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 				continue
 			}
 
-			if err := p.store.UpsertMatchOpponentCardInstance(ctx, tx, matchID, obj.InstanceID, obj.GrpID, eventTS, "gre_public_gameobject"); err != nil {
+			if err := p.store.UpsertMatchOpponentCardInstance(ctx, tx, matchID, gameNumber, obj.InstanceID, obj.GrpID, eventTS, "gre_public_gameobject"); err != nil {
 				return err
 			}
 		}

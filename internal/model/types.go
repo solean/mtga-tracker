@@ -37,6 +37,7 @@ type OpponentObservedCardRow struct {
 
 type MatchCardPlayRow struct {
 	ID              int64  `json:"id"`
+	GameNumber      *int64 `json:"gameNumber,omitempty"`
 	InstanceID      int64  `json:"instanceId"`
 	CardID          int64  `json:"cardId"`
 	CardName        string `json:"cardName,omitempty"`

@@ -295,6 +295,21 @@ export function MatchDetailPage() {
   }, [opponentCards, opponentCardPreviewQueries]);
 
   const isOpponentCardMetadataLoading = opponentCardPreviewQueries.some((previewQuery) => previewQuery.isPending);
+  const timelineRows = timelineQuery.data ?? query.data?.cardPlays ?? [];
+  const timelineGroups = useMemo(() => {
+    const byGame = new Map<number, MatchCardPlay[]>();
+    for (const play of timelineRows) {
+      const gameNumber = play.gameNumber && play.gameNumber > 0 ? play.gameNumber : 1;
+      const rows = byGame.get(gameNumber);
+      if (rows) {
+        rows.push(play);
+      } else {
+        byGame.set(gameNumber, [play]);
+      }
+    }
+
+    return Array.from(byGame.entries()).sort((a, b) => a[0] - b[0]);
+  }, [timelineRows]);
 
   if (!isValidMatchID) return <p className="state error">Invalid match id.</p>;
   if (query.isLoading) return <p className="state">Loading match…</p>;
@@ -302,7 +317,6 @@ export function MatchDetailPage() {
   if (!query.data) return <p className="state">Match not found.</p>;
 
   const { match } = query.data;
-  const timelineRows = timelineQuery.data ?? query.data.cardPlays ?? [];
 
   return (
     <div className="stack-lg">
@@ -366,42 +380,52 @@ export function MatchDetailPage() {
       <section className="panel">
         <div className="panel-head">
           <h3>Card Play Timeline</h3>
-          <p>{timelineRows.length} observed plays</p>
+          <p>
+            {timelineRows.length} observed plays
+            {timelineRows.length > 0 ? ` across ${timelineGroups.length} game${timelineGroups.length === 1 ? "" : "s"}` : ""}
+          </p>
         </div>
         {timelineQuery.error ? (
           <p className="state error">{(timelineQuery.error as Error).message}</p>
         ) : timelineRows.length === 0 ? (
           <p className="state">No observed card plays for this match yet.</p>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Turn</th>
-                  <th>Player</th>
-                  <th>Card</th>
-                  <th>Zone</th>
-                  <th>Phase</th>
-                  <th>Seen At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {timelineRows.map((play, index) => (
-                  <tr key={play.id}>
-                    <td>{index + 1}</td>
-                    <td>{play.turnNumber ?? "-"}</td>
-                    <td>{timelinePlayerLabel(play.playerSide)}</td>
-                    <td>
-                      <code>{timelineCardName(play)}</code>
-                    </td>
-                    <td>{timelineZoneLabel(play.firstPublicZone)}</td>
-                    <td>{timelinePhaseLabel(play.phase)}</td>
-                    <td>{formatDateTime(play.playedAt ?? "")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="stack-md">
+            {timelineGroups.map(([gameNumber, plays]) => (
+              <div key={gameNumber} className="stack-md">
+                <h4>Game {gameNumber}</h4>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Turn</th>
+                        <th>Player</th>
+                        <th>Card</th>
+                        <th>Zone</th>
+                        <th>Phase</th>
+                        <th>Seen At</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plays.map((play, index) => (
+                        <tr key={play.id}>
+                          <td>{index + 1}</td>
+                          <td>{play.turnNumber ?? "-"}</td>
+                          <td>{timelinePlayerLabel(play.playerSide)}</td>
+                          <td>
+                            <code>{timelineCardName(play)}</code>
+                          </td>
+                          <td>{timelineZoneLabel(play.firstPublicZone)}</td>
+                          <td>{timelinePhaseLabel(play.phase)}</td>
+                          <td>{formatDateTime(play.playedAt ?? "")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
