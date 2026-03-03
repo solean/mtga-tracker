@@ -172,8 +172,8 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
     const rect = wrapper.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-    const popoverWidth = window.matchMedia("(max-width: 640px)").matches ? 195 : 245;
-    const popoverHeight = window.matchMedia("(max-width: 640px)").matches ? 272 : 341;
+    const popoverWidth = 336;
+    const popoverHeight = 468;
     const horizontalGap = 14;
     const verticalMargin = 10;
     const availableRight = viewportWidth - rect.right;

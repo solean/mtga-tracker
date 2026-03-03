@@ -114,9 +114,8 @@ function DraftCardPreviewName({ card }: { card: DraftPickCard }) {
 
     const rect = wrapper.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-    const isMobile = window.matchMedia("(max-width: 640px)").matches;
-    const popoverWidth = isMobile ? 195 : 245;
-    const estimatedPopoverHeight = isMobile ? 285 : 355;
+    const popoverWidth = 336;
+    const estimatedPopoverHeight = 468;
     const horizontalGap = 14;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
     const availableRight = viewportWidth - rect.right;

@@ -230,7 +230,7 @@ function DeckCardPreviewName({ card, placementMode = "auto" }: { card: DeckListC
 
     const rect = wrapper.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-    const popoverWidth = window.matchMedia("(max-width: 640px)").matches ? 195 : 245;
+    const popoverWidth = 336;
     const horizontalGap = 14;
     const availableRight = viewportWidth - rect.right;
     const availableLeft = rect.left;

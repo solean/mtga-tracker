@@ -906,7 +906,8 @@ h1 {
   top: 50%;
   left: calc(100% + 0.55rem);
   transform: translateY(-50%);
-  width: 245px;
+  width: 336px;
+  height: 468px;
   border: 1px solid var(--line-strong);
   border-radius: 13px;
   padding: 0;
@@ -932,7 +933,8 @@ h1 {
 
 .card-preview-popover img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
   border-radius: 9px;
   background: var(--popover-card-bg);
 }
@@ -1081,6 +1083,7 @@ h1 {
   }
 
   .card-preview-popover {
-    width: 195px;
+    width: 336px;
+    height: 468px;
   }
 }
