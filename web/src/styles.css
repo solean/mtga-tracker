@@ -294,10 +294,17 @@ h1 {
    APP SHELL & FRAME
    ══════════════════════════════════════════ */
 
+.plasma-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
 .app-shell {
   width: min(1280px, 94vw);
   margin: clamp(1.1rem, 3vw, 2.6rem) auto clamp(1.75rem, 3vw, 3rem);
   position: relative;
+  z-index: 1;
 }
 
 .app-shell::before {

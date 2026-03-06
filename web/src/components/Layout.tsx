@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigationType } from "react-router-dom";
 
+import { Plasma } from "./Plasma";
+
 const tabs = [
   { to: "/", label: "Overview" },
   { to: "/matches", label: "Matches" },
@@ -83,13 +85,24 @@ export function Layout() {
   }, [location.key, navigationType]);
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
+    <>
+      <div className="plasma-bg" aria-hidden="true">
+        <Plasma
+          color="#00d4ff"
+          speed={0.35}
+          direction="forward"
+          scale={1.4}
+          opacity={0.18}
+          mouseInteractive={false}
+        />
+      </div>
+      <div className="app-shell">
+        <header className="topbar">
         <div className="title-block">
-          <p className="kicker">Tactical Data System</p>
+          <p className="kicker">Magic: The Gathering Arena</p>
           <div className="title-row">
             <span className="title-sigil" aria-hidden="true" />
-            <h1>MTGData Control Room</h1>
+            <h1>MTGA Data Tracker</h1>
           </div>
         </div>
         <div className="topbar-controls">
@@ -120,9 +133,10 @@ export function Layout() {
           </button>
         </div>
       </header>
-      <main id="main-content" className="content" tabIndex={-1}>
-        <Outlet />
-      </main>
-    </div>
+        <main id="main-content" className="content" tabIndex={-1}>
+          <Outlet />
+        </main>
+      </div>
+    </>
   );
 }
