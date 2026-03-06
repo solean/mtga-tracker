@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, pct } from "../lib/format";
 
@@ -14,9 +15,9 @@ export function DraftsPage() {
     queryFn: () => api.decks("draft"),
   });
 
-  if (draftsQuery.isLoading || draftDecksQuery.isLoading) return <p className="state">Loading drafts…</p>;
-  if (draftsQuery.error) return <p className="state error">{(draftsQuery.error as Error).message}</p>;
-  if (draftDecksQuery.error) return <p className="state error">{(draftDecksQuery.error as Error).message}</p>;
+  if (draftsQuery.isLoading || draftDecksQuery.isLoading) return <StatusMessage>Loading drafts…</StatusMessage>;
+  if (draftsQuery.error) return <StatusMessage tone="error">{(draftsQuery.error as Error).message}</StatusMessage>;
+  if (draftDecksQuery.error) return <StatusMessage tone="error">{(draftDecksQuery.error as Error).message}</StatusMessage>;
 
   const drafts = draftsQuery.data ?? [];
   const draftDecks = draftDecksQuery.data ?? [];

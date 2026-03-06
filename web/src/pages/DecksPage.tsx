@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { pct } from "../lib/format";
 
@@ -10,8 +11,8 @@ export function DecksPage() {
     queryFn: () => api.decks(),
   });
 
-  if (isLoading) return <p className="state">Loading decks…</p>;
-  if (error) return <p className="state error">{(error as Error).message}</p>;
+  if (isLoading) return <StatusMessage>Loading decks…</StatusMessage>;
+  if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
 
   return (
     <section className="panel">

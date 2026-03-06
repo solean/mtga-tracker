@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { fetchCardPreview } from "../lib/scryfall";
 import type { DraftPickCard } from "../lib/types";
@@ -243,9 +244,9 @@ export function DraftDetailPage() {
     return map;
   }, [picksQuery.data]);
 
-  if (!Number.isFinite(draftId)) return <p className="state error">Invalid draft id.</p>;
-  if (picksQuery.isLoading) return <p className="state">Loading draft picks…</p>;
-  if (picksQuery.error) return <p className="state error">{(picksQuery.error as Error).message}</p>;
+  if (!Number.isFinite(draftId)) return <StatusMessage tone="error">Invalid draft id.</StatusMessage>;
+  if (picksQuery.isLoading) return <StatusMessage>Loading draft picks…</StatusMessage>;
+  if (picksQuery.error) return <StatusMessage tone="error">{(picksQuery.error as Error).message}</StatusMessage>;
 
   return (
     <div className="stack-lg">

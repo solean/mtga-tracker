@@ -4,6 +4,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 
 import { ResultPill } from "../components/ResultPill";
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import { fetchCardPreview } from "../lib/scryfall";
@@ -336,10 +337,10 @@ export function MatchDetailPage() {
     return Array.from(byGame.entries()).sort((a, b) => a[0] - b[0]);
   }, [timelineRows]);
 
-  if (!isValidMatchID) return <p className="state error">Invalid match id.</p>;
-  if (query.isLoading) return <p className="state">Loading match…</p>;
-  if (query.error) return <p className="state error">{(query.error as Error).message}</p>;
-  if (!query.data) return <p className="state">Match not found.</p>;
+  if (!isValidMatchID) return <StatusMessage tone="error">Invalid match id.</StatusMessage>;
+  if (query.isLoading) return <StatusMessage>Loading match…</StatusMessage>;
+  if (query.error) return <StatusMessage tone="error">{(query.error as Error).message}</StatusMessage>;
+  if (!query.data) return <StatusMessage>Match not found.</StatusMessage>;
 
   const { match } = query.data;
 
@@ -411,9 +412,9 @@ export function MatchDetailPage() {
           </p>
         </div>
         {timelineQuery.error ? (
-          <p className="state error">{(timelineQuery.error as Error).message}</p>
+          <StatusMessage tone="error">{(timelineQuery.error as Error).message}</StatusMessage>
         ) : timelineRows.length === 0 ? (
-          <p className="state">No observed card plays for this match yet.</p>
+          <StatusMessage>No observed card plays for this match yet.</StatusMessage>
         ) : (
           <div className="stack-md">
             {timelineGroups.map(([gameNumber, plays]) => (
@@ -461,7 +462,7 @@ export function MatchDetailPage() {
           <p>{opponentObservedCards.length} unique cards</p>
         </div>
         {opponentObservedCards.length === 0 ? (
-          <p className="state">No public opponent cards observed for this match yet.</p>
+          <StatusMessage>No public opponent cards observed for this match yet.</StatusMessage>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
@@ -490,7 +491,7 @@ export function MatchDetailPage() {
             </table>
           </div>
         )}
-        {isOpponentCardMetadataLoading ? <p className="state">Loading card previews and mana details…</p> : null}
+        {isOpponentCardMetadataLoading ? <StatusMessage>Loading card previews and mana details…</StatusMessage> : null}
       </section>
     </div>
   );

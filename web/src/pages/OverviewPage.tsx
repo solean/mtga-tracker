@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { ResultPill } from "../components/ResultPill";
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration, pct } from "../lib/format";
 
@@ -12,9 +13,9 @@ export function OverviewPage() {
     queryFn: api.overview,
   });
 
-  if (isLoading) return <p className="state">Loading overview…</p>;
-  if (error) return <p className="state error">{(error as Error).message}</p>;
-  if (!data) return <p className="state">No data.</p>;
+  if (isLoading) return <StatusMessage>Loading overview…</StatusMessage>;
+  if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
+  if (!data) return <StatusMessage>No data.</StatusMessage>;
 
   const chartOption = {
     backgroundColor: "transparent",

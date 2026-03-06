@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 
 import { ResultPill } from "../components/ResultPill";
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import type { Match } from "../lib/types";
@@ -78,8 +79,8 @@ export function MatchesPage() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (isLoading) return <p className="state">Loading matches…</p>;
-  if (error) return <p className="state error">{(error as Error).message}</p>;
+  if (isLoading) return <StatusMessage>Loading matches…</StatusMessage>;
+  if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
 
   return (
     <section className="panel">

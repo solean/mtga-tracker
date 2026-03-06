@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { ResultPill } from "../components/ResultPill";
+import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import { fetchCardPreview, type CardPreview } from "../lib/scryfall";
@@ -557,10 +558,10 @@ export function DeckDetailPage() {
   const mainboardSkeletonRows = clampSkeletonRows(Math.ceil(mainboardCards.length / MAINBOARD_CATEGORY_ORDER.length), 6);
   const sideboardSkeletonRows = clampSkeletonRows(sideboardCards.length, 5);
 
-  if (!Number.isFinite(deckId)) return <p className="state error">Invalid deck id.</p>;
+  if (!Number.isFinite(deckId)) return <StatusMessage tone="error">Invalid deck id.</StatusMessage>;
   if (isLoading) return <DeckDetailSkeleton />;
-  if (error) return <p className="state error">{(error as Error).message}</p>;
-  if (!data) return <p className="state">Deck not found.</p>;
+  if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
+  if (!data) return <StatusMessage>Deck not found.</StatusMessage>;
 
   return (
     <div className="stack-lg deck-detail-stack">
@@ -656,9 +657,7 @@ export function DeckDetailPage() {
             </div>
           ) : null}
         </div>
-        {isCardMetadataLoading ? (
-          <p className="state">Loading deck mana/type details…</p>
-        ) : null}
+        {isCardMetadataLoading ? <StatusMessage>Loading deck mana/type details…</StatusMessage> : null}
       </section>
 
       <section className="panel">
