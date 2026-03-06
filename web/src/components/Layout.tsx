@@ -35,7 +35,7 @@ function applyThemeColorMeta(theme: Theme) {
     head.appendChild(metaThemeColor);
   }
 
-  metaThemeColor.setAttribute("content", theme === "dark" ? "#0b1413" : "#ebf1ec");
+  metaThemeColor.setAttribute("content", theme === "dark" ? "#080c15" : "#e2e8ee");
 }
 
 function readStoredTheme(): Theme {
@@ -86,7 +86,7 @@ export function Layout() {
     <div className="app-shell">
       <header className="topbar">
         <div className="title-block">
-          <p className="kicker">MTGA Local Tracker</p>
+          <p className="kicker">Tactical Data System</p>
           <div className="title-row">
             <span className="title-sigil" aria-hidden="true" />
             <h1>MTGData Control Room</h1>

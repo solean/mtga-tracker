@@ -19,7 +19,12 @@ export function OverviewPage() {
 
   const chartOption = {
     backgroundColor: "transparent",
-    tooltip: { trigger: "item" },
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "rgba(8, 14, 26, 0.95)",
+      borderColor: "rgba(0, 212, 255, 0.25)",
+      textStyle: { color: "#dce4ec", fontFamily: "IBM Plex Mono, Menlo, monospace", fontSize: 12 },
+    },
     series: [
       {
         name: "Matches",
@@ -27,9 +32,10 @@ export function OverviewPage() {
         radius: ["45%", "70%"],
         avoidLabelOverlap: false,
         label: { show: false },
+        itemStyle: { borderColor: "rgba(8, 12, 21, 0.9)", borderWidth: 2 },
         data: [
-          { value: data.wins, name: "Wins", itemStyle: { color: "#76c9a2" } },
-          { value: data.losses, name: "Losses", itemStyle: { color: "#e18f85" } },
+          { value: data.wins, name: "Wins", itemStyle: { color: "#00e676" } },
+          { value: data.losses, name: "Losses", itemStyle: { color: "#ff5252" } },
         ],
       },
     ],
