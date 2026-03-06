@@ -248,17 +248,6 @@ body::before {
     linear-gradient(90deg, transparent 0%, var(--veil-line) 50%, transparent 100%);
 }
 
-body::after {
-  content: "";
-  position: fixed;
-  left: 0;
-  right: 0;
-  height: 120px;
-  pointer-events: none;
-  z-index: 9999;
-  background: linear-gradient(180deg, transparent, var(--scan-sweep), transparent);
-  animation: scan-sweep 7s linear infinite;
-}
 
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -1285,23 +1274,6 @@ select {
   }
 }
 
-@keyframes scan-sweep {
-  0% {
-    top: -120px;
-    opacity: 0;
-  }
-  5% {
-    opacity: 1;
-  }
-  95% {
-    opacity: 1;
-  }
-  100% {
-    top: 100vh;
-    opacity: 0;
-  }
-}
-
 @keyframes pulse-sigil {
   0%, 100% {
     box-shadow: 0 0 14px var(--accent-glow);
@@ -1380,10 +1352,6 @@ select {
     animation: none;
   }
 
-  body::after {
-    animation: none;
-    display: none;
-  }
 }
 
 /* ══════════════════════════════════════════
