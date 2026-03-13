@@ -180,19 +180,29 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 {
-		if parts[1] != "timeline" {
+		switch parts[1] {
+		case "timeline":
+			rows, err := s.store.ListMatchCardPlays(r.Context(), id)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			s.enrichMatchCardPlayNames(r.Context(), rows)
+			writeJSON(w, http.StatusOK, rows)
+			return
+		case "replay":
+			frames, err := s.store.ListMatchReplayFrames(r.Context(), id)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			s.enrichMatchReplayNames(r.Context(), frames)
+			writeJSON(w, http.StatusOK, frames)
+			return
+		default:
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-
-		rows, err := s.store.ListMatchCardPlays(r.Context(), id)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		s.enrichMatchCardPlayNames(r.Context(), rows)
-		writeJSON(w, http.StatusOK, rows)
-		return
 	}
 
 	out, err := s.store.GetMatchDetail(r.Context(), id)
@@ -691,6 +701,102 @@ func (s *Server) enrichMatchCardPlayNames(ctx context.Context, plays []model.Mat
 		}
 		if name, ok := resolvedNames[plays[i].CardID]; ok {
 			plays[i].CardName = name
+		}
+	}
+}
+
+func (s *Server) enrichMatchReplayNames(ctx context.Context, frames []model.MatchReplayFrameRow) {
+	if len(frames) == 0 {
+		return
+	}
+
+	unique := make(map[int64]struct{})
+	missingCardIDs := make([]int64, 0)
+	for i := range frames {
+		for _, obj := range frames[i].Objects {
+			if strings.TrimSpace(obj.CardName) != "" {
+				continue
+			}
+			if _, seen := unique[obj.CardID]; seen {
+				continue
+			}
+			unique[obj.CardID] = struct{}{}
+			missingCardIDs = append(missingCardIDs, obj.CardID)
+		}
+		for _, change := range frames[i].Changes {
+			if strings.TrimSpace(change.CardName) != "" {
+				continue
+			}
+			if _, seen := unique[change.CardID]; seen {
+				continue
+			}
+			unique[change.CardID] = struct{}{}
+			missingCardIDs = append(missingCardIDs, change.CardID)
+		}
+	}
+	if len(missingCardIDs) == 0 {
+		return
+	}
+
+	resolvedNames, err := s.store.LookupCardNames(ctx, missingCardIDs)
+	if err != nil {
+		log.Printf("card name lookup failed: %v", err)
+		resolvedNames = map[int64]string{}
+	}
+	newlyResolved := make(map[int64]string, len(missingCardIDs))
+
+	unresolved := make([]int64, 0, len(missingCardIDs))
+	for _, cardID := range missingCardIDs {
+		if _, ok := resolvedNames[cardID]; !ok {
+			unresolved = append(unresolved, cardID)
+		}
+	}
+
+	if len(unresolved) > 0 {
+		localNames, localErr := s.fetchCardNamesFromMTGARaw(ctx, unresolved)
+		if localErr != nil {
+			log.Printf("local MTGA card lookup failed: %v", localErr)
+		}
+		for cardID, name := range localNames {
+			resolvedNames[cardID] = name
+			newlyResolved[cardID] = name
+		}
+		unresolved = unresolvedCardIDs(missingCardIDs, resolvedNames)
+	}
+
+	if len(unresolved) > 0 {
+		fetchedNames, fetchErr := s.fetchCardNamesFromScryfall(ctx, unresolved)
+		if fetchErr != nil {
+			log.Printf("scryfall card name lookup failed: %v", fetchErr)
+		}
+		for cardID, name := range fetchedNames {
+			resolvedNames[cardID] = name
+			newlyResolved[cardID] = name
+		}
+	}
+
+	if len(newlyResolved) > 0 {
+		if err := s.store.UpsertCardNames(ctx, newlyResolved); err != nil {
+			log.Printf("card name cache upsert failed: %v", err)
+		}
+	}
+
+	for i := range frames {
+		for j := range frames[i].Objects {
+			if strings.TrimSpace(frames[i].Objects[j].CardName) != "" {
+				continue
+			}
+			if name, ok := resolvedNames[frames[i].Objects[j].CardID]; ok {
+				frames[i].Objects[j].CardName = name
+			}
+		}
+		for j := range frames[i].Changes {
+			if strings.TrimSpace(frames[i].Changes[j].CardName) != "" {
+				continue
+			}
+			if name, ok := resolvedNames[frames[i].Changes[j].CardID]; ok {
+				frames[i].Changes[j].CardName = name
+			}
 		}
 	}
 }

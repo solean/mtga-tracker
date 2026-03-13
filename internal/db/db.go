@@ -67,6 +67,30 @@ func migrateMatchObservationTables(ctx context.Context, db *sql.DB) error {
 		}
 	}
 
+	hasReplayLifeTotals, err := tableHasColumn(ctx, db, "match_replay_frames", "player_life_totals_json")
+	if err != nil {
+		return fmt.Errorf("inspect match_replay_frames schema: %w", err)
+	}
+	if !hasReplayLifeTotals {
+		if err := rebuildMatchReplayFramesTable(ctx, db); err != nil {
+			return err
+		}
+	}
+
+	hasReplayControllerSeat, err := tableHasColumn(ctx, db, "match_replay_frame_objects", "controller_seat_id")
+	if err != nil {
+		return fmt.Errorf("inspect match_replay_frame_objects schema: %w", err)
+	}
+	replayObjectsReferenceFrames, err := tableHasForeignKeyTarget(ctx, db, "match_replay_frame_objects", "match_replay_frames")
+	if err != nil {
+		return fmt.Errorf("inspect match_replay_frame_objects foreign keys: %w", err)
+	}
+	if !hasReplayControllerSeat || !replayObjectsReferenceFrames {
+		if err := rebuildMatchReplayFrameObjectsTable(ctx, db); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -91,6 +115,39 @@ func tableHasColumn(ctx context.Context, db *sql.DB, tableName, columnName strin
 			return false, err
 		}
 		if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(columnName)) {
+			return true, nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func tableHasForeignKeyTarget(ctx context.Context, db *sql.DB, tableName, targetTable string) (bool, error) {
+	query := fmt.Sprintf(`PRAGMA foreign_key_list(%s)`, tableName)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id       int
+			seq      int
+			refTable string
+			fromCol  string
+			toCol    string
+			onUpdate string
+			onDelete string
+			match    string
+		)
+		if err := rows.Scan(&id, &seq, &refTable, &fromCol, &toCol, &onUpdate, &onDelete, &match); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(strings.TrimSpace(refTable), strings.TrimSpace(targetTable)) {
 			return true, nil
 		}
 	}
@@ -195,6 +252,164 @@ func rebuildMatchOpponentCardInstancesTable(ctx context.Context, db *sql.DB) err
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migrate match_opponent_card_instances: %w", err)
+	}
+	return nil
+}
+
+func rebuildMatchReplayFrameObjectsTable(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin migrate match_replay_frame_objects: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	steps := []string{
+		`ALTER TABLE match_replay_frame_objects RENAME TO match_replay_frame_objects_old`,
+		`DROP INDEX IF EXISTS idx_match_replay_frame_objects_frame_id`,
+		`DROP INDEX IF EXISTS idx_match_replay_frame_objects_card_id`,
+		`DROP INDEX IF EXISTS idx_match_replay_frame_objects_zone`,
+		`CREATE TABLE match_replay_frame_objects (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			frame_id INTEGER NOT NULL,
+			instance_id INTEGER NOT NULL,
+			card_id INTEGER NOT NULL,
+			owner_seat_id INTEGER,
+			controller_seat_id INTEGER,
+			zone_id INTEGER,
+			zone_type TEXT NOT NULL,
+			zone_position INTEGER,
+			visibility TEXT,
+			power INTEGER,
+			toughness INTEGER,
+			is_tapped INTEGER NOT NULL DEFAULT 0,
+			has_summoning_sickness INTEGER NOT NULL DEFAULT 0,
+			attack_state TEXT,
+			attack_target_id INTEGER,
+			block_state TEXT,
+			block_attacker_ids_json TEXT,
+			counter_summary_json TEXT,
+			details_json TEXT,
+			is_token INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			UNIQUE(frame_id, instance_id),
+			FOREIGN KEY(frame_id) REFERENCES match_replay_frames(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO match_replay_frame_objects (
+			id,
+			frame_id,
+			instance_id,
+			card_id,
+			owner_seat_id,
+			zone_id,
+			zone_type,
+			zone_position,
+			visibility,
+			is_token,
+			created_at
+		)
+		SELECT
+			id,
+			frame_id,
+			instance_id,
+			card_id,
+			owner_seat_id,
+			zone_id,
+			zone_type,
+			zone_position,
+			visibility,
+			is_token,
+			created_at
+		FROM match_replay_frame_objects_old`,
+		`CREATE INDEX idx_match_replay_frame_objects_frame_id ON match_replay_frame_objects(frame_id)`,
+		`CREATE INDEX idx_match_replay_frame_objects_card_id ON match_replay_frame_objects(card_id)`,
+		`CREATE INDEX idx_match_replay_frame_objects_zone ON match_replay_frame_objects(frame_id, zone_type, zone_position, instance_id)`,
+		`DROP TABLE match_replay_frame_objects_old`,
+	}
+
+	for _, step := range steps {
+		if _, err := tx.ExecContext(ctx, step); err != nil {
+			return fmt.Errorf("migrate match_replay_frame_objects: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migrate match_replay_frame_objects: %w", err)
+	}
+	return nil
+}
+
+func rebuildMatchReplayFramesTable(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin migrate match_replay_frames: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	steps := []string{
+		`ALTER TABLE match_replay_frames RENAME TO match_replay_frames_old`,
+		`DROP INDEX IF EXISTS idx_match_replay_frames_match_game_state`,
+		`DROP INDEX IF EXISTS idx_match_replay_frames_turn_order`,
+		`CREATE TABLE match_replay_frames (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			match_id INTEGER NOT NULL,
+			game_number INTEGER NOT NULL DEFAULT 1,
+			game_state_id INTEGER,
+			prev_game_state_id INTEGER,
+			game_state_type TEXT,
+			turn_number INTEGER,
+			phase TEXT,
+			player_life_totals_json TEXT,
+			source TEXT,
+			recorded_at TEXT,
+			actions_json TEXT,
+			annotations_json TEXT,
+			created_at TEXT NOT NULL,
+			UNIQUE(match_id, game_number, game_state_id),
+			FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO match_replay_frames (
+			id,
+			match_id,
+			game_number,
+			game_state_id,
+			prev_game_state_id,
+			game_state_type,
+			turn_number,
+			phase,
+			source,
+			recorded_at,
+			actions_json,
+			annotations_json,
+			created_at
+		)
+		SELECT
+			id,
+			match_id,
+			game_number,
+			game_state_id,
+			prev_game_state_id,
+			game_state_type,
+			turn_number,
+			phase,
+			source,
+			recorded_at,
+			actions_json,
+			annotations_json,
+			created_at
+		FROM match_replay_frames_old`,
+		`CREATE INDEX idx_match_replay_frames_match_game_state ON match_replay_frames(match_id, game_number, game_state_id)`,
+		`CREATE INDEX idx_match_replay_frames_turn_order ON match_replay_frames(match_id, game_number, turn_number, game_state_id, id)`,
+		`DROP TABLE match_replay_frames_old`,
+	}
+
+	for _, step := range steps {
+		if _, err := tx.ExecContext(ctx, step); err != nil {
+			return fmt.Errorf("migrate match_replay_frames: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migrate match_replay_frames: %w", err)
 	}
 	return nil
 }

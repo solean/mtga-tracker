@@ -49,6 +49,65 @@ type MatchCardPlayRow struct {
 	PlayedAt        string `json:"playedAt,omitempty"`
 }
 
+type MatchReplayChangeRow struct {
+	InstanceID       int64  `json:"instanceId"`
+	CardID           int64  `json:"cardId"`
+	CardName         string `json:"cardName,omitempty"`
+	OwnerSeatID      *int64 `json:"ownerSeatId,omitempty"`
+	PlayerSide       string `json:"playerSide"`
+	Action           string `json:"action"`
+	FromZoneID       *int64 `json:"fromZoneId,omitempty"`
+	FromZoneType     string `json:"fromZoneType,omitempty"`
+	FromZonePosition *int64 `json:"fromZonePosition,omitempty"`
+	ToZoneID         *int64 `json:"toZoneId,omitempty"`
+	ToZoneType       string `json:"toZoneType,omitempty"`
+	ToZonePosition   *int64 `json:"toZonePosition,omitempty"`
+	IsToken          bool   `json:"isToken"`
+}
+
+type MatchReplayFrameObjectRow struct {
+	ID                   int64  `json:"id"`
+	FrameID              int64  `json:"frameId"`
+	InstanceID           int64  `json:"instanceId"`
+	CardID               int64  `json:"cardId"`
+	CardName             string `json:"cardName,omitempty"`
+	OwnerSeatID          *int64 `json:"ownerSeatId,omitempty"`
+	ControllerSeatID     *int64 `json:"controllerSeatId,omitempty"`
+	PlayerSide           string `json:"playerSide"`
+	ZoneID               *int64 `json:"zoneId,omitempty"`
+	ZoneType             string `json:"zoneType"`
+	ZonePosition         *int64 `json:"zonePosition,omitempty"`
+	Visibility           string `json:"visibility,omitempty"`
+	Power                *int64 `json:"power,omitempty"`
+	Toughness            *int64 `json:"toughness,omitempty"`
+	AttackTargetID       *int64 `json:"attackTargetId,omitempty"`
+	BlockAttackerIDsJSON string `json:"blockAttackerIdsJson,omitempty"`
+	CounterSummaryJSON   string `json:"counterSummaryJson,omitempty"`
+	DetailsJSON          string `json:"detailsJson,omitempty"`
+	AttackState          string `json:"attackState,omitempty"`
+	BlockState           string `json:"blockState,omitempty"`
+	IsToken              bool   `json:"isToken"`
+	IsTapped             bool   `json:"isTapped"`
+	HasSummoningSickness bool   `json:"hasSummoningSickness"`
+}
+
+type MatchReplayFrameRow struct {
+	ID                int64                       `json:"id"`
+	GameNumber        *int64                      `json:"gameNumber,omitempty"`
+	GameStateID       *int64                      `json:"gameStateId,omitempty"`
+	PrevGameStateID   *int64                      `json:"prevGameStateId,omitempty"`
+	GameStateType     string                      `json:"gameStateType,omitempty"`
+	TurnNumber        *int64                      `json:"turnNumber,omitempty"`
+	Phase             string                      `json:"phase,omitempty"`
+	SelfLifeTotal     *int64                      `json:"selfLifeTotal,omitempty"`
+	OpponentLifeTotal *int64                      `json:"opponentLifeTotal,omitempty"`
+	RecordedAt        string                      `json:"recordedAt,omitempty"`
+	ActionsJSON       string                      `json:"actionsJson,omitempty"`
+	AnnotationsJSON   string                      `json:"annotationsJson,omitempty"`
+	Objects           []MatchReplayFrameObjectRow `json:"objects,omitempty"`
+	Changes           []MatchReplayChangeRow      `json:"changes,omitempty"`
+}
+
 type MatchDetail struct {
 	Match                 MatchRow                  `json:"match"`
 	OpponentObservedCards []OpponentObservedCardRow `json:"opponentObservedCards"`

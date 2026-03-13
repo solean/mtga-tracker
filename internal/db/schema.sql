@@ -140,6 +140,64 @@ CREATE INDEX IF NOT EXISTS idx_match_card_plays_match_id ON match_card_plays(mat
 CREATE INDEX IF NOT EXISTS idx_match_card_plays_card_id ON match_card_plays(card_id);
 CREATE INDEX IF NOT EXISTS idx_match_card_plays_turn_order ON match_card_plays(match_id, turn_number, played_at, id);
 
+CREATE TABLE IF NOT EXISTS match_replay_frames (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id INTEGER NOT NULL,
+  game_number INTEGER NOT NULL DEFAULT 1,
+  game_state_id INTEGER,
+  prev_game_state_id INTEGER,
+  game_state_type TEXT,
+  turn_number INTEGER,
+  phase TEXT,
+  player_life_totals_json TEXT,
+  source TEXT,
+  recorded_at TEXT,
+  actions_json TEXT,
+  annotations_json TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(match_id, game_number, game_state_id),
+  FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_replay_frames_match_game_state
+  ON match_replay_frames(match_id, game_number, game_state_id);
+CREATE INDEX IF NOT EXISTS idx_match_replay_frames_turn_order
+  ON match_replay_frames(match_id, game_number, turn_number, game_state_id, id);
+
+CREATE TABLE IF NOT EXISTS match_replay_frame_objects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  frame_id INTEGER NOT NULL,
+  instance_id INTEGER NOT NULL,
+  card_id INTEGER NOT NULL,
+  owner_seat_id INTEGER,
+  controller_seat_id INTEGER,
+  zone_id INTEGER,
+  zone_type TEXT NOT NULL,
+  zone_position INTEGER,
+  visibility TEXT,
+  power INTEGER,
+  toughness INTEGER,
+  is_tapped INTEGER NOT NULL DEFAULT 0,
+  has_summoning_sickness INTEGER NOT NULL DEFAULT 0,
+  attack_state TEXT,
+  attack_target_id INTEGER,
+  block_state TEXT,
+  block_attacker_ids_json TEXT,
+  counter_summary_json TEXT,
+  details_json TEXT,
+  is_token INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE(frame_id, instance_id),
+  FOREIGN KEY(frame_id) REFERENCES match_replay_frames(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_frame_id
+  ON match_replay_frame_objects(frame_id);
+CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_card_id
+  ON match_replay_frame_objects(card_id);
+CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_zone
+  ON match_replay_frame_objects(frame_id, zone_type, zone_position, instance_id);
+
 CREATE TABLE IF NOT EXISTS draft_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_name TEXT,

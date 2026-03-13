@@ -33,6 +33,65 @@ export type MatchCardPlay = {
   playedAt?: string;
 };
 
+export type MatchReplayChange = {
+  instanceId: number;
+  cardId: number;
+  cardName?: string;
+  ownerSeatId?: number;
+  playerSide: "self" | "opponent" | "unknown";
+  action: string;
+  fromZoneId?: number;
+  fromZoneType?: string;
+  fromZonePosition?: number;
+  toZoneId?: number;
+  toZoneType?: string;
+  toZonePosition?: number;
+  isToken: boolean;
+};
+
+export type MatchReplayFrameObject = {
+  id: number;
+  frameId: number;
+  instanceId: number;
+  cardId: number;
+  cardName?: string;
+  ownerSeatId?: number;
+  controllerSeatId?: number;
+  playerSide: "self" | "opponent" | "unknown";
+  zoneId?: number;
+  zoneType: string;
+  zonePosition?: number;
+  visibility?: string;
+  power?: number;
+  toughness?: number;
+  attackTargetId?: number;
+  blockAttackerIdsJson?: string;
+  counterSummaryJson?: string;
+  detailsJson?: string;
+  attackState?: string;
+  blockState?: string;
+  isToken: boolean;
+  isTapped: boolean;
+  hasSummoningSickness: boolean;
+};
+
+export type MatchReplayFrame = {
+  id: number;
+  gameNumber?: number;
+  gameStateId?: number;
+  prevGameStateId?: number;
+  gameStateType?: string;
+  turnNumber?: number;
+  phase?: string;
+  selfLifeTotal?: number;
+  opponentLifeTotal?: number;
+  recordedAt?: string;
+  actionsJson?: string;
+  annotationsJson?: string;
+  objects?: MatchReplayFrameObject[];
+  changes?: MatchReplayChange[];
+};
+
 export type MatchDetail = {
   match: Match;
   opponentObservedCards: OpponentObservedCard[];
