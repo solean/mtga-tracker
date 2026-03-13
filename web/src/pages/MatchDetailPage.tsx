@@ -1515,6 +1515,84 @@ function MatchReplayFrameBoard({
         <p className="match-replay-kicker">Public replay</p>
       </div>
 
+      <div className="match-replay-controls">
+        <div
+          className="match-replay-button-row"
+          role="group"
+          aria-label={`Game ${gameNumber} replay controls`}
+        >
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => setIsPlaying((currentValue) => !currentValue)}
+            aria-pressed={isPlaying}
+          >
+            {isPlaying ? "Pause" : "Play"}
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedFrameIndex(
+                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
+              );
+            }}
+            disabled={!canJumpPrevTurn}
+          >
+            Previous Turn
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedFrameIndex((currentIndex) =>
+                Math.max(currentIndex - 1, 0),
+              );
+            }}
+            disabled={!canStepBackward}
+          >
+            Previous Step
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedFrameIndex((currentIndex) =>
+                Math.min(currentIndex + 1, frames.length - 1),
+              );
+            }}
+            disabled={!canStepForward}
+          >
+            Next Step
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedFrameIndex(
+                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
+                  frames.length - 1,
+              );
+            }}
+            disabled={!canJumpNextTurn}
+          >
+            Next Turn
+          </button>
+        </div>
+
+        <div className="match-replay-track-panel">
+          <MatchReplayFrameTrack
+            frames={frames}
+            selectedFrameIndex={selectedFrameIndex}
+            onSelectFrame={setSelectedFrameIndex}
+          />
+        </div>
+      </div>
+
       <div className="match-replay-canvas">
         <aside className="match-replay-sidebar">
           <MatchReplayFrameSideSummary
@@ -1587,84 +1665,6 @@ function MatchReplayFrameBoard({
             previewByCardID={previewByCardID}
             highlightedInstanceIDs={changedInstanceIDs}
           />
-        </div>
-      </div>
-
-      <div className="match-replay-controls">
-        <div className="match-replay-track-panel">
-          <MatchReplayFrameTrack
-            frames={frames}
-            selectedFrameIndex={selectedFrameIndex}
-            onSelectFrame={setSelectedFrameIndex}
-          />
-        </div>
-
-        <div
-          className="match-replay-button-row"
-          role="group"
-          aria-label={`Game ${gameNumber} replay controls`}
-        >
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => setIsPlaying((currentValue) => !currentValue)}
-            aria-pressed={isPlaying}
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
-              );
-            }}
-            disabled={!canJumpPrevTurn}
-          >
-            Previous Turn
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex((currentIndex) =>
-                Math.max(currentIndex - 1, 0),
-              );
-            }}
-            disabled={!canStepBackward}
-          >
-            Previous Step
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex((currentIndex) =>
-                Math.min(currentIndex + 1, frames.length - 1),
-              );
-            }}
-            disabled={!canStepForward}
-          >
-            Next Step
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
-                  frames.length - 1,
-              );
-            }}
-            disabled={!canJumpNextTurn}
-          >
-            Next Turn
-          </button>
         </div>
       </div>
     </article>
@@ -1981,6 +1981,84 @@ function MatchTimelineBoard({
         <p className="match-replay-kicker">Observed replay</p>
       </div>
 
+      <div className="match-replay-controls">
+        <div
+          className="match-replay-button-row"
+          role="group"
+          aria-label={`Game ${gameNumber} replay controls`}
+        >
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => setIsPlaying((currentValue) => !currentValue)}
+            aria-pressed={isPlaying}
+          >
+            {isPlaying ? "Pause" : "Play"}
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedActionIndex(
+                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
+              );
+            }}
+            disabled={!canJumpPrevTurn}
+          >
+            Previous Turn
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedActionIndex((currentIndex) =>
+                Math.max(currentIndex - 1, 0),
+              );
+            }}
+            disabled={!canStepBackward}
+          >
+            Previous Action
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedActionIndex((currentIndex) =>
+                Math.min(currentIndex + 1, plays.length - 1),
+              );
+            }}
+            disabled={!canStepForward}
+          >
+            Next Action
+          </button>
+          <button
+            type="button"
+            className="match-replay-button"
+            onClick={() => {
+              setIsPlaying(false);
+              setSelectedActionIndex(
+                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
+                  plays.length - 1,
+              );
+            }}
+            disabled={!canJumpNextTurn}
+          >
+            Next Turn
+          </button>
+        </div>
+
+        <div className="match-replay-track-panel">
+          <MatchReplayTrack
+            plays={plays}
+            selectedActionIndex={selectedActionIndex}
+            onSelectAction={setSelectedActionIndex}
+          />
+        </div>
+      </div>
+
       <div className="match-replay-canvas">
         <aside className="match-replay-sidebar">
           <MatchReplaySideSummary
@@ -2059,84 +2137,6 @@ function MatchTimelineBoard({
             activePlayID={currentAction.id}
             previewByCardID={previewByCardID}
           />
-        </div>
-      </div>
-
-      <div className="match-replay-controls">
-        <div className="match-replay-track-panel">
-          <MatchReplayTrack
-            plays={plays}
-            selectedActionIndex={selectedActionIndex}
-            onSelectAction={setSelectedActionIndex}
-          />
-        </div>
-
-        <div
-          className="match-replay-button-row"
-          role="group"
-          aria-label={`Game ${gameNumber} replay controls`}
-        >
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => setIsPlaying((currentValue) => !currentValue)}
-            aria-pressed={isPlaying}
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex(
-                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
-              );
-            }}
-            disabled={!canJumpPrevTurn}
-          >
-            Previous Turn
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex((currentIndex) =>
-                Math.max(currentIndex - 1, 0),
-              );
-            }}
-            disabled={!canStepBackward}
-          >
-            Previous Action
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex((currentIndex) =>
-                Math.min(currentIndex + 1, plays.length - 1),
-              );
-            }}
-            disabled={!canStepForward}
-          >
-            Next Action
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex(
-                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
-                  plays.length - 1,
-              );
-            }}
-            disabled={!canJumpNextTurn}
-          >
-            Next Turn
-          </button>
         </div>
       </div>
     </article>
