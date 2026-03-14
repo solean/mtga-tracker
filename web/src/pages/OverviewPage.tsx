@@ -2,6 +2,7 @@ import ReactECharts from "echarts-for-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { RankProgressPanel } from "../components/RankProgressPanel";
 import { ResultPill } from "../components/ResultPill";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration, pct } from "../lib/format";
@@ -54,6 +55,8 @@ export function OverviewPage() {
           <h2>{pct(data.winRate)}</h2>
         </article>
       </section>
+
+      <RankProgressPanel />
 
       <section className="two-col">
         <article className="panel chart-panel">

@@ -39,6 +39,7 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/overview", s.handleOverview)
+	mux.HandleFunc("/api/rank-history", s.handleRankHistory)
 	mux.HandleFunc("/api/matches", s.handleMatches)
 	mux.HandleFunc("/api/decks", s.handleDecks)
 	mux.HandleFunc("/api/decks/", s.handleDeckDetail)
@@ -133,6 +134,15 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleRankHistory(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.store.ListRankHistory(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {

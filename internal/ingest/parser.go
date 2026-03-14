@@ -19,17 +19,19 @@ import (
 )
 
 var (
-	reOutgoing       = regexp.MustCompile(`^\[UnityCrossThreadLogger\]==>\s+([A-Za-z0-9_]+)\s+(.*)$`)
-	reComplete       = regexp.MustCompile(`^<==\s+([A-Za-z0-9_]+)\(([^)]*)\)`)
-	rePersonaPlain   = regexp.MustCompile(`"PersonaId":"([A-Za-z0-9_\-]+)"`)
-	rePersonaEscaped = regexp.MustCompile(`\\\"PersonaId\\\":\\\"([A-Za-z0-9_\-]+)\\\"`)
-	rePersonaMatchTo = regexp.MustCompile(`Match to ([A-Za-z0-9_\-]+):`)
-	reClientID       = regexp.MustCompile(`"clientId"\s*:\s*"([A-Za-z0-9_\-]+)"`)
-	reScreenName     = regexp.MustCompile(`"screenName"\s*:\s*"([^"]+)"`)
+	reOutgoing          = regexp.MustCompile(`^\[UnityCrossThreadLogger\]==>\s+([A-Za-z0-9_]+)\s+(.*)$`)
+	reComplete          = regexp.MustCompile(`^<==\s+([A-Za-z0-9_]+)\(([^)]*)\)`)
+	rePersonaPlain      = regexp.MustCompile(`"PersonaId":"([A-Za-z0-9_\-]+)"`)
+	rePersonaEscaped    = regexp.MustCompile(`\\\"PersonaId\\\":\\\"([A-Za-z0-9_\-]+)\\\"`)
+	rePersonaMatchTo    = regexp.MustCompile(`Match to ([A-Za-z0-9_\-]+):`)
+	reClientID          = regexp.MustCompile(`"clientId"\s*:\s*"([A-Za-z0-9_\-]+)"`)
+	reScreenName        = regexp.MustCompile(`"screenName"\s*:\s*"([^"]+)"`)
+	reUnityLogTimestamp = regexp.MustCompile(`^\[UnityCrossThreadLogger\](\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{2}:\d{2} (?:AM|PM))`)
 )
 
 type Parser struct {
 	store *db.Store
+	state parseState
 }
 
 func NewParser(store *db.Store) *Parser {
@@ -37,8 +39,44 @@ func NewParser(store *db.Store) *Parser {
 }
 
 type parseState struct {
-	personaID  string
-	playerName string
+	personaID                 string
+	playerName                string
+	lastUnityLogTimestamp     string
+	pendingResponseMethod     string
+	pendingResponseRequestID  string
+	pendingResponseObservedAt string
+	pendingCompletedMatches   []string
+}
+
+func (s *parseState) clearPendingResponse() {
+	s.pendingResponseMethod = ""
+	s.pendingResponseRequestID = ""
+	s.pendingResponseObservedAt = ""
+}
+
+func (s *parseState) enqueueCompletedMatch(arenaMatchID string) {
+	arenaMatchID = strings.TrimSpace(arenaMatchID)
+	if arenaMatchID == "" {
+		return
+	}
+	for _, pending := range s.pendingCompletedMatches {
+		if pending == arenaMatchID {
+			return
+		}
+	}
+	s.pendingCompletedMatches = append(s.pendingCompletedMatches, arenaMatchID)
+	if len(s.pendingCompletedMatches) > 32 {
+		s.pendingCompletedMatches = append([]string(nil), s.pendingCompletedMatches[len(s.pendingCompletedMatches)-32:]...)
+	}
+}
+
+func (s *parseState) dequeueCompletedMatch() string {
+	if len(s.pendingCompletedMatches) == 0 {
+		return ""
+	}
+	matchID := s.pendingCompletedMatches[0]
+	s.pendingCompletedMatches = s.pendingCompletedMatches[1:]
+	return matchID
 }
 
 type outgoingEnvelope struct {
@@ -155,10 +193,24 @@ type roomStateEnvelope struct {
 	} `json:"matchGameRoomStateChangedEvent"`
 }
 
+type combinedRankInfoResponse struct {
+	ConstructedSeasonOrdinal *int64 `json:"constructedSeasonOrdinal"`
+	ConstructedClass         string `json:"constructedClass"`
+	ConstructedLevel         *int64 `json:"constructedLevel"`
+	ConstructedStep          *int64 `json:"constructedStep"`
+	ConstructedMatchesWon    *int64 `json:"constructedMatchesWon"`
+	ConstructedMatchesLost   *int64 `json:"constructedMatchesLost"`
+	LimitedSeasonOrdinal     *int64 `json:"limitedSeasonOrdinal"`
+	LimitedClass             string `json:"limitedClass"`
+	LimitedLevel             *int64 `json:"limitedLevel"`
+	LimitedStep              *int64 `json:"limitedStep"`
+	LimitedMatchesWon        *int64 `json:"limitedMatchesWon"`
+	LimitedMatchesLost       *int64 `json:"limitedMatchesLost"`
+}
+
 func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (model.ParseStats, error) {
 	stats := model.ParseStats{LogPath: logPath, StartedAt: time.Now().UTC()}
-
-	state := parseState{}
+	state := &p.state
 
 	startOffset := int64(0)
 	startLine := int64(0)
@@ -232,7 +284,7 @@ func (p *Parser) ParseFile(ctx context.Context, logPath string, resume bool) (mo
 		linesSinceCommit++
 
 		trimmed := strings.TrimRight(line, "\r\n")
-		if err := p.processLine(ctx, tx, &stats, &state, logPath, lineNo, lineStartOffset, trimmed); err != nil {
+		if err := p.processLine(ctx, tx, &stats, state, logPath, lineNo, lineStartOffset, trimmed); err != nil {
 			return stats, fmt.Errorf("process line %d: %w", lineNo, err)
 		}
 
@@ -264,6 +316,10 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 		return nil
 	}
 
+	if ts := parseUnityLogTimestamp(line); ts != "" {
+		state.lastUnityLogTimestamp = ts
+	}
+
 	if state.personaID == "" {
 		match := rePersonaPlain.FindStringSubmatch(line)
 		if len(match) != 2 {
@@ -292,6 +348,13 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 		}
 	}
 
+	if state.pendingResponseMethod != "" && strings.HasPrefix(line, "{") {
+		if err := p.handleMethodResponse(ctx, tx, stats, state, logPath, lineNo, byteOffset, line); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	if m := reOutgoing.FindStringSubmatch(line); len(m) == 3 {
 		method := m[1]
 		envelopeJSON := m[2]
@@ -306,7 +369,18 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 			return err
 		}
 		stats.RawEventsStored++
+		if m[1] == "RankGetCombinedRankInfo" {
+			state.pendingResponseMethod = m[1]
+			state.pendingResponseRequestID = m[2]
+			state.pendingResponseObservedAt = state.lastUnityLogTimestamp
+		} else {
+			state.clearPendingResponse()
+		}
 		return nil
+	}
+
+	if state.pendingResponseMethod != "" {
+		state.clearPendingResponse()
 	}
 
 	if strings.HasPrefix(line, "{") {
@@ -318,6 +392,84 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 		}
 	}
 
+	return nil
+}
+
+func parseUnityLogTimestamp(line string) string {
+	m := reUnityLogTimestamp.FindStringSubmatch(strings.TrimSpace(line))
+	if len(m) != 2 {
+		return ""
+	}
+	parsed, err := time.ParseInLocation("1/2/2006 3:04:05 PM", m[1], time.Local)
+	if err != nil {
+		return ""
+	}
+	return parsed.UTC().Format(time.RFC3339Nano)
+}
+
+func (p *Parser) queueCompletedMatchIfRankPending(ctx context.Context, tx *sql.Tx, state *parseState, arenaMatchID, result string, terminalChange bool) error {
+	if result != "win" && result != "loss" {
+		return nil
+	}
+	if terminalChange {
+		state.enqueueCompletedMatch(arenaMatchID)
+		return nil
+	}
+
+	hasSnapshot, err := p.store.MatchHasRankSnapshot(ctx, tx, arenaMatchID)
+	if err != nil {
+		return err
+	}
+	if !hasSnapshot {
+		state.enqueueCompletedMatch(arenaMatchID)
+	}
+	return nil
+}
+
+func (p *Parser) handleMethodResponse(ctx context.Context, tx *sql.Tx, stats *model.ParseStats, state *parseState, logPath string, lineNo, byteOffset int64, line string) error {
+	method := state.pendingResponseMethod
+	requestID := state.pendingResponseRequestID
+	observedAt := state.pendingResponseObservedAt
+	state.clearPendingResponse()
+
+	if err := p.store.InsertRawEvent(ctx, tx, logPath, lineNo, byteOffset, "method_result", method, requestID, []byte(line), ""); err != nil {
+		return err
+	}
+	stats.RawEventsStored++
+
+	if method != "RankGetCombinedRankInfo" {
+		return nil
+	}
+
+	var payload combinedRankInfoResponse
+	if err := json.Unmarshal([]byte(line), &payload); err != nil {
+		return nil
+	}
+
+	arenaMatchID := state.dequeueCompletedMatch()
+	if arenaMatchID == "" {
+		return nil
+	}
+
+	if err := p.store.UpsertMatchRankSnapshot(ctx, tx, arenaMatchID, db.MatchRankSnapshot{
+		ObservedAt:               observedAt,
+		PayloadJSON:              line,
+		ConstructedSeasonOrdinal: payload.ConstructedSeasonOrdinal,
+		ConstructedRankClass:     payload.ConstructedClass,
+		ConstructedLevel:         payload.ConstructedLevel,
+		ConstructedStep:          payload.ConstructedStep,
+		ConstructedMatchesWon:    payload.ConstructedMatchesWon,
+		ConstructedMatchesLost:   payload.ConstructedMatchesLost,
+		LimitedSeasonOrdinal:     payload.LimitedSeasonOrdinal,
+		LimitedRankClass:         payload.LimitedClass,
+		LimitedLevel:             payload.LimitedLevel,
+		LimitedStep:              payload.LimitedStep,
+		LimitedMatchesWon:        payload.LimitedMatchesWon,
+		LimitedMatchesLost:       payload.LimitedMatchesLost,
+	}); err != nil {
+		return err
+	}
+	stats.RankSnapshots++
 	return nil
 }
 
@@ -581,8 +733,11 @@ func (p *Parser) handleOutgoing(ctx context.Context, tx *sql.Tx, stats *model.Pa
 			if evt.MatchID == "" {
 				return nil
 			}
-			_, _, err := p.store.UpdateMatchEnd(ctx, tx, evt.MatchID, evt.TeamID, evt.WinningTeamID, evt.TurnCount, evt.SecondsCount, evt.WinningReason, evt.EventTime)
+			_, result, changed, err := p.store.UpdateMatchEnd(ctx, tx, evt.MatchID, evt.TeamID, evt.WinningTeamID, evt.TurnCount, evt.SecondsCount, evt.WinningReason, evt.EventTime)
 			if err != nil {
+				return err
+			}
+			if err := p.queueCompletedMatchIfRankPending(ctx, tx, state, evt.MatchID, result, changed); err != nil {
 				return err
 			}
 		}
@@ -667,7 +822,9 @@ func (p *Parser) handleRoomStateJSON(ctx context.Context, tx *sql.Tx, stats *mod
 	if strings.EqualFold(strings.TrimSpace(info.StateType), "MatchGameRoomStateType_MatchCompleted") && selfTeamID > 0 && info.FinalMatchResult != nil {
 		winningTeamID, reason := chooseMatchResult(info.FinalMatchResult.ResultList)
 		if winningTeamID > 0 {
-			if _, _, err := p.store.UpdateMatchEnd(ctx, tx, config.MatchID, selfTeamID, winningTeamID, 0, 0, reason, matchTS); err != nil {
+			if _, result, changed, err := p.store.UpdateMatchEnd(ctx, tx, config.MatchID, selfTeamID, winningTeamID, 0, 0, reason, matchTS); err != nil {
+				return err
+			} else if err := p.queueCompletedMatchIfRankPending(ctx, tx, state, config.MatchID, result, changed); err != nil {
 				return err
 			}
 		}
