@@ -796,9 +796,13 @@ h1 {
 
 .rank-panel {
   background:
-    radial-gradient(circle at 12% 18%, rgba(75, 163, 217, 0.12) 0%, transparent 34%),
-    radial-gradient(circle at 88% 0%, var(--card-accent-glow) 0%, transparent 38%),
-    linear-gradient(165deg, rgba(10, 18, 17, 0.92) 0%, rgba(12, 23, 21, 0.96) 100%);
+    radial-gradient(circle at 92% -6%, rgba(0, 212, 255, 0.12) 0%, transparent 32%),
+    radial-gradient(circle at 0% 100%, rgba(0, 212, 255, 0.05) 0%, transparent 36%),
+    linear-gradient(
+      155deg,
+      var(--surface-strong) 0%,
+      var(--surface) 100%
+    );
 }
 
 .rank-toolbar {
@@ -806,96 +810,134 @@ h1 {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.85rem;
-  align-items: end;
+  align-items: start;
   margin-bottom: 0.95rem;
 }
 
-.rank-toolbar h3 {
-  margin: 0;
-  font-family: "Marcellus", "Georgia", serif;
-  font-size: clamp(1.2rem, 2.2vw, 1.58rem);
-  font-weight: 400;
-  letter-spacing: 0.02em;
+.rank-toolbar > div:first-child {
+  display: grid;
+  gap: 0.16rem;
 }
 
 .rank-toolbar p {
-  margin: 0.22rem 0 0;
-  color: var(--muted);
-  font-size: 0.86rem;
+  margin: 0;
+  max-width: 32rem;
+  color: var(--muted-strong);
+  font-size: 0.8rem;
   letter-spacing: 0.04em;
 }
 
 .rank-toggle {
   display: inline-flex;
-  gap: 0.38rem;
-  padding: 0.3rem;
-  border: 1px solid var(--line);
+  gap: 0.3rem;
+  padding: 0.26rem;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: rgba(8, 15, 14, 0.58);
+  background: var(--tabs-bg);
   backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 var(--card-inner-border);
 }
 
 .rank-toggle-button {
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: var(--muted);
-  padding: 0.46rem 0.92rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  color: var(--muted-strong);
+  min-height: 44px;
+  padding: 0.46rem 1rem;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
   transition:
     color 180ms ease,
     border-color 180ms ease,
     background-color 180ms ease,
-    transform 180ms ease;
+    box-shadow 180ms ease;
 }
 
 .rank-toggle-button:hover {
-  color: var(--muted-strong);
+  color: var(--text);
   border-color: var(--tab-hover-border);
-  transform: translateY(-1px);
+  background: rgba(0, 212, 255, 0.04);
 }
 
 .rank-toggle-button.is-active {
-  color: var(--text-soft);
-  border-color: rgba(75, 163, 217, 0.65);
-  background: linear-gradient(160deg, rgba(75, 163, 217, 0.28) 0%, rgba(34, 69, 88, 0.42) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  border-color: var(--tab-active-border);
+  background: linear-gradient(
+    160deg,
+    var(--tab-active-bg-a) 0%,
+    var(--tab-active-bg-b) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 var(--tab-active-shine),
+    0 0 0 1px rgba(0, 212, 255, 0.04);
 }
 
 .rank-summary {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: 0.65rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.9rem;
 }
 
 .rank-chip {
-  min-width: 10.5rem;
+  min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 0.62rem 0.76rem;
-  background: linear-gradient(160deg, rgba(12, 24, 22, 0.58) 0%, rgba(16, 31, 28, 0.84) 100%);
+  border-radius: 3px;
+  padding: 0.72rem 0.82rem;
+  background: linear-gradient(
+    155deg,
+    var(--panel-inner-a) 0%,
+    var(--panel-inner-b) 100%
+  );
+  box-shadow: inset 0 1px 0 var(--card-inner-border);
 }
 
 .rank-chip span {
   display: block;
   color: var(--muted);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
   font-size: 0.68rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .rank-chip strong {
   display: block;
-  margin-top: 0.35rem;
-  font-family: "Marcellus", "Georgia", serif;
-  font-size: 1.08rem;
-  font-weight: 400;
-  color: var(--text-soft);
+  margin-top: 0.34rem;
+  color: var(--text);
+  font-family: "Rajdhani", "Arial", sans-serif;
+  font-size: clamp(1.18rem, 1.8vw, 1.46rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.rank-chart-frame {
+  min-height: 22.5rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: linear-gradient(
+    160deg,
+    rgba(8, 16, 28, 0.76) 0%,
+    rgba(12, 22, 38, 0.92) 100%
+  );
+  box-shadow: inset 0 1px 0 var(--card-inner-border);
+  padding: 0.32rem 0.18rem 0.12rem;
+}
+
+.rank-chart-frame .state {
+  min-height: 21.8rem;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 1rem;
+  text-align: center;
 }
 
 .panel-head p {
