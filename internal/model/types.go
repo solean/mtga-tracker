@@ -8,6 +8,7 @@ type ParseStats struct {
 	BytesRead       int64
 	RawEventsStored int64
 	MatchesUpserted int64
+	RankSnapshots   int64
 	DecksUpserted   int64
 	DraftPicksAdded int64
 	StartedAt       time.Time
@@ -174,4 +175,25 @@ type Overview struct {
 	Losses       int64      `json:"losses"`
 	WinRate      float64    `json:"winRate"`
 	Recent       []MatchRow `json:"recent"`
+}
+
+type RankState struct {
+	SeasonOrdinal *int64 `json:"seasonOrdinal"`
+	RankClass     string `json:"rankClass"`
+	Level         *int64 `json:"level"`
+	Step          *int64 `json:"step"`
+	MatchesWon    *int64 `json:"matchesWon"`
+	MatchesLost   *int64 `json:"matchesLost"`
+}
+
+type RankHistoryPoint struct {
+	MatchID      int64     `json:"matchId"`
+	ArenaMatchID string    `json:"arenaMatchId"`
+	EventName    string    `json:"eventName"`
+	Opponent     string    `json:"opponent"`
+	Result       string    `json:"result"`
+	ObservedAt   string    `json:"observedAt"`
+	EndedAt      string    `json:"endedAt"`
+	Constructed  RankState `json:"constructed"`
+	Limited      RankState `json:"limited"`
 }

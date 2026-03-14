@@ -31,6 +31,23 @@ type DeckCard struct {
 	Quantity int64
 }
 
+type MatchRankSnapshot struct {
+	ObservedAt               string
+	PayloadJSON              string
+	ConstructedSeasonOrdinal *int64
+	ConstructedRankClass     string
+	ConstructedLevel         *int64
+	ConstructedStep          *int64
+	ConstructedMatchesWon    *int64
+	ConstructedMatchesLost   *int64
+	LimitedSeasonOrdinal     *int64
+	LimitedRankClass         string
+	LimitedLevel             *int64
+	LimitedStep              *int64
+	LimitedMatchesWon        *int64
+	LimitedMatchesLost       *int64
+}
+
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
@@ -275,6 +292,21 @@ func nullableInt(v int64) any {
 	return v
 }
 
+func nullableIntPtr(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func nullInt64Ptr(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	out := v.Int64
+	return &out
+}
+
 func nullIfEmpty(v string) any {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -450,7 +482,7 @@ func (s *Store) UpsertMatchCardPlay(ctx context.Context, tx *sql.Tx, arenaMatchI
 	return nil
 }
 
-func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID string, teamID, winningTeamID, turnCount, secondsCount int64, winReason, endedAt string) (string, string, error) {
+func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID string, teamID, winningTeamID, turnCount, secondsCount int64, winReason, endedAt string) (string, string, bool, error) {
 	endedAt = normalizeTS(endedAt)
 
 	var eventName string
@@ -465,11 +497,11 @@ func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID str
 			INSERT INTO matches (arena_match_id, ended_at, created_at, updated_at)
 			VALUES (?, ?, ?, ?)
 		`, arenaMatchID, endedAt, nowUTC(), nowUTC()); err != nil {
-			return "", "", fmt.Errorf("create ended-only match: %w", err)
+			return "", "", false, fmt.Errorf("create ended-only match: %w", err)
 		}
 		eventName = ""
 	} else if err != nil {
-		return "", "", fmt.Errorf("get match event name: %w", err)
+		return "", "", false, fmt.Errorf("get match event name: %w", err)
 	}
 
 	result := "unknown"
@@ -492,17 +524,139 @@ func (s *Store) UpdateMatchEnd(ctx context.Context, tx *sql.Tx, arenaMatchID str
 		WHERE arena_match_id = ?
 	`, nullIfEmpty(endedAt), result, nullIfEmpty(winReason), nullableInt(turnCount), nullableInt(secondsCount), nowUTC(), arenaMatchID)
 	if err != nil {
-		return "", "", fmt.Errorf("update match end: %w", err)
+		return "", "", false, fmt.Errorf("update match end: %w", err)
 	}
 
+	terminalChange := (result == "win" || result == "loss") && result != priorResult
+
 	// Idempotency guard: only increment run record when match result changes into a terminal result.
-	if eventName != "" && (result == "win" || result == "loss") && result != priorResult {
+	if eventName != "" && terminalChange {
 		if err := s.BumpEventRunRecord(ctx, tx, eventName, result); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 
-	return eventName, result, nil
+	return eventName, result, terminalChange, nil
+}
+
+func (s *Store) MatchHasRankSnapshot(ctx context.Context, tx *sql.Tx, arenaMatchID string) (bool, error) {
+	arenaMatchID = strings.TrimSpace(arenaMatchID)
+	if arenaMatchID == "" {
+		return false, nil
+	}
+
+	err := tx.QueryRowContext(ctx, `
+		SELECT 1
+		FROM matches m
+		JOIN match_rank_snapshots mrs ON mrs.match_id = m.id
+		WHERE m.arena_match_id = ?
+		LIMIT 1
+	`, arenaMatchID).Scan(new(int64))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check match rank snapshot: %w", err)
+	}
+	return true, nil
+}
+
+func (s *Store) UpsertMatchRankSnapshot(ctx context.Context, tx *sql.Tx, arenaMatchID string, snapshot MatchRankSnapshot) error {
+	arenaMatchID = strings.TrimSpace(arenaMatchID)
+	if arenaMatchID == "" {
+		return nil
+	}
+
+	var matchID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM matches
+		WHERE arena_match_id = ?
+	`, arenaMatchID).Scan(&matchID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("lookup rank snapshot match: %w", err)
+	}
+
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM match_rank_snapshots
+		WHERE match_id = ?
+	`, matchID).Scan(new(int64))
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("lookup existing rank snapshot: %w", err)
+	}
+
+	prevSnapshotID := any(nil)
+	if errors.Is(err, sql.ErrNoRows) {
+		var prevID int64
+		err = tx.QueryRowContext(ctx, `
+			SELECT id
+			FROM match_rank_snapshots
+			ORDER BY COALESCE(observed_at, created_at) DESC, id DESC
+			LIMIT 1
+		`).Scan(&prevID)
+		if err == nil {
+			prevSnapshotID = prevID
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("lookup previous rank snapshot: %w", err)
+		}
+	}
+
+	snapshot.ObservedAt = normalizeTS(snapshot.ObservedAt)
+	now := nowUTC()
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO match_rank_snapshots (
+			match_id,
+			prev_snapshot_id,
+			observed_at,
+			payload_json,
+			constructed_season_ordinal,
+			constructed_rank_class,
+			constructed_level,
+			constructed_step,
+			constructed_matches_won,
+			constructed_matches_lost,
+			limited_season_ordinal,
+			limited_rank_class,
+			limited_level,
+			limited_step,
+			limited_matches_won,
+			limited_matches_lost,
+			created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(match_id) DO UPDATE SET
+			prev_snapshot_id = COALESCE(match_rank_snapshots.prev_snapshot_id, excluded.prev_snapshot_id),
+			observed_at = COALESCE(excluded.observed_at, match_rank_snapshots.observed_at),
+			payload_json = excluded.payload_json,
+			constructed_season_ordinal = COALESCE(excluded.constructed_season_ordinal, match_rank_snapshots.constructed_season_ordinal),
+			constructed_rank_class = COALESCE(excluded.constructed_rank_class, match_rank_snapshots.constructed_rank_class),
+			constructed_level = COALESCE(excluded.constructed_level, match_rank_snapshots.constructed_level),
+			constructed_step = COALESCE(excluded.constructed_step, match_rank_snapshots.constructed_step),
+			constructed_matches_won = COALESCE(excluded.constructed_matches_won, match_rank_snapshots.constructed_matches_won),
+			constructed_matches_lost = COALESCE(excluded.constructed_matches_lost, match_rank_snapshots.constructed_matches_lost),
+			limited_season_ordinal = COALESCE(excluded.limited_season_ordinal, match_rank_snapshots.limited_season_ordinal),
+			limited_rank_class = COALESCE(excluded.limited_rank_class, match_rank_snapshots.limited_rank_class),
+			limited_level = COALESCE(excluded.limited_level, match_rank_snapshots.limited_level),
+			limited_step = COALESCE(excluded.limited_step, match_rank_snapshots.limited_step),
+			limited_matches_won = COALESCE(excluded.limited_matches_won, match_rank_snapshots.limited_matches_won),
+			limited_matches_lost = COALESCE(excluded.limited_matches_lost, match_rank_snapshots.limited_matches_lost),
+			updated_at = excluded.updated_at
+	`, matchID, prevSnapshotID, nullIfEmpty(snapshot.ObservedAt), snapshot.PayloadJSON,
+		nullableIntPtr(snapshot.ConstructedSeasonOrdinal), nullIfEmpty(snapshot.ConstructedRankClass),
+		nullableIntPtr(snapshot.ConstructedLevel), nullableIntPtr(snapshot.ConstructedStep),
+		nullableIntPtr(snapshot.ConstructedMatchesWon), nullableIntPtr(snapshot.ConstructedMatchesLost),
+		nullableIntPtr(snapshot.LimitedSeasonOrdinal), nullIfEmpty(snapshot.LimitedRankClass),
+		nullableIntPtr(snapshot.LimitedLevel), nullableIntPtr(snapshot.LimitedStep),
+		nullableIntPtr(snapshot.LimitedMatchesWon), nullableIntPtr(snapshot.LimitedMatchesLost),
+		now, now)
+	if err != nil {
+		return fmt.Errorf("upsert match rank snapshot: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Store) LinkMatchToLatestDeckByEvent(ctx context.Context, tx *sql.Tx, arenaMatchID, eventName, reason string) error {
@@ -1249,6 +1403,96 @@ func (s *Store) ListMatchCardPlays(ctx context.Context, matchID int64) ([]model.
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate match card plays: %w", err)
+	}
+
+	return out, nil
+}
+
+func (s *Store) ListRankHistory(ctx context.Context) ([]model.RankHistoryPoint, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			m.id,
+			m.arena_match_id,
+			COALESCE(m.event_name, ''),
+			COALESCE(m.opponent_name, ''),
+			COALESCE(m.result, 'unknown'),
+			COALESCE(mrs.observed_at, ''),
+			COALESCE(m.ended_at, ''),
+			mrs.constructed_season_ordinal,
+			COALESCE(mrs.constructed_rank_class, ''),
+			mrs.constructed_level,
+			mrs.constructed_step,
+			mrs.constructed_matches_won,
+			mrs.constructed_matches_lost,
+			mrs.limited_season_ordinal,
+			COALESCE(mrs.limited_rank_class, ''),
+			mrs.limited_level,
+			mrs.limited_step,
+			mrs.limited_matches_won,
+			mrs.limited_matches_lost
+		FROM match_rank_snapshots mrs
+		JOIN matches m ON m.id = mrs.match_id
+		ORDER BY COALESCE(mrs.observed_at, m.ended_at, m.started_at, m.updated_at) ASC, mrs.id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list rank history: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.RankHistoryPoint
+	for rows.Next() {
+		var row model.RankHistoryPoint
+		var constructedSeasonOrdinal sql.NullInt64
+		var constructedLevel sql.NullInt64
+		var constructedStep sql.NullInt64
+		var constructedMatchesWon sql.NullInt64
+		var constructedMatchesLost sql.NullInt64
+		var limitedSeasonOrdinal sql.NullInt64
+		var limitedLevel sql.NullInt64
+		var limitedStep sql.NullInt64
+		var limitedMatchesWon sql.NullInt64
+		var limitedMatchesLost sql.NullInt64
+
+		if err := rows.Scan(
+			&row.MatchID,
+			&row.ArenaMatchID,
+			&row.EventName,
+			&row.Opponent,
+			&row.Result,
+			&row.ObservedAt,
+			&row.EndedAt,
+			&constructedSeasonOrdinal,
+			&row.Constructed.RankClass,
+			&constructedLevel,
+			&constructedStep,
+			&constructedMatchesWon,
+			&constructedMatchesLost,
+			&limitedSeasonOrdinal,
+			&row.Limited.RankClass,
+			&limitedLevel,
+			&limitedStep,
+			&limitedMatchesWon,
+			&limitedMatchesLost,
+		); err != nil {
+			return nil, fmt.Errorf("scan rank history row: %w", err)
+		}
+
+		row.Constructed.SeasonOrdinal = nullInt64Ptr(constructedSeasonOrdinal)
+		row.Constructed.Level = nullInt64Ptr(constructedLevel)
+		row.Constructed.Step = nullInt64Ptr(constructedStep)
+		row.Constructed.MatchesWon = nullInt64Ptr(constructedMatchesWon)
+		row.Constructed.MatchesLost = nullInt64Ptr(constructedMatchesLost)
+
+		row.Limited.SeasonOrdinal = nullInt64Ptr(limitedSeasonOrdinal)
+		row.Limited.Level = nullInt64Ptr(limitedLevel)
+		row.Limited.Step = nullInt64Ptr(limitedStep)
+		row.Limited.MatchesWon = nullInt64Ptr(limitedMatchesWon)
+		row.Limited.MatchesLost = nullInt64Ptr(limitedMatchesLost)
+
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rank history: %w", err)
 	}
 
 	return out, nil

@@ -106,6 +106,27 @@ export type Overview = {
   recent: Match[];
 };
 
+export type RankState = {
+  seasonOrdinal?: number | null;
+  rankClass: string;
+  level?: number | null;
+  step?: number | null;
+  matchesWon?: number | null;
+  matchesLost?: number | null;
+};
+
+export type RankHistoryPoint = {
+  matchId: number;
+  arenaMatchId: string;
+  eventName: string;
+  opponent: string;
+  result: "win" | "loss" | "unknown";
+  observedAt: string;
+  endedAt: string;
+  constructed: RankState;
+  limited: RankState;
+};
+
 export type DeckSummary = {
   deckId: number;
   deckName: string;

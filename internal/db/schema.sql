@@ -198,6 +198,32 @@ CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_card_id
 CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_zone
   ON match_replay_frame_objects(frame_id, zone_type, zone_position, instance_id);
 
+CREATE TABLE IF NOT EXISTS match_rank_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id INTEGER NOT NULL UNIQUE,
+  prev_snapshot_id INTEGER,
+  observed_at TEXT,
+  payload_json TEXT NOT NULL,
+  constructed_season_ordinal INTEGER,
+  constructed_rank_class TEXT,
+  constructed_level INTEGER,
+  constructed_step INTEGER,
+  constructed_matches_won INTEGER,
+  constructed_matches_lost INTEGER,
+  limited_season_ordinal INTEGER,
+  limited_rank_class TEXT,
+  limited_level INTEGER,
+  limited_step INTEGER,
+  limited_matches_won INTEGER,
+  limited_matches_lost INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE,
+  FOREIGN KEY(prev_snapshot_id) REFERENCES match_rank_snapshots(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_rank_snapshots_observed_at ON match_rank_snapshots(observed_at);
+
 CREATE TABLE IF NOT EXISTS draft_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_name TEXT,
