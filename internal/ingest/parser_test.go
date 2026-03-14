@@ -631,6 +631,66 @@ func TestReplayFramesCapturePermanentStateAndStateChanges(t *testing.T) {
 	}
 }
 
+func TestReplayFramesClearSummoningSicknessOnControllersNextTurn(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test-replay-summoning-sickness.db")
+	logPath := filepath.Join(tmpDir, "Player.log")
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+
+	parser := NewParser(db.NewStore(database))
+	lines := []string{
+		`{"clientId":"self-user","screenName":"Self"}`,
+		`{"timestamp":"1772330782400","matchGameRoomStateChangedEvent":{"gameRoomInfo":{"gameRoomConfig":{"reservedPlayers":[{"userId":"self-user","playerName":"Self","systemSeatId":1,"teamId":1,"eventId":"Traditional_Ladder"},{"userId":"opp-user","playerName":"Opp","systemSeatId":2,"teamId":2,"eventId":"Traditional_Ladder"}],"matchId":"match-replay-summoning"},"stateType":"MatchGameRoomStateType_Playing"}}}`,
+		`{"timestamp":"1772330782401","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Full","gameStateId":1,"gameInfo":{"matchID":"match-replay-summoning","gameNumber":1},"turnInfo":{"phase":"Phase_Main1","turnNumber":1,"activePlayer":1},"zones":[{"zoneId":28,"type":"ZoneType_Battlefield","visibility":"Visibility_Public","objectInstanceIds":[901]}],"gameObjects":[{"instanceId":901,"grpId":9901,"type":"GameObjectType_Card","zoneId":28,"visibility":"Visibility_Public","ownerSeatId":1,"controllerSeatId":1,"cardTypes":["CardType_Creature"],"power":{"value":2},"toughness":{"value":2},"hasSummoningSickness":true}]}}]}}`,
+		`{"timestamp":"1772330782402","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Diff","gameStateId":2,"prevGameStateId":1,"turnInfo":{"phase":"Phase_Main1","turnNumber":2,"activePlayer":2}}}]}}`,
+		`{"timestamp":"1772330782403","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Diff","gameStateId":3,"prevGameStateId":2,"turnInfo":{"phase":"Phase_Main1","turnNumber":3,"activePlayer":1}}}]}}`,
+	}
+
+	if err := writeLogLines(logPath, lines, false); err != nil {
+		t.Fatalf("write log lines: %v", err)
+	}
+	if _, err := parser.ParseFile(ctx, logPath, false); err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+
+	store := db.NewStore(database)
+	frames, err := store.ListMatchReplayFrames(ctx, 1)
+	if err != nil {
+		t.Fatalf("list replay frames: %v", err)
+	}
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 replay frames, got %d", len(frames))
+	}
+
+	firstFrameObjects := replayObjectsInZone(frames[0], "battlefield")
+	if len(firstFrameObjects) != 1 || !firstFrameObjects[0].HasSummoningSickness {
+		t.Fatalf("expected object to enter with summoning sickness, got %#v", firstFrameObjects)
+	}
+
+	secondFrameObjects := replayObjectsInZone(frames[1], "battlefield")
+	if len(secondFrameObjects) != 1 || !secondFrameObjects[0].HasSummoningSickness {
+		t.Fatalf("expected object to stay summoning sick on opponent turn, got %#v", secondFrameObjects)
+	}
+
+	thirdFrameObjects := replayObjectsInZone(frames[2], "battlefield")
+	if len(thirdFrameObjects) != 1 || thirdFrameObjects[0].HasSummoningSickness {
+		t.Fatalf("expected object to lose summoning sickness on controller turn, got %#v", thirdFrameObjects)
+	}
+	if !replayHasAnyChange(frames[2], "summoning_sickness_change", 901) {
+		t.Fatalf("expected summoning_sickness_change for 901, got %#v", frames[2].Changes)
+	}
+}
+
 func replayObjectsInZone(frame model.MatchReplayFrameRow, zoneType string) []model.MatchReplayFrameObjectRow {
 	out := make([]model.MatchReplayFrameObjectRow, 0)
 	for _, obj := range frame.Objects {

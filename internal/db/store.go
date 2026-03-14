@@ -1649,10 +1649,10 @@ func (s *Store) LoadLatestMatchReplayFrameState(
 	tx *sql.Tx,
 	arenaMatchID string,
 	gameNumber int64,
-) (int64, []model.MatchReplayFrameObjectRow, map[int64]int64, error) {
+) (int64, int64, []model.MatchReplayFrameObjectRow, map[int64]int64, error) {
 	arenaMatchID = strings.TrimSpace(arenaMatchID)
 	if arenaMatchID == "" {
-		return 0, nil, nil, nil
+		return 0, 0, nil, nil, nil
 	}
 	if gameNumber <= 0 {
 		gameNumber = 1
@@ -1661,22 +1661,23 @@ func (s *Store) LoadLatestMatchReplayFrameState(
 	var (
 		frameID             int64
 		gameStateID         sql.NullInt64
+		turnNumber          sql.NullInt64
 		playerLifeTotalsRaw sql.NullString
 	)
 	err := tx.QueryRowContext(ctx, `
-		SELECT f.id, f.game_state_id, f.player_life_totals_json
+		SELECT f.id, f.game_state_id, f.turn_number, f.player_life_totals_json
 		FROM match_replay_frames f
 		JOIN matches m ON m.id = f.match_id
 		WHERE m.arena_match_id = ?
 			AND f.game_number = ?
 		ORDER BY COALESCE(f.game_state_id, 0) DESC, f.id DESC
 		LIMIT 1
-	`, arenaMatchID, gameNumber).Scan(&frameID, &gameStateID, &playerLifeTotalsRaw)
+	`, arenaMatchID, gameNumber).Scan(&frameID, &gameStateID, &turnNumber, &playerLifeTotalsRaw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil, nil, nil
+		return 0, 0, nil, nil, nil
 	}
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("lookup latest match replay frame: %w", err)
+		return 0, 0, nil, nil, fmt.Errorf("lookup latest match replay frame: %w", err)
 	}
 
 	rows, err := tx.QueryContext(ctx, `
@@ -1707,7 +1708,7 @@ func (s *Store) LoadLatestMatchReplayFrameState(
 		ORDER BY COALESCE(o.zone_id, 0) ASC, COALESCE(o.zone_position, 1000000) ASC, o.instance_id ASC
 	`, frameID)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("load latest match replay frame objects: %w", err)
+		return 0, 0, nil, nil, fmt.Errorf("load latest match replay frame objects: %w", err)
 	}
 	defer rows.Close()
 
@@ -1749,7 +1750,7 @@ func (s *Store) LoadLatestMatchReplayFrameState(
 			&row.DetailsJSON,
 			&isToken,
 		); err != nil {
-			return 0, nil, nil, fmt.Errorf("scan latest match replay frame object: %w", err)
+			return 0, 0, nil, nil, fmt.Errorf("scan latest match replay frame object: %w", err)
 		}
 		row.OwnerSeatID = replayPtrFromNullInt64(ownerSeatID)
 		row.ControllerSeatID = replayPtrFromNullInt64(controllerSeatID)
@@ -1764,10 +1765,10 @@ func (s *Store) LoadLatestMatchReplayFrameState(
 		objects = append(objects, row)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, nil, nil, fmt.Errorf("iterate latest match replay frame objects: %w", err)
+		return 0, 0, nil, nil, fmt.Errorf("iterate latest match replay frame objects: %w", err)
 	}
 
-	return gameStateID.Int64, objects, parseReplayPlayerLifeTotalsJSON(playerLifeTotalsRaw.String), nil
+	return gameStateID.Int64, turnNumber.Int64, objects, parseReplayPlayerLifeTotalsJSON(playerLifeTotalsRaw.String), nil
 }
 
 func (s *Store) ListMatchReplayFrames(ctx context.Context, matchID int64) ([]model.MatchReplayFrameRow, error) {

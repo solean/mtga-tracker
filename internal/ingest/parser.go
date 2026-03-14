@@ -85,6 +85,7 @@ type parseState struct {
 	activeMatchID             string
 	selfSeatByMatch           map[string]int64
 	turnByMatch               map[string]int64
+	activePlayerByMatch       map[string]int64
 	phaseByMatch              map[string]string
 	zoneTypeByMatch           map[string]map[int64]string
 	zoneVisibilityByMatch     map[string]map[int64]string
@@ -132,6 +133,25 @@ func (s *parseState) turn(matchID string) int64 {
 		return 0
 	}
 	return s.turnByMatch[matchID]
+}
+
+func (s *parseState) rememberActivePlayer(matchID string, seatID int64) {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || seatID <= 0 {
+		return
+	}
+	if s.activePlayerByMatch == nil {
+		s.activePlayerByMatch = make(map[string]int64)
+	}
+	s.activePlayerByMatch[matchID] = seatID
+}
+
+func (s *parseState) activePlayer(matchID string) int64 {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || s.activePlayerByMatch == nil {
+		return 0
+	}
+	return s.activePlayerByMatch[matchID]
 }
 
 func (s *parseState) rememberPhase(matchID, phase string) {
@@ -249,6 +269,8 @@ type replayCardState struct {
 	IsToken              bool
 	IsTapped             bool
 	HasSummoningSickness bool
+	SummoningSickTurn    int64
+	SummoningSickSeatID  int64
 }
 
 type replayPublicState struct {
@@ -265,6 +287,33 @@ func newReplayPublicState() *replayPublicState {
 		PublicZoneMembers: make(map[int64][]int64),
 		PublicZoneTypes:   make(map[int64]string),
 		PlayerLifeTotals:  make(map[int64]int64),
+	}
+}
+
+func clearExpiredReplaySummoningSickness(replay *replayPublicState, turnNumber, activePlayer int64) {
+	if replay == nil || turnNumber <= 0 || activePlayer <= 0 {
+		return
+	}
+
+	for instanceID, current := range replay.Objects {
+		if !current.HasSummoningSickness {
+			continue
+		}
+		controllerSeatID := current.SummoningSickSeatID
+		if controllerSeatID <= 0 {
+			controllerSeatID = current.ControllerSeatID
+		}
+		if controllerSeatID <= 0 || controllerSeatID != activePlayer {
+			continue
+		}
+		if current.SummoningSickTurn <= 0 || turnNumber <= current.SummoningSickTurn {
+			continue
+		}
+
+		current.HasSummoningSickness = false
+		current.SummoningSickTurn = 0
+		current.SummoningSickSeatID = 0
+		replay.Objects[instanceID] = current
 	}
 }
 
@@ -498,9 +547,10 @@ type greGameStateMsg struct {
 }
 
 type greTurnInfo struct {
-	TurnNumber int64  `json:"turnNumber"`
-	Phase      string `json:"phase"`
-	Step       string `json:"step"`
+	TurnNumber   int64  `json:"turnNumber"`
+	Phase        string `json:"phase"`
+	Step         string `json:"step"`
+	ActivePlayer int64  `json:"activePlayer"`
 }
 
 type grePlayer struct {
@@ -1132,6 +1182,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 
 		if msg.GameStateMessage.TurnInfo != nil {
 			state.rememberTurn(matchID, msg.GameStateMessage.TurnInfo.TurnNumber)
+			state.rememberActivePlayer(matchID, msg.GameStateMessage.TurnInfo.ActivePlayer)
 			phaseValue := msg.GameStateMessage.TurnInfo.Phase
 			if strings.TrimSpace(phaseValue) == "" {
 				phaseValue = msg.GameStateMessage.TurnInfo.Step
@@ -1149,6 +1200,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			state.rememberSelfSeat(matchID, selfSeat)
 		}
 		turnNumber := state.turn(matchID)
+		activePlayer := state.activePlayer(matchID)
 		phase := state.phase(matchID)
 		gameNumber := state.gameNumber(matchID)
 		if gameNumber <= 0 {
@@ -1166,6 +1218,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			}
 			replayState.PlayerLifeTotals[player.SystemSeatNumber] = player.LifeTotal
 		}
+		clearExpiredReplaySummoningSickness(replayState, turnNumber, activePlayer)
 
 		_, previousPublicByInstance := buildReplayPublicSnapshot(matchID, replayState, state)
 		if phase != "combat" {
@@ -1188,6 +1241,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			}
 
 			current := replayState.Objects[obj.InstanceID]
+			previousControllerSeatID := current.ControllerSeatID
 			current.InstanceID = obj.InstanceID
 			if obj.GrpID > 0 {
 				current.CardID = obj.GrpID
@@ -1215,6 +1269,20 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			}
 			if obj.HasSummoningSickness != nil {
 				current.HasSummoningSickness = *obj.HasSummoningSickness
+				if current.HasSummoningSickness {
+					current.SummoningSickTurn = turnNumber
+					current.SummoningSickSeatID = current.ControllerSeatID
+				} else {
+					current.SummoningSickTurn = 0
+					current.SummoningSickSeatID = 0
+				}
+			} else if current.HasSummoningSickness &&
+				previousControllerSeatID > 0 &&
+				current.ControllerSeatID > 0 &&
+				current.ControllerSeatID != previousControllerSeatID &&
+				turnNumber > 0 {
+				current.SummoningSickTurn = turnNumber
+				current.SummoningSickSeatID = current.ControllerSeatID
 			}
 			if obj.AttackState != nil {
 				current.AttackState = normalizeGREAttackState(*obj.AttackState)
@@ -1373,17 +1441,17 @@ func (p *Parser) replayStateForGame(
 	}
 
 	replay := newReplayPublicState()
-	lastGameStateID, objects, playerLifeTotals, err := p.store.LoadLatestMatchReplayFrameState(ctx, tx, matchID, gameNumber)
+	lastGameStateID, latestTurnNumber, objects, playerLifeTotals, err := p.store.LoadLatestMatchReplayFrameState(ctx, tx, matchID, gameNumber)
 	if err != nil {
 		return nil, err
 	}
 	replay.LastGameStateID = lastGameStateID
-	hydrateReplayStateFromFrameObjects(replay, objects, playerLifeTotals)
+	hydrateReplayStateFromFrameObjects(replay, latestTurnNumber, objects, playerLifeTotals)
 	state.rememberReplayState(matchID, gameNumber, replay)
 	return replay, nil
 }
 
-func hydrateReplayStateFromFrameObjects(replay *replayPublicState, objects []model.MatchReplayFrameObjectRow, playerLifeTotals map[int64]int64) {
+func hydrateReplayStateFromFrameObjects(replay *replayPublicState, latestTurnNumber int64, objects []model.MatchReplayFrameObjectRow, playerLifeTotals map[int64]int64) {
 	if replay == nil {
 		return
 	}
@@ -1403,7 +1471,7 @@ func hydrateReplayStateFromFrameObjects(replay *replayPublicState, objects []mod
 			zoneID = *obj.ZoneID
 		}
 
-		replay.Objects[obj.InstanceID] = replayCardState{
+		current := replayCardState{
 			InstanceID:           obj.InstanceID,
 			CardID:               obj.CardID,
 			OwnerSeatID:          replayIntValue(obj.OwnerSeatID),
@@ -1422,6 +1490,11 @@ func hydrateReplayStateFromFrameObjects(replay *replayPublicState, objects []mod
 			IsTapped:             obj.IsTapped,
 			HasSummoningSickness: obj.HasSummoningSickness,
 		}
+		if obj.HasSummoningSickness {
+			current.SummoningSickTurn = latestTurnNumber
+			current.SummoningSickSeatID = replayIntValue(obj.ControllerSeatID)
+		}
+		replay.Objects[obj.InstanceID] = current
 		if zoneID <= 0 {
 			continue
 		}
