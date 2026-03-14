@@ -80,7 +80,7 @@ export function OverviewPage() {
           </div>
           <div className="list">
             {data.recent.slice(0, 8).map((match) => (
-              <div className="list-row" key={match.id}>
+              <Link className="list-row" key={match.id} to={`/matches/${match.id}`}>
                 <div>
                   <p className="list-title">{match.eventName || "Unknown event"}</p>
                   <p className="list-subtitle">
@@ -91,7 +91,7 @@ export function OverviewPage() {
                   <ResultPill result={match.result} />
                   <small>{formatDuration(match.secondsCount ?? undefined)}</small>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </article>
