@@ -2317,61 +2317,57 @@ export function MatchDetailPage() {
 
   return (
     <div className="stack-lg">
-      <section className="panel">
+      <section className="panel match-detail-overview-panel">
         <div className="panel-head">
           <h3>Match #{match.id}</h3>
           <Link className="text-link" to="/matches">
             Back to matches
           </Link>
         </div>
-        <div className="table-wrap">
-          <table className="data-table compact">
-            <tbody>
-              <tr>
-                <th>Event</th>
-                <td>{match.eventName || "-"}</td>
-              </tr>
-              <tr>
-                <th>Opponent</th>
-                <td>{match.opponent || "Unknown"}</td>
-              </tr>
-              <tr>
-                <th>Started</th>
-                <td>{formatDateTime(match.startedAt)}</td>
-              </tr>
-              <tr>
-                <th>Result</th>
-                <td>
-                  <ResultPill result={match.result} />
-                </td>
-              </tr>
-              <tr>
-                <th>Reason</th>
-                <td>{match.winReason || "-"}</td>
-              </tr>
-              <tr>
-                <th>Turns</th>
-                <td>{match.turnCount ?? "-"}</td>
-              </tr>
-              <tr>
-                <th>Duration</th>
-                <td>{formatDuration(match.secondsCount ?? undefined)}</td>
-              </tr>
-              <tr>
-                <th>Deck</th>
-                <td>
-                  {match.deckId ? (
-                    <Link className="text-link" to={`/decks/${match.deckId}`}>
-                      {match.deckName || `Deck ${match.deckId}`}
-                    </Link>
-                  ) : (
-                    "-"
-                  )}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <dl className="match-detail-summary" aria-label="Match overview">
+          <div className="match-detail-summary-item">
+            <dt>Event</dt>
+            <dd>{match.eventName || "-"}</dd>
+          </div>
+          <div className="match-detail-summary-item">
+            <dt>Deck</dt>
+            <dd>
+              {match.deckId ? (
+                <Link className="text-link" to={`/decks/${match.deckId}`}>
+                  {match.deckName || `Deck ${match.deckId}`}
+                </Link>
+              ) : (
+                "-"
+              )}
+            </dd>
+          </div>
+          <div className="match-detail-summary-item">
+            <dt>Opponent</dt>
+            <dd>{match.opponent || "Unknown"}</dd>
+          </div>
+          <div className="match-detail-summary-item match-detail-summary-item-mono">
+            <dt>Started</dt>
+            <dd>{formatDateTime(match.startedAt)}</dd>
+          </div>
+          <div className="match-detail-summary-item">
+            <dt>Result</dt>
+            <dd>
+              <ResultPill result={match.result} />
+            </dd>
+          </div>
+          <div className="match-detail-summary-item">
+            <dt>Reason</dt>
+            <dd>{match.winReason || "-"}</dd>
+          </div>
+          <div className="match-detail-summary-item match-detail-summary-item-mono">
+            <dt>Turns</dt>
+            <dd>{match.turnCount ?? "-"}</dd>
+          </div>
+          <div className="match-detail-summary-item match-detail-summary-item-mono">
+            <dt>Duration</dt>
+            <dd>{formatDuration(match.secondsCount ?? undefined)}</dd>
+          </div>
+        </dl>
       </section>
 
       <section className="panel">
