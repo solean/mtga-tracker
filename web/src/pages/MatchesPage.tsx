@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 
+import { MatchDeckColors } from "../components/MatchDeckColors";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
@@ -55,6 +56,19 @@ export function MatchesPage() {
             </Link>
           );
         },
+      }),
+      columnHelper.display({
+        id: "deckColors",
+        header: "Colors",
+        cell: (info) => (
+          <MatchDeckColors
+            className="match-deck-colors-table"
+            deckColors={info.row.original.deckColors}
+            deckColorsKnown={info.row.original.deckColorsKnown}
+            opponentDeckColors={info.row.original.opponentDeckColors}
+            opponentDeckColorsKnown={info.row.original.opponentDeckColorsKnown}
+          />
+        ),
       }),
       columnHelper.accessor("winReason", {
         header: "Reason",

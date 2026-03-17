@@ -138,6 +138,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.enrichMatchDeckColors(r.Context(), out.Recent)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -165,6 +166,7 @@ func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.enrichMatchDeckColors(r.Context(), rows)
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -227,6 +229,9 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 
 	s.enrichOpponentObservedCardNames(r.Context(), out.OpponentObservedCards)
 	s.enrichMatchCardPlayNames(r.Context(), out.CardPlays)
+	matchRows := []model.MatchRow{out.Match}
+	s.enrichMatchDeckColors(r.Context(), matchRows)
+	out.Match = matchRows[0]
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -275,6 +280,7 @@ func (s *Server) handleDeckDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.enrichDeckCardNames(r.Context(), out.Cards)
+	s.enrichMatchDeckColors(r.Context(), out.Matches)
 	writeJSON(w, http.StatusOK, out)
 }
 

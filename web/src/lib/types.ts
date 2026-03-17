@@ -11,6 +11,10 @@ export type Match = {
   secondsCount?: number | null;
   deckId?: number | null;
   deckName?: string | null;
+  deckColors?: string[] | null;
+  deckColorsKnown?: boolean;
+  opponentDeckColors?: string[] | null;
+  opponentDeckColorsKnown?: boolean;
 };
 
 export type OpponentObservedCard = {

@@ -48,12 +48,51 @@ type MatchRankSnapshot struct {
 	LimitedMatchesLost       *int64
 }
 
+const sqliteInClauseBatchSize = 900
+
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
 func nowUTC() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
+}
+
+func uniquePositiveInt64(values []int64) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+
+	out := make([]int64, 0, len(values))
+	seen := make(map[int64]struct{}, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func int64Batches(values []int64, batchSize int) [][]int64 {
+	values = uniquePositiveInt64(values)
+	if len(values) == 0 {
+		return nil
+	}
+	if batchSize <= 0 {
+		batchSize = sqliteInClauseBatchSize
+	}
+
+	out := make([][]int64, 0, (len(values)+batchSize-1)/batchSize)
+	for start := 0; start < len(values); start += batchSize {
+		end := min(start+batchSize, len(values))
+		out = append(out, values[start:end])
+	}
+	return out
 }
 
 func normalizeTS(ts string) string {
@@ -937,6 +976,110 @@ func (s *Store) ListMatches(ctx context.Context, limit int64, eventName, result 
 	}
 
 	return resultRows, nil
+}
+
+func (s *Store) ListMatchDeckCardQuantities(ctx context.Context, matchIDs []int64) (map[int64]map[int64]int64, error) {
+	out := make(map[int64]map[int64]int64)
+	for _, batch := range int64Batches(matchIDs, sqliteInClauseBatchSize) {
+		placeholders := make([]string, 0, len(batch))
+		args := make([]any, 0, len(batch))
+		for _, matchID := range batch {
+			placeholders = append(placeholders, "?")
+			args = append(args, matchID)
+		}
+
+		query := fmt.Sprintf(`
+			SELECT md.match_id, dc.card_id, MAX(dc.quantity) AS quantity
+			FROM match_decks md
+			JOIN deck_cards dc ON dc.deck_id = md.deck_id
+			WHERE dc.section = 'main'
+			  AND md.match_id IN (%s)
+			GROUP BY md.match_id, dc.card_id
+		`, strings.Join(placeholders, ","))
+
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("list match deck card quantities: %w", err)
+		}
+
+		for rows.Next() {
+			var matchID int64
+			var cardID int64
+			var quantity int64
+			if err := rows.Scan(&matchID, &cardID, &quantity); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan match deck card quantity: %w", err)
+			}
+			if _, ok := out[matchID]; !ok {
+				out[matchID] = make(map[int64]int64)
+			}
+			out[matchID][cardID] = quantity
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterate match deck card quantities: %w", err)
+		}
+		rows.Close()
+	}
+
+	return out, nil
+}
+
+func (s *Store) ListMatchOpponentCardQuantities(ctx context.Context, matchIDs []int64) (map[int64]map[int64]int64, error) {
+	out := make(map[int64]map[int64]int64)
+	for _, batch := range int64Batches(matchIDs, sqliteInClauseBatchSize) {
+		placeholders := make([]string, 0, len(batch))
+		args := make([]any, 0, len(batch))
+		for _, matchID := range batch {
+			placeholders = append(placeholders, "?")
+			args = append(args, matchID)
+		}
+
+		query := fmt.Sprintf(`
+			WITH per_game AS (
+				SELECT
+					match_id,
+					card_id,
+					game_number,
+					COUNT(*) AS quantity_in_game
+				FROM match_opponent_card_instances
+				WHERE match_id IN (%s)
+				GROUP BY match_id, card_id, game_number
+			)
+			SELECT
+				match_id,
+				card_id,
+				MAX(quantity_in_game) AS quantity
+			FROM per_game
+			GROUP BY match_id, card_id
+		`, strings.Join(placeholders, ","))
+
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("list opponent observed card quantities: %w", err)
+		}
+
+		for rows.Next() {
+			var matchID int64
+			var cardID int64
+			var quantity int64
+			if err := rows.Scan(&matchID, &cardID, &quantity); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan opponent observed card quantity: %w", err)
+			}
+			if _, ok := out[matchID]; !ok {
+				out[matchID] = make(map[int64]int64)
+			}
+			out[matchID][cardID] = quantity
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterate opponent observed card quantities: %w", err)
+		}
+		rows.Close()
+	}
+
+	return out, nil
 }
 
 func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchDetail, error) {

@@ -16,18 +16,22 @@ type ParseStats struct {
 }
 
 type MatchRow struct {
-	ID           int64   `json:"id"`
-	ArenaMatchID string  `json:"arenaMatchId"`
-	EventName    string  `json:"eventName"`
-	Opponent     string  `json:"opponent"`
-	StartedAt    string  `json:"startedAt"`
-	EndedAt      string  `json:"endedAt"`
-	Result       string  `json:"result"`
-	WinReason    string  `json:"winReason"`
-	TurnCount    *int64  `json:"turnCount"`
-	SecondsCount *int64  `json:"secondsCount"`
-	DeckID       *int64  `json:"deckId"`
-	DeckName     *string `json:"deckName"`
+	ID                      int64    `json:"id"`
+	ArenaMatchID            string   `json:"arenaMatchId"`
+	EventName               string   `json:"eventName"`
+	Opponent                string   `json:"opponent"`
+	StartedAt               string   `json:"startedAt"`
+	EndedAt                 string   `json:"endedAt"`
+	Result                  string   `json:"result"`
+	WinReason               string   `json:"winReason"`
+	TurnCount               *int64   `json:"turnCount"`
+	SecondsCount            *int64   `json:"secondsCount"`
+	DeckID                  *int64   `json:"deckId"`
+	DeckName                *string  `json:"deckName"`
+	DeckColors              []string `json:"deckColors"`
+	DeckColorsKnown         bool     `json:"deckColorsKnown"`
+	OpponentDeckColors      []string `json:"opponentDeckColors"`
+	OpponentDeckColorsKnown bool     `json:"opponentDeckColorsKnown"`
 }
 
 type OpponentObservedCardRow struct {

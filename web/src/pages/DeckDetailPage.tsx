@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
+import { DeckColorIdentity } from "../components/MatchDeckColors";
+import { ManaSymbol } from "../components/ManaSymbol";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
@@ -32,7 +34,6 @@ type SideboardDeckListCard = DeckListCard & {
 
 const MAINBOARD_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "artifacts", "enchantments", "lands"];
 const MAINBOARD_SKELETON_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "lands"];
-const SCRYFALL_SYMBOL_BASE_URL = "https://svgs.scryfall.io/card-symbols";
 const BASIC_LAND_ORDER: Record<string, number> = {
   island: 0,
   swamp: 1,
@@ -149,34 +150,6 @@ function parseManaCostParts(manaCost: string): ManaCostPart[] {
   }
 
   return parts;
-}
-
-function manaSymbolURL(token: string): string {
-  return `${SCRYFALL_SYMBOL_BASE_URL}/${encodeURIComponent(token)}.svg`;
-}
-
-function ManaSymbol({ token }: { token: string }) {
-  const [didFail, setDidFail] = useState(false);
-  const label = `{${token}}`;
-
-  if (didFail) {
-    return (
-      <code className="mana-symbol-fallback" aria-label={label}>
-        {label}
-      </code>
-    );
-  }
-
-  return (
-    <img
-      className="mana-symbol-icon"
-      src={manaSymbolURL(token)}
-      alt={label}
-      loading="lazy"
-      decoding="async"
-      onError={() => setDidFail(true)}
-    />
-  );
 }
 
 function ManaCostDisplay({ manaCost }: { manaCost: string }) {
@@ -393,6 +366,7 @@ function DeckDetailSkeleton() {
                   </td>
                   <td>
                     <span className="skeleton-line skeleton-table-line is-wide" />
+                    <span className="skeleton-line skeleton-table-line is-short" />
                   </td>
                   <td>
                     <span className="skeleton-line skeleton-table-line is-short" />
@@ -683,7 +657,16 @@ export function DeckDetailPage() {
                 <tr key={match.id}>
                   <td>{formatDateTime(match.startedAt)}</td>
                   <td>{match.eventName || "-"}</td>
-                  <td>{match.opponent || "-"}</td>
+                  <td>
+                    <div className="deck-match-opponent-cell">
+                      <span>{match.opponent || "-"}</span>
+                      <DeckColorIdentity
+                        className="deck-match-opponent-colors"
+                        colors={match.opponentDeckColors}
+                        known={match.opponentDeckColorsKnown}
+                      />
+                    </div>
+                  </td>
                   <td>
                     <ResultPill result={match.result} />
                   </td>

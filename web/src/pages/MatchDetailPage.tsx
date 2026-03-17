@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 
+import { MatchDeckColors } from "../components/MatchDeckColors";
+import { ManaSymbol } from "../components/ManaSymbol";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
@@ -50,7 +52,6 @@ type ReplayCounterSummary = {
   count: number;
 };
 
-const SCRYFALL_SYMBOL_BASE_URL = "https://svgs.scryfall.io/card-symbols";
 const BOARD_ZONE_ORDER: BoardZoneKind[] = [
   "battlefield",
   "stack",
@@ -154,10 +155,6 @@ function parseManaCostParts(manaCost: string): ManaCostPart[] {
   return parts;
 }
 
-function manaSymbolURL(token: string): string {
-  return `${SCRYFALL_SYMBOL_BASE_URL}/${encodeURIComponent(token)}.svg`;
-}
-
 function boardZoneKind(zone: string): BoardZoneKind {
   const normalized = zone.trim().toLowerCase();
   if (!normalized) return "other";
@@ -189,30 +186,6 @@ function boardPlayMeta(play: MatchCardPlay): string {
     parts.push(phase);
   }
   return parts.join(" • ");
-}
-
-function ManaSymbol({ token }: { token: string }) {
-  const [didFail, setDidFail] = useState(false);
-  const label = `{${token}}`;
-
-  if (didFail) {
-    return (
-      <code className="mana-symbol-fallback" aria-label={label}>
-        {label}
-      </code>
-    );
-  }
-
-  return (
-    <img
-      className="mana-symbol-icon"
-      src={manaSymbolURL(token)}
-      alt={label}
-      loading="lazy"
-      decoding="async"
-      onError={() => setDidFail(true)}
-    />
-  );
 }
 
 function ManaCostDisplay({ manaCost }: { manaCost: string }) {
@@ -2344,6 +2317,18 @@ export function MatchDetailPage() {
           <div className="match-detail-summary-item">
             <dt>Opponent</dt>
             <dd>{match.opponent || "Unknown"}</dd>
+          </div>
+          <div className="match-detail-summary-item">
+            <dt>Deck Colors</dt>
+            <dd>
+              <MatchDeckColors
+                className="match-deck-colors-detail"
+                deckColors={match.deckColors}
+                deckColorsKnown={match.deckColorsKnown}
+                opponentDeckColors={match.opponentDeckColors}
+                opponentDeckColorsKnown={match.opponentDeckColorsKnown}
+              />
+            </dd>
           </div>
           <div className="match-detail-summary-item match-detail-summary-item-mono">
             <dt>Started</dt>

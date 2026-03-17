@@ -2,6 +2,7 @@ import ReactECharts from "echarts-for-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { MatchDeckColors } from "../components/MatchDeckColors";
 import { RankProgressPanel } from "../components/RankProgressPanel";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
@@ -86,6 +87,13 @@ export function OverviewPage() {
                   <p className="list-subtitle">
                     vs {match.opponent || "Unknown"} • {formatDateTime(match.startedAt)}
                   </p>
+                  <MatchDeckColors
+                    className="match-deck-colors-list"
+                    deckColors={match.deckColors}
+                    deckColorsKnown={match.deckColorsKnown}
+                    opponentDeckColors={match.opponentDeckColors}
+                    opponentDeckColorsKnown={match.opponentDeckColorsKnown}
+                  />
                 </div>
                 <div className="list-right">
                   <ResultPill result={match.result} />
