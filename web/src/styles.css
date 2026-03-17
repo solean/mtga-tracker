@@ -849,53 +849,13 @@ h1 {
 }
 
 .rank-toggle {
-  display: inline-flex;
-  gap: 0.3rem;
-  padding: 0.26rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--tabs-bg);
-  backdrop-filter: blur(10px);
-  box-shadow: inset 0 1px 0 var(--card-inner-border);
+  align-self: start;
 }
 
 .rank-toggle-button {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted-strong);
-  min-height: 44px;
-  padding: 0.46rem 1rem;
-  font-family: "IBM Plex Mono", "Menlo", monospace;
-  font-size: 0.74rem;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  appearance: none;
   cursor: pointer;
-  transition:
-    color 180ms ease,
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.rank-toggle-button:hover {
-  color: var(--text);
-  border-color: var(--tab-hover-border);
-  background: rgba(0, 212, 255, 0.04);
-}
-
-.rank-toggle-button.is-active {
-  color: var(--text);
-  border-color: var(--tab-active-border);
-  background: linear-gradient(
-    160deg,
-    var(--tab-active-bg-a) 0%,
-    var(--tab-active-bg-b) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 var(--tab-active-shine),
-    0 0 0 1px rgba(0, 212, 255, 0.04);
+  touch-action: manipulation;
 }
 
 .rank-summary {

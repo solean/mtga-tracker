@@ -333,7 +333,7 @@ export function RankProgressPanel() {
               : "Track how your ladder standing moves over time"}
           </p>
         </div>
-        <div className="rank-toggle" role="tablist" aria-label="Ladder selector">
+        <div className="tabs rank-toggle" role="tablist" aria-label="Ladder selector">
           {ladderOptions.map((value) => (
             <button
               key={value}
@@ -343,7 +343,7 @@ export function RankProgressPanel() {
               aria-selected={ladder === value}
               aria-controls={panelId}
               tabIndex={ladder === value ? 0 : -1}
-              className={`rank-toggle-button ${ladder === value ? "is-active" : ""}`}
+              className={`tab rank-toggle-button ${ladder === value ? "is-active" : ""}`}
               onClick={() => setLadder(value)}
               onKeyDown={(event) => handleToggleKeyDown(event, value)}
             >
