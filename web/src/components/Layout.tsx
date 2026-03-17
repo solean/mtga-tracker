@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigationType } from "react-router-dom";
 
+import { ThemeContext, type Theme } from "../lib/theme";
 import { Plasma } from "./Plasma";
 
 const tabs = [
@@ -12,8 +13,6 @@ const tabs = [
 
 const THEME_STORAGE_KEY = "mtgdata.theme";
 const scrollPositions = new Map<string, number>();
-
-type Theme = "dark" | "light";
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Overview";
@@ -85,58 +84,60 @@ export function Layout() {
   }, [location.key, navigationType]);
 
   return (
-    <>
-      <div className="plasma-bg" aria-hidden="true">
-        <Plasma
-          color="#00d4ff"
-          speed={0.35}
-          direction="forward"
-          scale={1.4}
-          opacity={0.18}
-          mouseInteractive={false}
-        />
-      </div>
-      <div className="app-shell">
-        <header className="topbar">
-        <div className="title-block">
-          <p className="kicker">Magic: The Gathering Arena</p>
-          <div className="title-row">
-            <span className="title-sigil" aria-hidden="true" />
-            <h1>MTGA Data Tracker</h1>
+    <ThemeContext.Provider value={theme}>
+      <>
+        <div className="plasma-bg" aria-hidden="true">
+          <Plasma
+            color="#00d4ff"
+            speed={0.35}
+            direction="forward"
+            scale={1.4}
+            opacity={0.18}
+            mouseInteractive={false}
+          />
+        </div>
+        <div className="app-shell">
+          <header className="topbar">
+          <div className="title-block">
+            <p className="kicker">Magic: The Gathering Arena</p>
+            <div className="title-row">
+              <span className="title-sigil" aria-hidden="true" />
+              <h1>MTGA Data Tracker</h1>
+            </div>
           </div>
+          <div className="topbar-controls">
+            <nav className="tabs" aria-label="Primary">
+              {tabs.map((tab) => (
+                <NavLink
+                  key={tab.to}
+                  to={tab.to}
+                  end={tab.to === "/"}
+                  className={({ isActive }) => `tab ${isActive ? "is-active" : ""}`}
+                >
+                  {tab.label}
+                </NavLink>
+              ))}
+            </nav>
+            <button
+              type="button"
+              className={`theme-toggle ${theme === "light" ? "is-light" : ""}`}
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+              aria-pressed={theme === "light"}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              <span className="theme-toggle-track" aria-hidden="true">
+                <span className="theme-toggle-thumb" />
+              </span>
+              <span className="theme-toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
+            </button>
+          </div>
+        </header>
+          <main id="main-content" className="content" tabIndex={-1}>
+            <Outlet />
+          </main>
         </div>
-        <div className="topbar-controls">
-          <nav className="tabs" aria-label="Primary">
-            {tabs.map((tab) => (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                end={tab.to === "/"}
-                className={({ isActive }) => `tab ${isActive ? "is-active" : ""}`}
-              >
-                {tab.label}
-              </NavLink>
-            ))}
-          </nav>
-          <button
-            type="button"
-            className={`theme-toggle ${theme === "light" ? "is-light" : ""}`}
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
-            aria-pressed={theme === "light"}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          >
-            <span className="theme-toggle-track" aria-hidden="true">
-              <span className="theme-toggle-thumb" />
-            </span>
-            <span className="theme-toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
-          </button>
-        </div>
-      </header>
-        <main id="main-content" className="content" tabIndex={-1}>
-          <Outlet />
-        </main>
-      </div>
-    </>
+      </>
+    </ThemeContext.Provider>
   );
 }

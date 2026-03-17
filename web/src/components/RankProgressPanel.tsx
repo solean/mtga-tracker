@@ -1,9 +1,10 @@
 import ReactECharts from "echarts-for-react";
 import { useQuery } from "@tanstack/react-query";
-import { useId, useState, type KeyboardEvent } from "react";
+import { useId, useMemo, useState, type KeyboardEvent } from "react";
 
 import { api } from "../lib/api";
 import { formatDateTime } from "../lib/format";
+import { useTheme, type Theme } from "../lib/theme";
 import type { RankHistoryPoint, RankState } from "../lib/types";
 
 type Ladder = "constructed" | "limited";
@@ -35,11 +36,48 @@ const LADDER_CONFIG: Record<Ladder, LadderConfig> = {
   },
 };
 
-function themeVar(name: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
+type ChartThemeTokens = {
+  accent: string;
+  accentGlow: string;
+  accentSoft: string;
+  axisLine: string;
+  axisText: string;
+  hoverBorder: string;
+  pointBorder: string;
+  splitLine: string;
+  tooltipBackground: string;
+  tooltipBorder: string;
+  tooltipText: string;
+};
+
+const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
+  dark: {
+    accent: "#00d4ff",
+    accentGlow: "rgba(0, 212, 255, 0.22)",
+    accentSoft: "rgba(0, 212, 255, 0.1)",
+    axisLine: "rgba(0, 180, 216, 0.14)",
+    axisText: "#8a9eb4",
+    hoverBorder: "#dce4ec",
+    pointBorder: "rgba(14, 24, 42, 0.94)",
+    splitLine: "rgba(0, 212, 255, 0.025)",
+    tooltipBackground: "rgba(6, 12, 22, 0.97)",
+    tooltipBorder: "rgba(0, 200, 235, 0.3)",
+    tooltipText: "#dce4ec",
+  },
+  light: {
+    accent: "#0277bd",
+    accentGlow: "rgba(2, 119, 189, 0.15)",
+    accentSoft: "rgba(2, 119, 189, 0.1)",
+    axisLine: "rgba(0, 80, 140, 0.14)",
+    axisText: "#354858",
+    hoverBorder: "#f7fbff",
+    pointBorder: "rgba(236, 242, 248, 0.96)",
+    splitLine: "rgba(0, 100, 160, 0.02)",
+    tooltipBackground: "rgba(238, 244, 250, 0.98)",
+    tooltipBorder: "rgba(0, 80, 140, 0.28)",
+    tooltipText: "#0d1b2a",
+  },
+};
 
 function rankStateFor(point: RankHistoryPoint, ladder: Ladder): RankState {
   return ladder === "constructed" ? point.constructed : point.limited;
@@ -126,6 +164,7 @@ function tierLabelAt(value: number, ladder: Ladder): string {
 
 export function RankProgressPanel() {
   const tabBaseId = useId();
+  const theme = useTheme();
   const [ladder, setLadder] = useState<Ladder>("constructed");
   const { data, isLoading, error } = useQuery({
     queryKey: ["rank-history"],
@@ -143,28 +182,27 @@ export function RankProgressPanel() {
     currentState && currentState.matchesWon != null && currentState.matchesLost != null
       ? `${currentState.matchesWon}W-${currentState.matchesLost}L`
       : null;
-  const chartAccent = themeVar("--accent", "#00d4ff");
-  const chartAccentSoft = themeVar("--accent-soft", "rgba(0, 212, 255, 0.1)");
-  const chartAccentGlow = themeVar("--accent-glow", "rgba(0, 212, 255, 0.22)");
+  const chartTheme = CHART_THEME_TOKENS[theme];
 
-  const chartOption =
-    series && currentPoint
-      ? {
+  const chartOption = useMemo(
+    () =>
+      series && currentPoint
+        ? {
           backgroundColor: "transparent",
           animationDuration: 320,
           grid: { left: 72, right: 28, top: 28, bottom: 34 },
           tooltip: {
             trigger: "axis",
-            backgroundColor: themeVar("--popover-bg", "rgba(7, 13, 12, 0.96)"),
-            borderColor: themeVar("--line-strong", "rgba(174, 206, 185, 0.48)"),
+            backgroundColor: chartTheme.tooltipBackground,
+            borderColor: chartTheme.tooltipBorder,
             textStyle: {
-              color: themeVar("--text", "#e7eee8"),
+              color: chartTheme.tooltipText,
               fontFamily: "IBM Plex Mono, Menlo, monospace",
               fontSize: 12,
             },
             axisPointer: {
               type: "line",
-              lineStyle: { color: chartAccent, opacity: 0.26 },
+              lineStyle: { color: chartTheme.accent, opacity: 0.26 },
             },
             formatter: (params: any) => {
               const point = Array.isArray(params) ? params[0]?.data : params?.data;
@@ -187,10 +225,10 @@ export function RankProgressPanel() {
             min: 1,
             max: Math.max(series.points.length, 1),
             splitNumber: Math.min(Math.max(Math.floor(series.points.length / 4), 4), 8),
-            axisLine: { lineStyle: { color: themeVar("--line", "rgba(128, 164, 146, 0.3)") } },
+            axisLine: { lineStyle: { color: chartTheme.axisLine } },
             axisTick: { show: false },
             axisLabel: {
-              color: themeVar("--muted-strong", "#c6d2cb"),
+              color: chartTheme.axisText,
               fontFamily: "IBM Plex Mono, Menlo, monospace",
               formatter: (value: number) => {
                 if (value === 1 || value === series.points.length || value % 5 === 0) {
@@ -212,14 +250,14 @@ export function RankProgressPanel() {
             axisLine: { show: false },
             axisTick: { show: false },
             axisLabel: {
-              color: themeVar("--muted-strong", "#c6d2cb"),
+              color: chartTheme.axisText,
               fontFamily: "IBM Plex Mono, Menlo, monospace",
               margin: 14,
               formatter: (value: number) => tierLabelAt(value, ladder),
             },
             splitLine: {
               lineStyle: {
-                color: themeVar("--veil-line", "rgba(213, 188, 132, 0.06)"),
+                color: chartTheme.splitLine,
                 type: "solid",
               },
             },
@@ -236,17 +274,17 @@ export function RankProgressPanel() {
               symbol: "circle",
               symbolSize: 8,
               lineStyle: {
-                color: chartAccent,
+                color: chartTheme.accent,
                 width: 2.4,
                 shadowBlur: 10,
-                shadowColor: chartAccentGlow,
+                shadowColor: chartTheme.accentGlow,
               },
               itemStyle: {
-                color: chartAccent,
-                borderColor: themeVar("--surface-strong", "#162a25"),
+                color: chartTheme.accent,
+                borderColor: chartTheme.pointBorder,
                 borderWidth: 1.5,
                 shadowBlur: 8,
-                shadowColor: chartAccentGlow,
+                shadowColor: chartTheme.accentGlow,
               },
               areaStyle: {
                 color: {
@@ -256,7 +294,7 @@ export function RankProgressPanel() {
                   x2: 0,
                   y2: 1,
                   colorStops: [
-                    { offset: 0, color: chartAccentSoft },
+                    { offset: 0, color: chartTheme.accentSoft },
                     { offset: 1, color: "rgba(0, 212, 255, 0.02)" },
                   ],
                 },
@@ -272,17 +310,19 @@ export function RankProgressPanel() {
               ],
               symbolSize: 12,
               itemStyle: {
-                color: chartAccent,
-                borderColor: themeVar("--text", "#ffffff"),
+                color: chartTheme.accent,
+                borderColor: chartTheme.hoverBorder,
                 borderWidth: 2,
                 shadowBlur: 18,
-                shadowColor: chartAccentGlow,
+                shadowColor: chartTheme.accentGlow,
               },
               z: 5,
             },
           ],
         }
-      : null;
+        : null,
+    [chartTheme, currentPoint, ladder, series],
+  );
 
   function handleToggleKeyDown(event: KeyboardEvent<HTMLButtonElement>, value: Ladder) {
     const currentIndex = ladderOptions.indexOf(value);
@@ -387,7 +427,9 @@ export function RankProgressPanel() {
         {!isLoading && !error && !readyState ? (
           <p className="state">No rank snapshots available for this ladder yet.</p>
         ) : null}
-        {readyState ? <ReactECharts option={readyState.chartOption} style={{ height: 320 }} /> : null}
+        {readyState ? (
+          <ReactECharts key={`${ladder}-${theme}`} option={readyState.chartOption} style={{ height: 320 }} />
+        ) : null}
       </div>
     </section>
   );

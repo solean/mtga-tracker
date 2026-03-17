@@ -905,8 +905,8 @@ h1 {
   border-radius: 3px;
   background: linear-gradient(
     160deg,
-    rgba(8, 16, 28, 0.76) 0%,
-    rgba(12, 22, 38, 0.92) 100%
+    var(--panel-inner-a) 0%,
+    var(--panel-inner-b) 100%
   );
   box-shadow: inset 0 1px 0 var(--card-inner-border);
   padding: 0.32rem 0.18rem 0.12rem;
@@ -963,9 +963,10 @@ h1 {
 }
 
 .list-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.72rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) auto;
+  align-items: center;
+  gap: 0.72rem 1.1rem;
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 0.68rem 0.82rem;
@@ -983,7 +984,7 @@ h1 {
     box-shadow 160ms ease;
 }
 
-.list-row > div {
+.list-row > * {
   min-width: 0;
 }
 
@@ -1034,24 +1035,75 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.list-main {
+  display: grid;
+  gap: 0.24rem;
+  align-content: center;
+}
+
 .list-subtitle {
-  margin: 0.2rem 0 0;
-  color: var(--muted);
-  font-size: 0.82rem;
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
   overflow-wrap: anywhere;
+}
+
+.list-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(12rem, 1.2fr);
+  gap: 0.6rem 0.95rem;
+  margin: 0;
+  align-items: center;
+}
+
+.list-meta-item {
+  min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+  align-content: start;
+  padding-left: 0.88rem;
+  border-left: 1px solid var(--line);
+}
+
+.list-meta-item dt {
+  margin: 0;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.list-meta-item dd {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.list-meta .match-deck-colors-list {
+  margin-top: 0;
 }
 
 .list-right {
   display: grid;
   justify-items: end;
-  align-content: start;
-  gap: 0.2rem;
+  align-content: center;
+  gap: 0.28rem;
+  min-width: 8.2rem;
+  padding-left: 0.98rem;
+  border-left: 1px solid var(--line);
 }
 
 .list-right small {
   color: var(--muted-strong);
   font-size: 0.76rem;
   letter-spacing: 0.04em;
+  text-align: right;
+  text-wrap: balance;
 }
 
 .match-deck-colors {
@@ -1105,7 +1157,7 @@ h1 {
 }
 
 .match-deck-colors-list {
-  margin-top: 0.46rem;
+  margin-top: 0.2rem;
 }
 
 .match-deck-colors-detail {
@@ -2414,6 +2466,26 @@ select {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .list-meta {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .list-meta-item--colors {
+    grid-column: 1 / -1;
+  }
+
+  .list-right {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 7.2rem;
+  }
+
   .deck-mainboard-skeleton-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2581,7 +2653,30 @@ select {
   }
 
   .list-row {
-    align-items: start;
+    grid-template-columns: 1fr;
+    gap: 0.78rem;
+  }
+
+  .list-meta {
+    grid-template-columns: 1fr;
+    gap: 0.58rem;
+  }
+
+  .list-meta-item,
+  .list-right {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .list-right {
+    justify-items: start;
+    min-width: 0;
+    padding-top: 0.62rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .list-right small {
+    text-align: left;
   }
 
   .data-table th,

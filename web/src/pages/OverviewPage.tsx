@@ -53,27 +53,57 @@ export function OverviewPage() {
           </Link>
         </div>
         <div className="list">
-          {data.recent.slice(0, 8).map((match) => (
-            <Link className="list-row" key={match.id} to={`/matches/${match.id}`}>
-              <div>
-                <p className="list-title">{match.eventName || "Unknown event"}</p>
-                <p className="list-subtitle">
-                  vs {match.opponent || "Unknown"} • {formatDateTime(match.startedAt)}
-                </p>
-                <MatchDeckColors
-                  className="match-deck-colors-list"
-                  deckColors={match.deckColors}
-                  deckColorsKnown={match.deckColorsKnown}
-                  opponentDeckColors={match.opponentDeckColors}
-                  opponentDeckColorsKnown={match.opponentDeckColorsKnown}
-                />
-              </div>
-              <div className="list-right">
-                <ResultPill result={match.result} />
-                <small>{formatDuration(match.secondsCount ?? undefined)}</small>
-              </div>
-            </Link>
-          ))}
+          {data.recent.slice(0, 8).map((match) => {
+            const queueLabel = match.eventName || "Unknown event";
+            const title = match.deckName || queueLabel;
+            const subtitle = match.deckName ? `Queue • ${queueLabel}` : null;
+            const timingParts: string[] = [];
+            const duration = formatDuration(match.secondsCount ?? undefined);
+
+            if (duration !== "-") {
+              timingParts.push(duration);
+            }
+            if (match.turnCount != null) {
+              timingParts.push(`${match.turnCount} turn${match.turnCount === 1 ? "" : "s"}`);
+            }
+
+            return (
+              <Link className="list-row" key={match.id} to={`/matches/${match.id}`}>
+                <div className="list-main">
+                  <p className="list-title">{title}</p>
+                  {subtitle ? <p className="list-subtitle">{subtitle}</p> : null}
+                </div>
+
+                <dl className="list-meta" aria-label="Recent match summary">
+                  <div className="list-meta-item">
+                    <dt>Opponent</dt>
+                    <dd>{match.opponent || "Unknown"}</dd>
+                  </div>
+                  <div className="list-meta-item">
+                    <dt>Started</dt>
+                    <dd>{formatDateTime(match.startedAt)}</dd>
+                  </div>
+                  <div className="list-meta-item list-meta-item--colors">
+                    <dt>Colors</dt>
+                    <dd>
+                      <MatchDeckColors
+                        className="match-deck-colors-list"
+                        deckColors={match.deckColors}
+                        deckColorsKnown={match.deckColorsKnown}
+                        opponentDeckColors={match.opponentDeckColors}
+                        opponentDeckColorsKnown={match.opponentDeckColorsKnown}
+                      />
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="list-right">
+                  <ResultPill result={match.result} />
+                  <small>{timingParts.join(" • ") || "Timing unavailable"}</small>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
     </div>
