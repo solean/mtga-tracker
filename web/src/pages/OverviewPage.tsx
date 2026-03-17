@@ -1,4 +1,3 @@
-import ReactECharts from "echarts-for-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
@@ -19,29 +18,9 @@ export function OverviewPage() {
   if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
   if (!data) return <StatusMessage>No data.</StatusMessage>;
 
-  const chartOption = {
-    backgroundColor: "transparent",
-    tooltip: {
-      trigger: "item",
-      backgroundColor: "rgba(8, 14, 26, 0.95)",
-      borderColor: "rgba(0, 212, 255, 0.25)",
-      textStyle: { color: "#dce4ec", fontFamily: "IBM Plex Mono, Menlo, monospace", fontSize: 12 },
-    },
-    series: [
-      {
-        name: "Matches",
-        type: "pie",
-        radius: ["45%", "70%"],
-        avoidLabelOverlap: false,
-        label: { show: false },
-        itemStyle: { borderColor: "rgba(8, 12, 21, 0.9)", borderWidth: 2 },
-        data: [
-          { value: data.wins, name: "Wins", itemStyle: { color: "#00e676" } },
-          { value: data.losses, name: "Losses", itemStyle: { color: "#ff5252" } },
-        ],
-      },
-    ],
-  };
+  const displayedWinRate = Number((data.winRate * 100).toFixed(1));
+  const winRateTone =
+    displayedWinRate > 50 ? "positive" : displayedWinRate < 50 ? "negative" : "neutral";
 
   return (
     <div className="stack-lg">
@@ -58,7 +37,7 @@ export function OverviewPage() {
           <p>Losses</p>
           <h2>{data.losses}</h2>
         </article>
-        <article className="metric-card emphasis">
+        <article className={`metric-card win-rate-card win-rate-card--${winRateTone}`}>
           <p>Win Rate</p>
           <h2>{pct(data.winRate)}</h2>
         </article>
@@ -66,43 +45,36 @@ export function OverviewPage() {
 
       <RankProgressPanel />
 
-      <section className="two-col">
-        <article className="panel chart-panel">
-          <h3>Record Split</h3>
-          <ReactECharts option={chartOption} style={{ height: 280 }} />
-        </article>
-
-        <article className="panel">
-          <div className="panel-head">
-            <h3>Recent Matches</h3>
-            <Link to="/matches" className="text-link">
-              Open full history
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Recent Matches</h3>
+          <Link to="/matches" className="text-link">
+            Open full history
+          </Link>
+        </div>
+        <div className="list">
+          {data.recent.slice(0, 8).map((match) => (
+            <Link className="list-row" key={match.id} to={`/matches/${match.id}`}>
+              <div>
+                <p className="list-title">{match.eventName || "Unknown event"}</p>
+                <p className="list-subtitle">
+                  vs {match.opponent || "Unknown"} • {formatDateTime(match.startedAt)}
+                </p>
+                <MatchDeckColors
+                  className="match-deck-colors-list"
+                  deckColors={match.deckColors}
+                  deckColorsKnown={match.deckColorsKnown}
+                  opponentDeckColors={match.opponentDeckColors}
+                  opponentDeckColorsKnown={match.opponentDeckColorsKnown}
+                />
+              </div>
+              <div className="list-right">
+                <ResultPill result={match.result} />
+                <small>{formatDuration(match.secondsCount ?? undefined)}</small>
+              </div>
             </Link>
-          </div>
-          <div className="list">
-            {data.recent.slice(0, 8).map((match) => (
-              <Link className="list-row" key={match.id} to={`/matches/${match.id}`}>
-                <div>
-                  <p className="list-title">{match.eventName || "Unknown event"}</p>
-                  <p className="list-subtitle">
-                    vs {match.opponent || "Unknown"} • {formatDateTime(match.startedAt)}
-                  </p>
-                  <MatchDeckColors
-                    className="match-deck-colors-list"
-                    deckColors={match.deckColors}
-                    deckColorsKnown={match.deckColorsKnown}
-                    opponentDeckColors={match.opponentDeckColors}
-                    opponentDeckColorsKnown={match.opponentDeckColorsKnown}
-                  />
-                </div>
-                <div className="list-right">
-                  <ResultPill result={match.result} />
-                  <small>{formatDuration(match.secondsCount ?? undefined)}</small>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </article>
+          ))}
+        </div>
       </section>
     </div>
   );
