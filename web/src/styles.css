@@ -1258,12 +1258,12 @@ h1 {
 }
 
 .data-table tbody tr {
-  transition: background-color 120ms ease;
+  transition: background-color 0ms linear;
   position: relative;
 }
 
 .data-table tbody tr:hover {
-  background: var(--table-row-hover);
+  background-color: var(--table-row-hover);
 }
 
 .data-table tbody tr:last-child td {
@@ -1343,6 +1343,18 @@ h1 {
   display: grid;
   gap: 0.22rem;
   min-width: 0;
+}
+
+.match-timeline-button {
+  appearance: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.match-timeline-game-tabs {
+  align-self: start;
+  max-width: 100%;
+  margin-bottom: 0.92rem;
 }
 
 .match-board-disclaimer {
@@ -2557,6 +2569,15 @@ select {
   }
 
   .match-timeline-toolbar .tab {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .match-timeline-game-tabs {
+    width: 100%;
+  }
+
+  .match-timeline-game-tabs .tab {
     flex: 1 1 0;
     justify-content: center;
   }

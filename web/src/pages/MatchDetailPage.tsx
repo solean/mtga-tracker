@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
@@ -2122,6 +2129,9 @@ export function MatchDetailPage() {
   const isValidMatchID = Number.isFinite(matchId);
   const [timelineDisplayMode, setTimelineDisplayMode] =
     useState<TimelineDisplayMode>("board");
+  const [selectedTimelineGameNumber, setSelectedTimelineGameNumber] =
+    useState<number | null>(null);
+  const timelineGameTabBaseId = useId();
 
   const query = useQuery({
     queryKey: ["match-detail", matchId],
@@ -2274,6 +2284,93 @@ export function MatchDetailPage() {
   const timelineSummary = hasReplayFrames
     ? `${visibleReplayFrames.length} public replay step${visibleReplayFrames.length === 1 ? "" : "s"} across ${replayGroups.length} game${replayGroups.length === 1 ? "" : "s"}`
     : `${timelineRows.length} observed play${timelineRows.length === 1 ? "" : "s"}${timelineRows.length > 0 ? ` across ${timelineGroups.length} game${timelineGroups.length === 1 ? "" : "s"}` : ""}`;
+  const timelineGameNumbers = useMemo(
+    () =>
+      (timelineDisplayMode === "board" && hasReplayFrames
+        ? replayGroups
+        : timelineGroups
+      ).map(([gameNumber]) => gameNumber),
+    [hasReplayFrames, replayGroups, timelineDisplayMode, timelineGroups],
+  );
+  const activeTimelineGameNumber =
+    selectedTimelineGameNumber ?? timelineGameNumbers[0] ?? null;
+  const activeReplayGroup =
+    activeTimelineGameNumber === null
+      ? null
+      : replayGroups.find(([gameNumber]) => gameNumber === activeTimelineGameNumber) ??
+        null;
+  const activeTimelineGroup =
+    activeTimelineGameNumber === null
+      ? null
+      : timelineGroups.find(
+          ([gameNumber]) => gameNumber === activeTimelineGameNumber,
+        ) ?? null;
+  const activeTimelinePlays = activeTimelineGroup?.[1] ?? null;
+  const showTimelineGameTabs = timelineGameNumbers.length > 1;
+  const activeTimelineGameTabID =
+    activeTimelineGameNumber === null
+      ? undefined
+      : `${timelineGameTabBaseId}-tab-${activeTimelineGameNumber}`;
+  const activeTimelineGamePanelID =
+    activeTimelineGameNumber === null
+      ? undefined
+      : `${timelineGameTabBaseId}-panel-${activeTimelineGameNumber}`;
+
+  useEffect(() => {
+    if (timelineGameNumbers.length === 0) {
+      setSelectedTimelineGameNumber(null);
+      return;
+    }
+
+    setSelectedTimelineGameNumber((currentGameNumber) =>
+      currentGameNumber !== null &&
+      timelineGameNumbers.includes(currentGameNumber)
+        ? currentGameNumber
+        : timelineGameNumbers[0],
+    );
+  }, [timelineGameNumbers]);
+
+  function handleTimelineGameTabKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    gameNumber: number,
+  ) {
+    const currentIndex = timelineGameNumbers.indexOf(gameNumber);
+    if (currentIndex === -1) return;
+
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        setSelectedTimelineGameNumber(
+          timelineGameNumbers[
+            (currentIndex + timelineGameNumbers.length - 1) %
+              timelineGameNumbers.length
+          ],
+        );
+        break;
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        setSelectedTimelineGameNumber(
+          timelineGameNumbers[
+            (currentIndex + 1) % timelineGameNumbers.length
+          ],
+        );
+        break;
+      case "Home":
+        event.preventDefault();
+        setSelectedTimelineGameNumber(timelineGameNumbers[0]);
+        break;
+      case "End":
+        event.preventDefault();
+        setSelectedTimelineGameNumber(
+          timelineGameNumbers[timelineGameNumbers.length - 1],
+        );
+        break;
+      default:
+        break;
+    }
+  }
 
   if (!isValidMatchID)
     return <StatusMessage tone="error">Invalid match id.</StatusMessage>;
@@ -2368,7 +2465,7 @@ export function MatchDetailPage() {
           >
             <button
               type="button"
-              className={`tab ${timelineDisplayMode === "board" ? "is-active" : ""}`}
+              className={`tab match-timeline-button ${timelineDisplayMode === "board" ? "is-active" : ""}`}
               aria-pressed={timelineDisplayMode === "board"}
               onClick={() => setTimelineDisplayMode("board")}
             >
@@ -2376,7 +2473,7 @@ export function MatchDetailPage() {
             </button>
             <button
               type="button"
-              className={`tab ${timelineDisplayMode === "list" ? "is-active" : ""}`}
+              className={`tab match-timeline-button ${timelineDisplayMode === "list" ? "is-active" : ""}`}
               aria-pressed={timelineDisplayMode === "list"}
               onClick={() => setTimelineDisplayMode("list")}
             >
@@ -2384,6 +2481,32 @@ export function MatchDetailPage() {
             </button>
           </div>
         </div>
+        {showTimelineGameTabs ? (
+          <div
+            className="tabs match-timeline-game-tabs"
+            role="tablist"
+            aria-label="Timeline game selector"
+          >
+            {timelineGameNumbers.map((gameNumber) => (
+              <button
+                key={gameNumber}
+                type="button"
+                id={`${timelineGameTabBaseId}-tab-${gameNumber}`}
+                role="tab"
+                aria-selected={activeTimelineGameNumber === gameNumber}
+                aria-controls={`${timelineGameTabBaseId}-panel-${gameNumber}`}
+                tabIndex={activeTimelineGameNumber === gameNumber ? 0 : -1}
+                className={`tab match-timeline-button ${activeTimelineGameNumber === gameNumber ? "is-active" : ""}`}
+                onClick={() => setSelectedTimelineGameNumber(gameNumber)}
+                onKeyDown={(event) =>
+                  handleTimelineGameTabKeyDown(event, gameNumber)
+                }
+              >
+                Game {gameNumber}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {timelineDisplayMode === "board" ? (
           <div className="stack-md">
             <p className="match-board-disclaimer">
@@ -2394,14 +2517,25 @@ export function MatchDetailPage() {
             {replayQuery.isPending ? (
               <StatusMessage>Loading replay frames…</StatusMessage>
             ) : hasReplayFrames ? (
-              replayGroups.map(([gameNumber, frames]) => (
-                <MatchReplayFrameBoard
-                  key={gameNumber}
-                  gameNumber={gameNumber}
-                  frames={frames}
-                  previewByCardID={boardPreviewByCardID}
-                />
-              ))
+              activeReplayGroup ? (
+                <div
+                  id={showTimelineGameTabs ? activeTimelineGamePanelID : undefined}
+                  role={showTimelineGameTabs ? "tabpanel" : undefined}
+                  aria-labelledby={
+                    showTimelineGameTabs ? activeTimelineGameTabID : undefined
+                  }
+                >
+                  <MatchReplayFrameBoard
+                    gameNumber={activeReplayGroup[0]}
+                    frames={activeReplayGroup[1]}
+                    previewByCardID={boardPreviewByCardID}
+                  />
+                </div>
+              ) : (
+                <StatusMessage>
+                  No observed replay data for this match yet.
+                </StatusMessage>
+              )
             ) : timelineQuery.error ? (
               <StatusMessage tone="error">
                 {(timelineQuery.error as Error).message}
@@ -2411,14 +2545,25 @@ export function MatchDetailPage() {
                 No observed replay data for this match yet.
               </StatusMessage>
             ) : (
-              timelineGroups.map(([gameNumber, plays]) => (
-                <MatchTimelineBoard
-                  key={gameNumber}
-                  gameNumber={gameNumber}
-                  plays={plays}
-                  previewByCardID={boardPreviewByCardID}
-                />
-              ))
+              activeTimelineGroup ? (
+                <div
+                  id={showTimelineGameTabs ? activeTimelineGamePanelID : undefined}
+                  role={showTimelineGameTabs ? "tabpanel" : undefined}
+                  aria-labelledby={
+                    showTimelineGameTabs ? activeTimelineGameTabID : undefined
+                  }
+                >
+                  <MatchTimelineBoard
+                    gameNumber={activeTimelineGroup[0]}
+                    plays={activeTimelineGroup[1]}
+                    previewByCardID={boardPreviewByCardID}
+                  />
+                </div>
+              ) : (
+                <StatusMessage>
+                  No observed replay data for this match yet.
+                </StatusMessage>
+              )
             )}
             {replayQuery.error && !hasReplayFrames ? (
               <StatusMessage tone="error">
@@ -2438,10 +2583,17 @@ export function MatchDetailPage() {
             No observed card plays for this match yet.
           </StatusMessage>
         ) : (
-          <div className="stack-md">
-            {timelineGroups.map(([gameNumber, plays]) => (
-              <div key={gameNumber} className="stack-md">
-                <h4>Game {gameNumber}</h4>
+          <div
+            className="stack-md"
+            id={showTimelineGameTabs ? activeTimelineGamePanelID : undefined}
+            role={showTimelineGameTabs ? "tabpanel" : undefined}
+            aria-labelledby={
+              showTimelineGameTabs ? activeTimelineGameTabID : undefined
+            }
+          >
+            {activeTimelineGameNumber !== null && activeTimelinePlays ? (
+              <div className="stack-md">
+                <h4>Game {activeTimelineGameNumber}</h4>
                 <div className="table-wrap">
                   <table className="data-table">
                     <thead>
@@ -2456,7 +2608,7 @@ export function MatchDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {plays.map((play, index) => (
+                      {activeTimelinePlays.map((play, index) => (
                         <tr key={play.id}>
                           <td>{index + 1}</td>
                           <td>{play.turnNumber ?? "-"}</td>
@@ -2478,7 +2630,11 @@ export function MatchDetailPage() {
                   </table>
                 </div>
               </div>
-            ))}
+            ) : (
+              <StatusMessage>
+                No observed card plays for this match yet.
+              </StatusMessage>
+            )}
           </div>
         )}
       </section>
