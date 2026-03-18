@@ -5,6 +5,30 @@ import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, pct } from "../lib/format";
 
+const DRAFT_EVENT_DATE_PATTERN = /_(\d{4})(\d{2})(\d{2})$/;
+
+function getDraftDeckDateValue(eventName?: string | null): number | null {
+  const match = eventName?.match(DRAFT_EVENT_DATE_PATTERN);
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day] = match;
+  return Date.UTC(Number(year), Number(month) - 1, Number(day));
+}
+
+function formatDraftDeckDate(eventName?: string | null): string {
+  const dateValue = getDraftDeckDateValue(eventName);
+  if (dateValue == null) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(new Date(dateValue));
+}
+
 export function DraftsPage() {
   const draftsQuery = useQuery({
     queryKey: ["drafts"],
@@ -15,12 +39,28 @@ export function DraftsPage() {
     queryFn: () => api.decks("draft"),
   });
 
+  const draftDecks = [...(draftDecksQuery.data ?? [])].sort((a, b) => {
+    const aDate = getDraftDeckDateValue(a.eventName);
+    const bDate = getDraftDeckDateValue(b.eventName);
+
+    if (aDate != null && bDate != null && aDate !== bDate) {
+      return bDate - aDate;
+    }
+    if (aDate != null) {
+      return -1;
+    }
+    if (bDate != null) {
+      return 1;
+    }
+
+    return b.deckId - a.deckId;
+  });
+
   if (draftsQuery.isLoading || draftDecksQuery.isLoading) return <StatusMessage>Loading drafts…</StatusMessage>;
   if (draftsQuery.error) return <StatusMessage tone="error">{(draftsQuery.error as Error).message}</StatusMessage>;
   if (draftDecksQuery.error) return <StatusMessage tone="error">{(draftDecksQuery.error as Error).message}</StatusMessage>;
 
   const drafts = draftsQuery.data ?? [];
-  const draftDecks = draftDecksQuery.data ?? [];
 
   return (
     <div className="stack-lg">
@@ -70,6 +110,7 @@ export function DraftsPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th>Date</th>
                 <th>Deck</th>
                 <th>Format</th>
                 <th>Event</th>
@@ -82,6 +123,7 @@ export function DraftsPage() {
             <tbody>
               {draftDecks.map((deck) => (
                 <tr key={deck.deckId}>
+                  <td>{formatDraftDeckDate(deck.eventName)}</td>
                   <td>
                     <Link to={`/decks/${deck.deckId}`} className="text-link">
                       {deck.deckName || `Deck ${deck.deckId}`}

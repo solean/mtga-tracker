@@ -156,7 +156,7 @@ export type DeckDetail = {
   format: string;
   eventName: string;
   cards: DeckCard[];
-  matches: Match[];
+  matches: Match[] | null;
 };
 
 export type DraftSession = {

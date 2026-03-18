@@ -537,6 +537,8 @@ export function DeckDetailPage() {
   if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
   if (!data) return <StatusMessage>Deck not found.</StatusMessage>;
 
+  const matches = data.matches ?? [];
+
   return (
     <div className="stack-lg deck-detail-stack">
       <section className="panel decklist-panel">
@@ -637,7 +639,7 @@ export function DeckDetailPage() {
       <section className="panel">
         <div className="panel-head">
           <h3>Matches with this deck</h3>
-          <p>{data.matches.length} matches</p>
+          <p>{matches.length} matches</p>
         </div>
         <div className="table-wrap">
           <table className="data-table">
@@ -653,7 +655,7 @@ export function DeckDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {data.matches.map((match) => (
+              {matches.map((match) => (
                 <tr key={match.id}>
                   <td>{formatDateTime(match.startedAt)}</td>
                   <td>{match.eventName || "-"}</td>
