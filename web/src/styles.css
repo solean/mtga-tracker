@@ -1481,7 +1481,6 @@ h1 {
 }
 
 .match-replay-sidebox-total,
-.match-replay-sidebox-status,
 .match-replay-lane-subtitle,
 .match-replay-stackbox-player,
 .match-replay-centerline-copy {
@@ -1572,6 +1571,15 @@ h1 {
   grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
   gap: 0.8rem;
   align-items: start;
+}
+
+.match-replay-stackbox-body.is-replay-stack {
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.match-replay-stackbox-body.is-replay-stack.is-empty {
+  gap: 0;
 }
 
 .match-replay-stackbox-body.is-live-stack {
@@ -2556,7 +2564,7 @@ select {
     grid-column: span 3;
   }
 
-  .match-replay-stackbox-body {
+  .match-replay-stackbox-body:not(.is-replay-stack) {
     grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
   }
 }

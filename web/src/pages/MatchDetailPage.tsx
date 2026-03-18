@@ -1098,16 +1098,6 @@ function MatchReplayFrameSideSummary({
     () => summarizeReplayFrameZones(sideObjects),
     [sideObjects],
   );
-  const battlefieldObjects = useMemo(
-    () =>
-      sideObjects.filter(
-        (object) => boardZoneKind(object.zoneType) === "battlefield",
-      ),
-    [sideObjects],
-  );
-  const tappedCount = battlefieldObjects.filter((object) => object.isTapped).length;
-  const attackingCount = battlefieldObjects.filter(replayObjectIsAttacking).length;
-  const blockingCount = battlefieldObjects.filter(replayObjectIsBlocking).length;
   const stats: BoardZoneKind[] = [
     "battlefield",
     "graveyard",
@@ -1127,12 +1117,6 @@ function MatchReplayFrameSideSummary({
           </p>
           <p className="match-replay-sidebox-total">
             {sideObjects.length} public card{sideObjects.length === 1 ? "" : "s"}
-          </p>
-          <p className="match-replay-sidebox-status">
-            {battlefieldObjects.length} on board
-            {tappedCount > 0 ? ` • ${tappedCount} tapped` : ""}
-            {attackingCount > 0 ? ` • ${attackingCount} attacking` : ""}
-            {blockingCount > 0 ? ` • ${blockingCount} blocking` : ""}
           </p>
         </div>
         {typeof lifeTotal === "number" ? (
@@ -1267,12 +1251,10 @@ function MatchReplayFrameBattlefield({
 
 function MatchReplayStack({
   frame,
-  frameSummary,
   previewByCardID,
   highlightedInstanceIDs,
 }: {
   frame: MatchReplayFrame;
-  frameSummary: string;
   previewByCardID: Map<number, CardPreview | null>;
   highlightedInstanceIDs: Set<number>;
 }) {
@@ -1284,12 +1266,6 @@ function MatchReplayStack({
     [frame],
   );
   const topObject = stackObjects[stackObjects.length - 1] ?? null;
-  const topName = topObject
-    ? cardDisplayName({
-        cardId: topObject.cardId,
-        cardName: topObject.cardName,
-      })
-    : null;
 
   return (
     <section className="match-replay-stackbox" aria-label="Current stack">
@@ -1302,12 +1278,14 @@ function MatchReplayStack({
               : `${stackObjects.length} public card${stackObjects.length === 1 ? "" : "s"}`}
           </p>
         </div>
-        <p className="match-replay-stackbox-player">
-          {topObject ? `${timelinePlayerLabel(topObject.playerSide)} on top` : "No active stack"}
-        </p>
+        {topObject ? (
+          <p className="match-replay-stackbox-player">
+            Top • {timelinePlayerLabel(topObject.playerSide)}
+          </p>
+        ) : null}
       </div>
       <div
-        className={`match-replay-stackbox-body ${stackObjects.length > 1 ? "is-live-stack" : ""}`}
+        className={`match-replay-stackbox-body is-replay-stack ${stackObjects.length === 0 ? "is-empty" : ""}`}
       >
         <div
           className="match-replay-stack-cards"
@@ -1315,7 +1293,7 @@ function MatchReplayStack({
         >
           {stackObjects.length === 0 ? (
             <p className="match-replay-empty">
-              No public cards on the stack in this frame.
+              No public stack in this step.
             </p>
           ) : (
             stackObjects.map((object, index) => (
@@ -1340,22 +1318,6 @@ function MatchReplayStack({
               </div>
             ))
           )}
-        </div>
-        <div className="match-replay-stackbox-copy">
-          <p className="match-replay-stackbox-player">
-            {topObject
-              ? timelinePlayerLabel(topObject.playerSide)
-              : "Replay step"}
-          </p>
-          <h5>{topName ?? "Stack empty"}</h5>
-          <p>{replayFrameMomentLabel(frame)}</p>
-          <p>
-            {topObject
-              ? `Top of stack is ${topName}.`
-              : "No public stack objects are visible in this frame."}
-          </p>
-          <p>{frameSummary}</p>
-          {frame.recordedAt ? <p>{formatDateTime(frame.recordedAt)}</p> : null}
         </div>
       </div>
     </section>
@@ -1609,7 +1571,6 @@ function MatchReplayFrameBoard({
 
           <MatchReplayStack
             frame={currentFrame}
-            frameSummary={primarySummary}
             previewByCardID={previewByCardID}
             highlightedInstanceIDs={changedInstanceIDs}
           />
