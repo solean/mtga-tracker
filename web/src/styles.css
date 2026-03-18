@@ -1464,6 +1464,12 @@ h1 {
   flex-wrap: wrap;
 }
 
+.match-replay-sidebox-head-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .match-replay-sidebox-label,
 .match-replay-lane-title {
   margin: 0;
@@ -1475,7 +1481,6 @@ h1 {
 }
 
 .match-replay-sidebox-total,
-.match-replay-sidebox-life,
 .match-replay-sidebox-status,
 .match-replay-lane-subtitle,
 .match-replay-stackbox-player,
@@ -1484,6 +1489,43 @@ h1 {
   color: var(--muted);
   font-size: 0.77rem;
   line-height: 1.45;
+}
+
+.match-replay-sidebox-life-stat {
+  display: grid;
+  align-content: center;
+  gap: 0.1rem;
+  min-width: 5.5rem;
+  padding: 0.48rem 0.64rem 0.44rem;
+  border: 1px solid rgba(124, 211, 255, 0.24);
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(124, 211, 255, 0.16), transparent 72%),
+    linear-gradient(160deg, rgba(10, 20, 32, 0.9) 0%, rgba(9, 16, 28, 0.96) 100%);
+  box-shadow:
+    0 0 0 1px rgba(124, 211, 255, 0.06) inset,
+    0 8px 18px rgba(0, 0, 0, 0.16);
+}
+
+.match-replay-sidebox-life-label,
+.match-replay-sidebox-life-value {
+  margin: 0;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-replay-sidebox-life-label {
+  color: var(--muted-strong);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.match-replay-sidebox-life-value {
+  color: var(--text);
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .match-replay-stats {

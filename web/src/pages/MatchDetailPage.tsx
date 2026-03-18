@@ -1121,16 +1121,13 @@ function MatchReplayFrameSideSummary({
       aria-label={`${timelinePlayerLabel(side)} public summary`}
     >
       <div className="match-replay-sidebox-head">
-        <div>
+        <div className="match-replay-sidebox-head-copy">
           <p className="match-replay-sidebox-label">
             {timelinePlayerLabel(side)}
           </p>
           <p className="match-replay-sidebox-total">
             {sideObjects.length} public card{sideObjects.length === 1 ? "" : "s"}
           </p>
-          {typeof lifeTotal === "number" ? (
-            <p className="match-replay-sidebox-life">Life {lifeTotal}</p>
-          ) : null}
           <p className="match-replay-sidebox-status">
             {battlefieldObjects.length} on board
             {tappedCount > 0 ? ` • ${tappedCount} tapped` : ""}
@@ -1138,6 +1135,15 @@ function MatchReplayFrameSideSummary({
             {blockingCount > 0 ? ` • ${blockingCount} blocking` : ""}
           </p>
         </div>
+        {typeof lifeTotal === "number" ? (
+          <div
+            className="match-replay-sidebox-life-stat"
+            aria-label={`${timelinePlayerLabel(side)} life total ${lifeTotal}`}
+          >
+            <span className="match-replay-sidebox-life-label">Life</span>
+            <span className="match-replay-sidebox-life-value">{lifeTotal}</span>
+          </div>
+        ) : null}
       </div>
       <dl className="match-replay-stats">
         {stats.map((kind) => (
