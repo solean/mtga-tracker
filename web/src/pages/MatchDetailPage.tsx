@@ -400,6 +400,39 @@ function replayFrameMomentLabel(frame: MatchReplayFrame): string {
   return `${replayTurnLabel(frame.turnNumber)} - ${phase}`;
 }
 
+type ReplayTurnBoundary = {
+  turnKey: number;
+  firstIndex: number;
+  lastIndex: number;
+};
+
+function buildReplayTurnBoundaries<T extends { turnNumber?: number }>(
+  items: T[],
+): ReplayTurnBoundary[] {
+  const firstByTurn = new Map<number, number>();
+  const lastByTurn = new Map<number, number>();
+
+  for (let index = 0; index < items.length; index += 1) {
+    const turnKey = replayTurnValue(items[index].turnNumber);
+    if (!firstByTurn.has(turnKey)) {
+      firstByTurn.set(turnKey, index);
+    }
+    lastByTurn.set(turnKey, index);
+  }
+
+  return Array.from(firstByTurn.entries())
+    .map(([turnKey, firstIndex]) => ({
+      turnKey,
+      firstIndex,
+      lastIndex: lastByTurn.get(turnKey) ?? firstIndex,
+    }))
+    .sort((a, b) => a.firstIndex - b.firstIndex);
+}
+
+function replayTurnBoundaryCount(boundary: ReplayTurnBoundary): number {
+  return boundary.lastIndex - boundary.firstIndex + 1;
+}
+
 function replayObjectSortValue(object: MatchReplayFrameObject): number {
   return typeof object.zonePosition === "number"
     ? object.zonePosition
@@ -1323,49 +1356,53 @@ function MatchReplayStack({
   );
 }
 
-function MatchReplayFrameTrack({
-  frames,
-  selectedFrameIndex,
-  onSelectFrame,
+function MatchReplayTurnSelector({
+  turns,
+  selectedItemIndex,
+  selectedTurnIndex,
+  onSelectTurn,
+  itemLabel,
 }: {
-  frames: MatchReplayFrame[];
-  selectedFrameIndex: number;
-  onSelectFrame: (index: number) => void;
+  turns: ReplayTurnBoundary[];
+  selectedItemIndex: number;
+  selectedTurnIndex: number;
+  onSelectTurn: (index: number) => void;
+  itemLabel: "step" | "action";
 }) {
+  if (turns.length === 0) {
+    return null;
+  }
+
   return (
     <div className="match-replay-track-scroll">
-      <div
-        className="match-replay-track"
-        style={{
-          gridTemplateColumns: `repeat(${frames.length}, minmax(3rem, 1fr))`,
-        }}
-      >
-        {frames.map((frame, index) => {
-          const isCurrent = index === selectedFrameIndex;
-          const isTurnStart =
-            index === 0 ||
-            replayTurnValue(frames[index - 1].turnNumber) !==
-              replayTurnValue(frame.turnNumber);
-          const turnText = isTurnStart
-            ? boardTurnLabel(frame.turnNumber)
-            : "\u00a0";
-          const frameSummary = replayFramePrimarySummary(
-            frame,
-            index > 0 ? frames[index - 1] ?? null : null,
-          );
+      <div className="match-replay-turn-track" role="group" aria-label="Replay turns">
+        {turns.map((turn, index) => {
+          const isCurrent = index === selectedTurnIndex;
+          const itemCount = replayTurnBoundaryCount(turn);
+          const itemCountLabel = `${itemCount} ${itemLabel}${itemCount === 1 ? "" : "s"}`;
+          const currentTurnIndex =
+            isCurrent && selectedItemIndex >= turn.firstIndex
+              ? selectedItemIndex - turn.firstIndex + 1
+              : null;
 
           return (
             <button
-              key={frame.id}
+              key={`${turn.turnKey}-${turn.firstIndex}`}
               type="button"
-              className={`match-replay-step ${isCurrent ? "is-current" : ""} ${isTurnStart ? "is-turn-start" : ""}`}
+              className={`match-replay-turn-pill ${isCurrent ? "is-current" : ""}`}
               aria-pressed={isCurrent}
-              aria-label={`Step ${index + 1}: ${replayFrameMomentLabel(frame)}. ${frameSummary}`}
-              onClick={() => onSelectFrame(index)}
+              aria-label={`${replayTurnLabel(turn.turnKey)}. ${itemCountLabel}.${currentTurnIndex ? ` Currently on ${itemLabel} ${currentTurnIndex} of ${itemCount}.` : " Jump to the start of this turn."}`}
+              onClick={() => onSelectTurn(turn.firstIndex)}
             >
-              <span className="match-replay-step-turn">{turnText}</span>
-              <span className="match-replay-step-bar" />
-              <span className="match-replay-step-index">{index + 1}</span>
+              <span className="match-replay-turn-pill-label">
+                {boardTurnLabel(turn.turnKey)}
+              </span>
+              <span className="match-replay-turn-pill-meta">
+                {itemCountLabel}
+                {currentTurnIndex
+                  ? ` • ${itemLabel} ${currentTurnIndex}/${itemCount}`
+                  : ""}
+              </span>
             </button>
           );
         })}
@@ -1421,26 +1458,7 @@ function MatchReplayFrameBoard({
   const currentFrame = frames[selectedFrameIndex] ?? null;
   const previousFrame =
     selectedFrameIndex > 0 ? frames[selectedFrameIndex - 1] ?? null : null;
-  const turnBoundaries = useMemo(() => {
-    const firstByTurn = new Map<number, number>();
-    const lastByTurn = new Map<number, number>();
-
-    for (let index = 0; index < frames.length; index += 1) {
-      const turnKey = replayTurnValue(frames[index].turnNumber);
-      if (!firstByTurn.has(turnKey)) {
-        firstByTurn.set(turnKey, index);
-      }
-      lastByTurn.set(turnKey, index);
-    }
-
-    return Array.from(firstByTurn.entries())
-      .map(([turnKey, firstIndex]) => ({
-        turnKey,
-        firstIndex,
-        lastIndex: lastByTurn.get(turnKey) ?? firstIndex,
-      }))
-      .sort((a, b) => a.firstIndex - b.firstIndex);
-  }, [frames]);
+  const turnBoundaries = useMemo(() => buildReplayTurnBoundaries(frames), [frames]);
 
   const currentTurnBoundaryIndex = currentFrame
     ? turnBoundaries.findIndex(
@@ -1565,10 +1583,12 @@ function MatchReplayFrameBoard({
         </div>
 
         <div className="match-replay-track-panel">
-          <MatchReplayFrameTrack
-            frames={frames}
-            selectedFrameIndex={selectedFrameIndex}
-            onSelectFrame={setSelectedFrameIndex}
+          <MatchReplayTurnSelector
+            turns={turnBoundaries}
+            selectedItemIndex={selectedFrameIndex}
+            selectedTurnIndex={currentTurnBoundaryIndex}
+            onSelectTurn={setSelectedFrameIndex}
+            itemLabel="step"
           />
         </div>
       </div>
@@ -1790,55 +1810,6 @@ function MatchReplayBattlefield({
   );
 }
 
-function MatchReplayTrack({
-  plays,
-  selectedActionIndex,
-  onSelectAction,
-}: {
-  plays: MatchCardPlay[];
-  selectedActionIndex: number;
-  onSelectAction: (index: number) => void;
-}) {
-  return (
-    <div className="match-replay-track-scroll">
-      <div
-        className="match-replay-track"
-        style={{
-          gridTemplateColumns: `repeat(${plays.length}, minmax(3rem, 1fr))`,
-        }}
-      >
-        {plays.map((play, index) => {
-          const isCurrent = index === selectedActionIndex;
-          const isTurnStart =
-            index === 0 ||
-            replayTurnValue(plays[index - 1].turnNumber) !==
-              replayTurnValue(play.turnNumber);
-          const turnText = isTurnStart
-            ? boardTurnLabel(play.turnNumber)
-            : "\u00a0";
-
-          return (
-            <button
-              key={play.id}
-              type="button"
-              className={`match-replay-step ${isCurrent ? "is-current" : ""} ${isTurnStart ? "is-turn-start" : ""}`}
-              aria-pressed={isCurrent}
-              aria-label={`Action ${index + 1}: ${cardDisplayName({ cardId: play.cardId, cardName: play.cardName })}, ${timelinePlayerLabel(
-                play.playerSide,
-              )}, ${replayMomentLabel(play)}`}
-              onClick={() => onSelectAction(index)}
-            >
-              <span className="match-replay-step-turn">{turnText}</span>
-              <span className="match-replay-step-bar" />
-              <span className="match-replay-step-index">{index + 1}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function MatchTimelineBoard({
   gameNumber,
   plays,
@@ -1897,26 +1868,7 @@ function MatchTimelineBoard({
   const unknownVisiblePlays = visiblePlays.filter(
     (play) => play.playerSide === "unknown",
   );
-  const turnBoundaries = useMemo(() => {
-    const firstByTurn = new Map<number, number>();
-    const lastByTurn = new Map<number, number>();
-
-    for (let index = 0; index < plays.length; index += 1) {
-      const turnKey = replayTurnValue(plays[index].turnNumber);
-      if (!firstByTurn.has(turnKey)) {
-        firstByTurn.set(turnKey, index);
-      }
-      lastByTurn.set(turnKey, index);
-    }
-
-    return Array.from(firstByTurn.entries())
-      .map(([turnKey, firstIndex]) => ({
-        turnKey,
-        firstIndex,
-        lastIndex: lastByTurn.get(turnKey) ?? firstIndex,
-      }))
-      .sort((a, b) => a.firstIndex - b.firstIndex);
-  }, [plays]);
+  const turnBoundaries = useMemo(() => buildReplayTurnBoundaries(plays), [plays]);
 
   const currentTurnBoundaryIndex = currentAction
     ? turnBoundaries.findIndex(
@@ -2031,10 +1983,12 @@ function MatchTimelineBoard({
         </div>
 
         <div className="match-replay-track-panel">
-          <MatchReplayTrack
-            plays={plays}
-            selectedActionIndex={selectedActionIndex}
-            onSelectAction={setSelectedActionIndex}
+          <MatchReplayTurnSelector
+            turns={turnBoundaries}
+            selectedItemIndex={selectedActionIndex}
+            selectedTurnIndex={currentTurnBoundaryIndex}
+            onSelectTurn={setSelectedActionIndex}
+            itemLabel="action"
           />
         </div>
       </div>
