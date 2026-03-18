@@ -520,6 +520,81 @@ func TestReplayFramesDoNotDuplicateResolvedStackCards(t *testing.T) {
 	}
 }
 
+func TestReplayFramesCaptureBattlefieldTokens(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test-replay-token.db")
+	logPath := filepath.Join(tmpDir, "Player.log")
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+
+	parser := NewParser(db.NewStore(database))
+	lines := []string{
+		`{"clientId":"self-user","screenName":"Self"}`,
+		`{"timestamp":"1772330782273","matchGameRoomStateChangedEvent":{"gameRoomInfo":{"gameRoomConfig":{"reservedPlayers":[{"userId":"opp-user","playerName":"Opp","systemSeatId":1,"teamId":1,"eventId":"Traditional_Ladder"},{"userId":"self-user","playerName":"Self","systemSeatId":2,"teamId":2,"eventId":"Traditional_Ladder"}],"matchId":"match-replay-token"},"stateType":"MatchGameRoomStateType_Playing"}}}`,
+		`{"timestamp":"1772330782309","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[2],"gameStateMessage":{"type":"GameStateType_Full","gameStateId":1,"gameInfo":{"matchID":"match-replay-token","gameNumber":1},"turnInfo":{"phase":"Phase_Main1","turnNumber":3},"zones":[{"zoneId":28,"type":"ZoneType_Battlefield","visibility":"Visibility_Public","objectInstanceIds":[]}],"gameObjects":[]}}]}}`,
+		`{"timestamp":"1772330782310","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[2],"gameStateMessage":{"type":"GameStateType_Diff","gameStateId":2,"prevGameStateId":1,"turnInfo":{"phase":"Phase_Main1","turnNumber":3},"zones":[{"zoneId":28,"type":"ZoneType_Battlefield","visibility":"Visibility_Public","objectInstanceIds":[1001]}],"gameObjects":[{"instanceId":1001,"grpId":100662,"type":"GameObjectType_Token","zoneId":28,"visibility":"Visibility_Public","ownerSeatId":2,"controllerSeatId":2,"cardTypes":["CardType_Artifact","CardType_Creature"],"subtypes":["SubType_Robot"],"power":{"value":1},"toughness":{"value":1},"hasSummoningSickness":true,"name":926665,"overlayGrpId":100662}]}}]}}`,
+	}
+
+	if err := writeLogLines(logPath, lines, false); err != nil {
+		t.Fatalf("write log lines: %v", err)
+	}
+	if _, err := parser.ParseFile(ctx, logPath, false); err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+
+	store := db.NewStore(database)
+	frames, err := store.ListMatchReplayFrames(ctx, 1)
+	if err != nil {
+		t.Fatalf("list replay frames: %v", err)
+	}
+	if len(frames) != 2 {
+		t.Fatalf("expected 2 replay frames, got %d", len(frames))
+	}
+
+	lastFrame := frames[1]
+	battlefieldObjects := replayObjectsInZone(lastFrame, "battlefield")
+	if len(battlefieldObjects) != 1 {
+		t.Fatalf("expected 1 battlefield object, got %#v", battlefieldObjects)
+	}
+
+	token := battlefieldObjects[0]
+	if token.InstanceID != 1001 {
+		t.Fatalf("expected token instance 1001, got %#v", token)
+	}
+	if token.CardID != 100662 {
+		t.Fatalf("expected token card id 100662, got %#v", token.CardID)
+	}
+	if !token.IsToken {
+		t.Fatalf("expected replay object to be marked as token, got %#v", token)
+	}
+	if token.PlayerSide != "self" {
+		t.Fatalf("expected controller-based player side self, got %q", token.PlayerSide)
+	}
+	if !token.HasSummoningSickness {
+		t.Fatalf("expected token to preserve summoning sickness, got %#v", token)
+	}
+	if !replayHasAnyChange(lastFrame, "enter_public", 1001) {
+		t.Fatalf("expected enter_public change for token 1001, got %#v", lastFrame.Changes)
+	}
+
+	var playCount int64
+	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM match_card_plays`).Scan(&playCount); err != nil {
+		t.Fatalf("count match card plays: %v", err)
+	}
+	if playCount != 0 {
+		t.Fatalf("expected tokens to stay out of match_card_plays, got %d rows", playCount)
+	}
+}
+
 func TestReplayFramesCapturePermanentStateAndStateChanges(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()

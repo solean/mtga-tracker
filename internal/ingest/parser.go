@@ -582,6 +582,7 @@ type greGameObject struct {
 	Raw                  json.RawMessage `json:"-"`
 	InstanceID           int64           `json:"instanceId"`
 	GrpID                int64           `json:"grpId"`
+	OverlayGrpID         int64           `json:"overlayGrpId"`
 	Type                 string          `json:"type"`
 	ZoneID               int64           `json:"zoneId"`
 	Visibility           string          `json:"visibility"`
@@ -609,6 +610,12 @@ func (o *greGameObject) UnmarshalJSON(data []byte) error {
 	*o = greGameObject(alias)
 	o.Raw = append(o.Raw[:0], data...)
 	return nil
+}
+
+func isReplayTrackableObjectType(objectType string) bool {
+	objectType = strings.TrimSpace(objectType)
+	return strings.EqualFold(objectType, "GameObjectType_Card") ||
+		strings.EqualFold(objectType, "GameObjectType_Token")
 }
 
 type greAnnotation struct {
@@ -1236,15 +1243,19 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			if obj.InstanceID <= 0 {
 				continue
 			}
-			if !strings.EqualFold(strings.TrimSpace(obj.Type), "GameObjectType_Card") {
+			if !isReplayTrackableObjectType(obj.Type) {
 				continue
 			}
 
 			current := replayState.Objects[obj.InstanceID]
 			previousControllerSeatID := current.ControllerSeatID
 			current.InstanceID = obj.InstanceID
-			if obj.GrpID > 0 {
-				current.CardID = obj.GrpID
+			cardID := obj.GrpID
+			if cardID <= 0 && obj.OverlayGrpID > 0 {
+				cardID = obj.OverlayGrpID
+			}
+			if cardID > 0 {
+				current.CardID = cardID
 			}
 			if obj.OwnerSeatID > 0 {
 				current.OwnerSeatID = obj.OwnerSeatID
@@ -1309,7 +1320,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 					current.BlockAttackerIDsJSON = ""
 				}
 			}
-			if obj.IsToken {
+			if obj.IsToken || strings.EqualFold(strings.TrimSpace(obj.Type), "GameObjectType_Token") {
 				current.IsToken = true
 			}
 			if detailsJSON := strings.TrimSpace(string(obj.Raw)); detailsJSON != "" {
