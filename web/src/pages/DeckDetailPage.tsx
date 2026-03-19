@@ -24,6 +24,7 @@ type FloatingPopoverPosition = {
   top: number;
   left: number;
   width: number;
+  height: number;
 };
 type ManaCostPart = { kind: "symbol"; token: string } | { kind: "separator"; value: string };
 type DeckDisplayMode = "list" | "curve";
@@ -111,7 +112,7 @@ function floatingPopoverPosition(
   const maxTop = Math.max(viewportPadding, viewportHeight - popoverHeight - viewportPadding);
   const top = Math.max(viewportPadding, Math.min(rawTop, maxTop));
 
-  return { top, left, width: popoverWidth };
+  return { top, left, width: popoverWidth, height: popoverHeight };
 }
 
 function classifyMainboardCard(typeLine?: string): MainboardCategory {
@@ -629,6 +630,7 @@ function DeckCurveSection({
                 top: `${activePreviewPosition.top}px`,
                 left: `${activePreviewPosition.left}px`,
                 width: `${activePreviewPosition.width}px`,
+                height: `${activePreviewPosition.height}px`,
               }}
               role="tooltip"
             >
