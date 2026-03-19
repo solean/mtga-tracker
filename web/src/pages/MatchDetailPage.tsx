@@ -658,6 +658,79 @@ function replayObjectStatusText(
   return parts.join(" • ");
 }
 
+function replayObjectName(
+  object: MatchReplayFrameObject,
+  preview: CardPreview | null,
+): string {
+  return (preview?.name ?? cardDisplayName(object)).trim();
+}
+
+function replayObjectIsBasicLand(
+  object: MatchReplayFrameObject,
+  preview: CardPreview | null,
+): boolean {
+  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
+  if (typeLine.includes("basic")) {
+    return true;
+  }
+
+  return replayObjectHasType(object, preview, "basic");
+}
+
+function replayObjectBasicLandRank(
+  object: MatchReplayFrameObject,
+  preview: CardPreview | null,
+): number {
+  const name = replayObjectName(object, preview).toLowerCase();
+
+  if (name === "plains") return 0;
+  if (name === "island") return 1;
+  if (name === "swamp") return 2;
+  if (name === "mountain") return 3;
+  if (name === "forest") return 4;
+  if (name === "wastes") return 5;
+  return 6;
+}
+
+function sortBattlefieldSectionObjects(
+  kind: BattlefieldSectionKind,
+  objects: MatchReplayFrameObject[],
+  previewByCardID: Map<number, CardPreview | null>,
+): MatchReplayFrameObject[] {
+  if (kind !== "lands") {
+    return objects;
+  }
+
+  return [...objects].sort((a, b) => {
+    const aPreview = previewByCardID.get(a.cardId) ?? null;
+    const bPreview = previewByCardID.get(b.cardId) ?? null;
+    const aBasic = replayObjectIsBasicLand(a, aPreview);
+    const bBasic = replayObjectIsBasicLand(b, bPreview);
+
+    if (aBasic !== bBasic) {
+      return aBasic ? -1 : 1;
+    }
+
+    if (aBasic && bBasic) {
+      const basicRankDelta =
+        replayObjectBasicLandRank(a, aPreview) -
+        replayObjectBasicLandRank(b, bPreview);
+      if (basicRankDelta !== 0) {
+        return basicRankDelta;
+      }
+    }
+
+    const nameDelta = replayObjectName(a, aPreview).localeCompare(
+      replayObjectName(b, bPreview),
+    );
+    if (nameDelta !== 0) {
+      return nameDelta;
+    }
+
+    return sortReplayObjects(a, b);
+  });
+}
+
 function replayFrameLifeTotalForSide(
   frame: MatchReplayFrame | null | undefined,
   side: "self" | "opponent",
@@ -1178,7 +1251,11 @@ function MatchReplayFrameBattlefield({
     return sectionOrder.map((kind) => ({
       kind,
       label: battlefieldSectionLabel(kind),
-      objects: grouped.get(kind) ?? [],
+      objects: sortBattlefieldSectionObjects(
+        kind,
+        grouped.get(kind) ?? [],
+        previewByCardID,
+      ),
     })).filter((section) => section.objects.length > 0);
   }, [battlefieldObjects, previewByCardID, side]);
   const zoneCounts = useMemo(
