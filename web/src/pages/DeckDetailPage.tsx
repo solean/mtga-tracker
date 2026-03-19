@@ -89,6 +89,31 @@ function cardScryfallHref(card: DeckListCard, scryfallUrl?: string): string {
     : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
 }
 
+function floatingPopoverPosition(
+  anchor: HTMLElement,
+  popoverWidth: number,
+  popoverHeight: number,
+  horizontalGap = 16,
+  viewportPadding = 8,
+): FloatingPopoverPosition {
+  const rect = anchor.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const availableRight = viewportWidth - rect.right;
+  const availableLeft = rect.left;
+  const placement: PopoverPlacement =
+    availableRight < popoverWidth + horizontalGap && availableLeft >= popoverWidth + horizontalGap ? "left" : "right";
+
+  const rawLeft = placement === "right" ? rect.right + horizontalGap : rect.left - popoverWidth - horizontalGap;
+  const maxLeft = Math.max(viewportPadding, viewportWidth - popoverWidth - viewportPadding);
+  const left = Math.max(viewportPadding, Math.min(rawLeft, maxLeft));
+  const rawTop = rect.top + rect.height / 2 - popoverHeight / 2;
+  const maxTop = Math.max(viewportPadding, viewportHeight - popoverHeight - viewportPadding);
+  const top = Math.max(viewportPadding, Math.min(rawTop, maxTop));
+
+  return { top, left, width: popoverWidth };
+}
+
 function classifyMainboardCard(typeLine?: string): MainboardCategory {
   const lower = typeLine?.toLowerCase() ?? "";
   if (lower.includes("land")) {
@@ -434,133 +459,47 @@ function DeckCurveCardLink({
   card,
   eager = false,
   quantityBadge,
+  onPreviewStart,
+  onPreviewEnd,
 }: {
   card: MainboardDeckListCard;
   eager?: boolean;
   quantityBadge?: number;
+  onPreviewStart: (card: MainboardDeckListCard, anchor: HTMLAnchorElement) => void;
+  onPreviewEnd: () => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [popoverPlacement, setPopoverPlacement] = useState<PopoverPlacement>("right");
-  const [popoverPosition, setPopoverPosition] = useState<FloatingPopoverPosition | null>(null);
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const name = cardDisplayName(card);
   const ariaLabel = quantityBadge ? `Open ${name} on Scryfall, quantity ${quantityBadge}` : `Open ${name} on Scryfall`;
 
-  const updatePopoverPlacement = () => {
-    if (typeof window === "undefined" || !card.imageUrl) {
-      return;
-    }
-
-    const wrapper = wrapperRef.current;
-    if (!wrapper) {
-      return;
-    }
-
-    const rect = wrapper.getBoundingClientRect();
-    const popoverWidth = 360;
-    const popoverHeight = 503;
-    const horizontalGap = 16;
-    const viewportPadding = 8;
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-    const availableRight = viewportWidth - rect.right;
-    const availableLeft = rect.left;
-
-    let placement: PopoverPlacement = "right";
-    if (availableRight < popoverWidth + horizontalGap && availableLeft >= popoverWidth + horizontalGap) {
-      placement = "left";
-    }
-
-    const rawLeft = placement === "right" ? rect.right + horizontalGap : rect.left - popoverWidth - horizontalGap;
-    const maxLeft = Math.max(viewportPadding, viewportWidth - popoverWidth - viewportPadding);
-    const left = Math.max(viewportPadding, Math.min(rawLeft, maxLeft));
-    const rawTop = rect.top + rect.height / 2 - popoverHeight / 2;
-    const maxTop = Math.max(viewportPadding, viewportHeight - popoverHeight - viewportPadding);
-    const top = Math.max(viewportPadding, Math.min(rawTop, maxTop));
-
-    setPopoverPlacement(placement);
-    setPopoverPosition({ top, left, width: popoverWidth });
-  };
-
-  const openPopover = () => {
-    if (!card.imageUrl) {
-      return;
-    }
-    updatePopoverPlacement();
-    setIsOpen(true);
-  };
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    const onViewportChange = () => updatePopoverPlacement();
-    window.addEventListener("resize", onViewportChange);
-    window.addEventListener("scroll", onViewportChange, true);
-    return () => {
-      window.removeEventListener("resize", onViewportChange);
-      window.removeEventListener("scroll", onViewportChange, true);
-    };
-  }, [card.imageUrl, isOpen]);
-
   return (
-    <div
-      className="deck-curve-card-anchor"
-      data-popover-placement={popoverPlacement}
-      ref={wrapperRef}
-      onMouseEnter={openPopover}
-      onMouseLeave={() => setIsOpen(false)}
+    <a
+      className="deck-curve-card"
+      href={cardScryfallHref(card, card.scryfallUrl)}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={ariaLabel}
+      title={name}
+      onMouseEnter={(event) => onPreviewStart(card, event.currentTarget)}
+      onMouseLeave={onPreviewEnd}
+      onFocus={(event) => onPreviewStart(card, event.currentTarget)}
     >
-      <a
-        className="deck-curve-card"
-        href={cardScryfallHref(card, card.scryfallUrl)}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={ariaLabel}
-        title={name}
-        onFocus={openPopover}
-        onBlur={(event) => {
-          if (wrapperRef.current && event.relatedTarget instanceof Node && wrapperRef.current.contains(event.relatedTarget)) {
-            return;
-          }
-          setIsOpen(false);
-        }}
-      >
-        {card.imageUrl ? (
-          <img
-            src={card.imageUrl}
-            alt=""
-            loading={eager ? "eager" : "lazy"}
-            decoding="async"
-            width={630}
-            height={880}
-          />
-        ) : (
-          <span className="deck-curve-card-fallback">
-            <strong>{name}</strong>
-            <span>{card.manaCost ? `Mana cost ${card.manaCost}` : "Preview unavailable"}</span>
-          </span>
-        )}
-        {quantityBadge ? <span className="deck-curve-card-qty">x{quantityBadge}</span> : null}
-      </a>
-
-      {isOpen && popoverPosition && card.imageUrl && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="card-preview-popover card-preview-popover-floating deck-curve-card-preview"
-              style={{
-                top: `${popoverPosition.top}px`,
-                left: `${popoverPosition.left}px`,
-                width: `${popoverPosition.width}px`,
-              }}
-              role="tooltip"
-            >
-              <img src={card.imageUrl} alt={name} loading="lazy" />
-            </div>,
-            document.body,
-          )
-        : null}
-    </div>
+      {card.imageUrl ? (
+        <img
+          src={card.imageUrl}
+          alt=""
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          width={630}
+          height={880}
+        />
+      ) : (
+        <span className="deck-curve-card-fallback">
+          <strong>{name}</strong>
+          <span>{card.manaCost ? `Mana cost ${card.manaCost}` : "Preview unavailable"}</span>
+        </span>
+      )}
+      {quantityBadge ? <span className="deck-curve-card-qty">x{quantityBadge}</span> : null}
+    </a>
   );
 }
 
@@ -572,13 +511,88 @@ function DeckCurveSection({
   cards: MainboardDeckListCard[];
 }) {
   const columns = useMemo(() => buildCurveColumns(cards), [cards]);
+  const [activePreviewCard, setActivePreviewCard] = useState<MainboardDeckListCard | null>(null);
+  const [activePreviewPosition, setActivePreviewPosition] = useState<FloatingPopoverPosition | null>(null);
+  const activePreviewAnchorRef = useRef<HTMLAnchorElement | null>(null);
+  const closePreviewTimeoutRef = useRef<number | null>(null);
+
+  const cancelPreviewClose = () => {
+    if (closePreviewTimeoutRef.current === null || typeof window === "undefined") {
+      return;
+    }
+    window.clearTimeout(closePreviewTimeoutRef.current);
+    closePreviewTimeoutRef.current = null;
+  };
+
+  const clearPreview = () => {
+    cancelPreviewClose();
+    activePreviewAnchorRef.current = null;
+    setActivePreviewCard(null);
+    setActivePreviewPosition(null);
+  };
+
+  const schedulePreviewClose = () => {
+    cancelPreviewClose();
+    if (typeof window === "undefined") {
+      clearPreview();
+      return;
+    }
+    closePreviewTimeoutRef.current = window.setTimeout(() => {
+      activePreviewAnchorRef.current = null;
+      setActivePreviewCard(null);
+      setActivePreviewPosition(null);
+      closePreviewTimeoutRef.current = null;
+    }, 120);
+  };
+
+  const showPreview = (card: MainboardDeckListCard, anchor: HTMLAnchorElement) => {
+    cancelPreviewClose();
+    if (typeof window === "undefined" || !card.imageUrl) {
+      clearPreview();
+      return;
+    }
+    activePreviewAnchorRef.current = anchor;
+    setActivePreviewCard(card);
+    setActivePreviewPosition(floatingPopoverPosition(anchor, 360, 503));
+  };
+
+  useEffect(() => {
+    return () => cancelPreviewClose();
+  }, []);
+
+  useEffect(() => {
+    if (!activePreviewCard || !activePreviewAnchorRef.current) {
+      return;
+    }
+    const onViewportChange = () => {
+      if (!activePreviewAnchorRef.current) {
+        return;
+      }
+      setActivePreviewPosition(floatingPopoverPosition(activePreviewAnchorRef.current, 360, 503));
+    };
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("scroll", onViewportChange, true);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("scroll", onViewportChange, true);
+    };
+  }, [activePreviewCard]);
 
   if (columns.length === 0) {
     return null;
   }
 
   return (
-    <article className="deck-curve-panel" aria-label={`${title} arranged by mana value`}>
+    <article
+      className="deck-curve-panel"
+      aria-label={`${title} arranged by mana value`}
+      onBlurCapture={(event) => {
+        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+          return;
+        }
+        clearPreview();
+      }}
+    >
       <div className="deck-curve-panel-head">
         <h4>{title}</h4>
         <p>{sectionTotal(cards).toLocaleString()} cards</p>
@@ -598,6 +612,8 @@ function DeckCurveSection({
                     card={entry.card}
                     quantityBadge={entry.quantityBadge}
                     eager={columnIndex < 2 && entryIndex < 2}
+                    onPreviewStart={showPreview}
+                    onPreviewEnd={schedulePreviewClose}
                   />
                 ))}
               </div>
@@ -605,6 +621,22 @@ function DeckCurveSection({
           ))}
         </div>
       </div>
+      {activePreviewCard && activePreviewPosition && activePreviewCard.imageUrl && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="card-preview-popover card-preview-popover-floating deck-curve-card-preview"
+              style={{
+                top: `${activePreviewPosition.top}px`,
+                left: `${activePreviewPosition.left}px`,
+                width: `${activePreviewPosition.width}px`,
+              }}
+              role="tooltip"
+            >
+              <img src={activePreviewCard.imageUrl} alt={cardDisplayName(activePreviewCard)} loading="lazy" />
+            </div>,
+            document.body,
+          )
+        : null}
     </article>
   );
 }

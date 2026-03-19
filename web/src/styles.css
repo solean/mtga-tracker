@@ -2285,11 +2285,6 @@ h1 {
   margin-top: calc((var(--deck-curve-card-height) - var(--deck-curve-card-peek)) * -1);
 }
 
-.deck-curve-card-anchor {
-  position: relative;
-  display: block;
-}
-
 .deck-curve-card {
   position: relative;
   display: block;
