@@ -929,6 +929,17 @@ h1 {
   letter-spacing: 0.06em;
 }
 
+.deck-detail-actions {
+  display: grid;
+  justify-items: end;
+  gap: 0.55rem;
+}
+
+.deck-view-toggle .tab {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
 /* ══════════════════════════════════════════
    LINKS
    ══════════════════════════════════════════ */
@@ -2148,6 +2159,243 @@ h1 {
   font-size: 0.8rem;
 }
 
+.deck-curve-panel {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.8rem;
+  background: linear-gradient(
+    165deg,
+    var(--deck-card-bg-a) 0%,
+    var(--deck-card-bg-b) 100%
+  );
+  position: relative;
+  display: grid;
+  gap: 0.82rem;
+}
+
+.deck-curve-panel::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 0 0 / 10px 1px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 0 0 / 1px 10px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 100% 0 / 10px 1px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 100% 0 / 1px 10px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 0 100% / 10px 1px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 0 100% / 1px 10px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 100% 100% / 10px 1px,
+    linear-gradient(var(--corner-mark) 0 0) no-repeat 100% 100% / 1px 10px;
+}
+
+.deck-curve-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem 0.85rem;
+}
+
+.deck-curve-panel-head h4,
+.deck-curve-panel-head p {
+  margin: 0;
+}
+
+.deck-curve-panel-head h4 {
+  color: var(--muted-strong);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.deck-curve-panel-head p {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.deck-curve-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  margin-top: -0.22rem;
+  padding-top: 0.22rem;
+  padding-bottom: 0.28rem;
+}
+
+.deck-curve-grid {
+  --deck-curve-card-width: 150px;
+  --deck-curve-card-height: calc(var(--deck-curve-card-width) * 88 / 63);
+  --deck-curve-card-peek: 1.9rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  min-width: max-content;
+}
+
+.deck-curve-column {
+  width: var(--deck-curve-card-width);
+  flex: 0 0 auto;
+  display: grid;
+  gap: 0.68rem;
+}
+
+.deck-curve-column-head {
+  display: grid;
+  justify-items: center;
+  gap: 0.14rem;
+  min-height: 3rem;
+  text-align: center;
+}
+
+.deck-curve-column-count,
+.deck-curve-column-label {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-curve-column-count {
+  color: var(--text);
+  font-family: "Rajdhani", "Arial", sans-serif;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.deck-curve-column-label {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.deck-curve-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding-bottom: 0.28rem;
+}
+
+.deck-curve-stack > * + * {
+  margin-top: calc((var(--deck-curve-card-height) - var(--deck-curve-card-peek)) * -1);
+}
+
+.deck-curve-card-anchor {
+  position: relative;
+  display: block;
+}
+
+.deck-curve-card {
+  position: relative;
+  display: block;
+  width: var(--deck-curve-card-width);
+  height: var(--deck-curve-card-height);
+  aspect-ratio: 63 / 88;
+  border-radius: 10px;
+  overflow: hidden;
+  text-decoration: none;
+  background: linear-gradient(
+    165deg,
+    var(--surface-strong) 0%,
+    var(--surface-faint) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 12px 22px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--card-inner-border) inset;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.deck-curve-card:hover {
+  border-color: var(--line-strong);
+  box-shadow:
+    0 14px 24px rgba(0, 0, 0, 0.34),
+    0 0 14px var(--accent-soft);
+}
+
+.deck-curve-card:focus-visible {
+  outline: 2px solid rgba(124, 211, 255, 0.95);
+  outline-offset: 3px;
+}
+
+.deck-curve-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.deck-curve-card-qty {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  min-width: 2.25rem;
+  padding: 0.18rem 0.44rem;
+  border-radius: 999px;
+  background: rgba(6, 10, 16, 0.84);
+  color: #fff;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.26);
+}
+
+.deck-curve-card-preview {
+  width: 360px;
+  height: 503px;
+}
+
+.deck-curve-card-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-content: center;
+  gap: 0.42rem;
+  padding: 0.8rem;
+  text-align: center;
+  background: linear-gradient(
+    160deg,
+    var(--list-bg-a) 0%,
+    var(--list-bg-b) 100%
+  );
+}
+
+.deck-curve-card-fallback strong {
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.deck-curve-card-fallback span {
+  color: var(--muted-strong);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.deck-curve-card.is-skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--skeleton-base) 18%,
+    var(--skeleton-highlight) 50%,
+    var(--skeleton-base) 82%
+  );
+  background-size: 200% 100%;
+  border-color: var(--line);
+  box-shadow: none;
+  animation: skeleton-shimmer 1.6s linear infinite;
+}
+
 /* ══════════════════════════════════════════
    CARD PREVIEW & POPOVER
    ══════════════════════════════════════════ */
@@ -2503,6 +2751,7 @@ select {
   .list-row,
   .data-table tbody tr,
   .match-replay-card,
+  .deck-curve-card,
   .match-replay-turn-pill,
   .match-replay-button,
   .title-sigil,
@@ -2567,6 +2816,11 @@ select {
   .match-replay-stackbox-body:not(.is-replay-stack) {
     grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
   }
+
+  .deck-curve-grid {
+    --deck-curve-card-width: 140px;
+    --deck-curve-card-peek: 1.75rem;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2606,6 +2860,20 @@ select {
     order: 1;
     margin-left: auto;
     min-height: 2.75rem;
+  }
+
+  .deck-detail-actions {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .deck-view-toggle {
+    width: 100%;
+  }
+
+  .deck-view-toggle .tab {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .tab {
@@ -2686,6 +2954,11 @@ select {
 
   .deck-mainboard-skeleton-grid {
     grid-template-columns: 1fr;
+  }
+
+  .deck-curve-grid {
+    --deck-curve-card-width: 128px;
+    --deck-curve-card-peek: 1.6rem;
   }
 }
 
@@ -2782,5 +3055,10 @@ select {
 
   .match-replay-button {
     flex-basis: 100%;
+  }
+
+  .deck-curve-grid {
+    --deck-curve-card-width: 114px;
+    --deck-curve-card-peek: 1.45rem;
   }
 }

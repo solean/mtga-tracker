@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { DeckColorIdentity } from "../components/MatchDeckColors";
@@ -19,17 +20,45 @@ type DeckListCard = {
 
 type PopoverPlacement = "left" | "right";
 type PopoverPlacementMode = "auto" | "force-right";
+type FloatingPopoverPosition = {
+  top: number;
+  left: number;
+  width: number;
+};
 type ManaCostPart = { kind: "symbol"; token: string } | { kind: "separator"; value: string };
+type DeckDisplayMode = "list" | "curve";
+type CurveBucketKey = number | "other" | "lands";
 
 type MainboardCategory = "creatures" | "spells" | "artifacts" | "enchantments" | "lands";
 
 type MainboardDeckListCard = DeckListCard & {
   manaCost: string;
   manaValue: number | null;
+  imageUrl?: string;
+  scryfallUrl?: string;
+  typeLine?: string;
 };
 
 type SideboardDeckListCard = DeckListCard & {
   manaCost: string;
+  manaValue: number | null;
+  imageUrl?: string;
+  scryfallUrl?: string;
+  typeLine?: string;
+};
+
+type DeckCurveColumn = {
+  key: string;
+  label: string;
+  accessibleLabel: string;
+  totalCards: number;
+  cards: MainboardDeckListCard[];
+};
+
+type DeckCurveCardEntry = {
+  key: string;
+  card: MainboardDeckListCard;
+  quantityBadge?: number;
 };
 
 const MAINBOARD_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "artifacts", "enchantments", "lands"];
@@ -48,6 +77,16 @@ function cardDisplayName(card: DeckListCard): string {
 
 function cardPreviewQueryKey(card: DeckListCard): [string, number, string] {
   return ["card-preview", card.cardId, cardDisplayName(card)];
+}
+
+function cardScryfallHref(card: DeckListCard, scryfallUrl?: string): string {
+  if (scryfallUrl) {
+    return scryfallUrl;
+  }
+  const name = cardDisplayName(card);
+  return card.cardName?.trim()
+    ? `https://scryfall.com/search?q=${encodeURIComponent(`!"${name}"`)}`
+    : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
 }
 
 function classifyMainboardCard(typeLine?: string): MainboardCategory {
@@ -111,8 +150,118 @@ function formatSectionLabel(section: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
+function parseDeckDisplayMode(value: string | null): DeckDisplayMode {
+  return value === "curve" ? "curve" : "list";
+}
+
 function sectionTotal(cards: DeckListCard[]): number {
   return cards.reduce((sum, card) => sum + card.quantity, 0);
+}
+
+function formatManaValueLabel(manaValue: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+  }).format(manaValue);
+}
+
+function curveBucketKey(card: MainboardDeckListCard | SideboardDeckListCard): CurveBucketKey {
+  if (classifyMainboardCard(card.typeLine) === "lands") {
+    return "lands";
+  }
+  if (typeof card.manaValue === "number" && Number.isFinite(card.manaValue)) {
+    return card.manaValue;
+  }
+  return "other";
+}
+
+function compareCurveBucketKeys(a: CurveBucketKey, b: CurveBucketKey): number {
+  if (typeof a === "number" && typeof b === "number") {
+    return a - b;
+  }
+  if (typeof a === "number") {
+    return -1;
+  }
+  if (typeof b === "number") {
+    return 1;
+  }
+  if (a === b) {
+    return 0;
+  }
+  if (a === "other") {
+    return -1;
+  }
+  if (b === "other") {
+    return 1;
+  }
+  return 0;
+}
+
+function curveBucketLabel(bucket: CurveBucketKey): string {
+  if (bucket === "lands") {
+    return "Lands";
+  }
+  if (bucket === "other") {
+    return "Other";
+  }
+  return `MV ${formatManaValueLabel(bucket)}`;
+}
+
+function curveBucketAccessibleLabel(bucket: CurveBucketKey): string {
+  if (bucket === "lands") {
+    return "Lands";
+  }
+  if (bucket === "other") {
+    return "Other mana values";
+  }
+  return `Mana value ${formatManaValueLabel(bucket)}`;
+}
+
+function buildCurveColumns(cards: MainboardDeckListCard[]): DeckCurveColumn[] {
+  const buckets = new Map<CurveBucketKey, MainboardDeckListCard[]>();
+
+  for (const card of cards) {
+    const bucket = curveBucketKey(card);
+    const entries = buckets.get(bucket) ?? [];
+    entries.push(card);
+    buckets.set(bucket, entries);
+  }
+
+  return Array.from(buckets.entries())
+    .sort(([left], [right]) => compareCurveBucketKeys(left, right))
+    .map(([bucket, bucketCards]) => {
+      const sortedCards = [...bucketCards].sort(bucket === "lands" ? compareLandCards : compareMainboardCards);
+      return {
+        key: typeof bucket === "number" ? `mv-${bucket}` : bucket,
+        label: curveBucketLabel(bucket),
+        accessibleLabel: curveBucketAccessibleLabel(bucket),
+        totalCards: sectionTotal(sortedCards),
+        cards: sortedCards,
+      };
+    });
+}
+
+function buildCurveCardEntries(columnKey: string, cards: MainboardDeckListCard[]): DeckCurveCardEntry[] {
+  const out: DeckCurveCardEntry[] = [];
+
+  for (const card of cards) {
+    if (card.quantity > 4) {
+      out.push({
+        key: `${columnKey}-${card.cardId}-stack`,
+        card,
+        quantityBadge: card.quantity,
+      });
+      continue;
+    }
+
+    for (let copyIndex = 0; copyIndex < card.quantity; copyIndex += 1) {
+      out.push({
+        key: `${columnKey}-${card.cardId}-${copyIndex}`,
+        card,
+      });
+    }
+  }
+
+  return out;
 }
 
 function parseManaCostParts(manaCost: string): ManaCostPart[] {
@@ -183,9 +332,7 @@ function DeckCardPreviewName({ card, placementMode = "auto" }: { card: DeckListC
   const [popoverPlacement, setPopoverPlacement] = useState<PopoverPlacement>("right");
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const name = cardDisplayName(card);
-  const fallbackHref = card.cardName?.trim()
-    ? `https://scryfall.com/search?q=${encodeURIComponent(`!"${name}"`)}`
-    : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
+  const fallbackHref = cardScryfallHref(card);
 
   const updatePopoverPlacement = () => {
     if (placementMode === "force-right") {
@@ -280,6 +427,213 @@ function DeckCardPreviewName({ card, placementMode = "auto" }: { card: DeckListC
         </div>
       ) : null}
     </div>
+  );
+}
+
+function DeckCurveCardLink({
+  card,
+  eager = false,
+  quantityBadge,
+}: {
+  card: MainboardDeckListCard;
+  eager?: boolean;
+  quantityBadge?: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [popoverPlacement, setPopoverPlacement] = useState<PopoverPlacement>("right");
+  const [popoverPosition, setPopoverPosition] = useState<FloatingPopoverPosition | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const name = cardDisplayName(card);
+  const ariaLabel = quantityBadge ? `Open ${name} on Scryfall, quantity ${quantityBadge}` : `Open ${name} on Scryfall`;
+
+  const updatePopoverPlacement = () => {
+    if (typeof window === "undefined" || !card.imageUrl) {
+      return;
+    }
+
+    const wrapper = wrapperRef.current;
+    if (!wrapper) {
+      return;
+    }
+
+    const rect = wrapper.getBoundingClientRect();
+    const popoverWidth = 360;
+    const popoverHeight = 503;
+    const horizontalGap = 16;
+    const viewportPadding = 8;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const availableRight = viewportWidth - rect.right;
+    const availableLeft = rect.left;
+
+    let placement: PopoverPlacement = "right";
+    if (availableRight < popoverWidth + horizontalGap && availableLeft >= popoverWidth + horizontalGap) {
+      placement = "left";
+    }
+
+    const rawLeft = placement === "right" ? rect.right + horizontalGap : rect.left - popoverWidth - horizontalGap;
+    const maxLeft = Math.max(viewportPadding, viewportWidth - popoverWidth - viewportPadding);
+    const left = Math.max(viewportPadding, Math.min(rawLeft, maxLeft));
+    const rawTop = rect.top + rect.height / 2 - popoverHeight / 2;
+    const maxTop = Math.max(viewportPadding, viewportHeight - popoverHeight - viewportPadding);
+    const top = Math.max(viewportPadding, Math.min(rawTop, maxTop));
+
+    setPopoverPlacement(placement);
+    setPopoverPosition({ top, left, width: popoverWidth });
+  };
+
+  const openPopover = () => {
+    if (!card.imageUrl) {
+      return;
+    }
+    updatePopoverPlacement();
+    setIsOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const onViewportChange = () => updatePopoverPlacement();
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("scroll", onViewportChange, true);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("scroll", onViewportChange, true);
+    };
+  }, [card.imageUrl, isOpen]);
+
+  return (
+    <div
+      className="deck-curve-card-anchor"
+      data-popover-placement={popoverPlacement}
+      ref={wrapperRef}
+      onMouseEnter={openPopover}
+      onMouseLeave={() => setIsOpen(false)}
+    >
+      <a
+        className="deck-curve-card"
+        href={cardScryfallHref(card, card.scryfallUrl)}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={ariaLabel}
+        title={name}
+        onFocus={openPopover}
+        onBlur={(event) => {
+          if (wrapperRef.current && event.relatedTarget instanceof Node && wrapperRef.current.contains(event.relatedTarget)) {
+            return;
+          }
+          setIsOpen(false);
+        }}
+      >
+        {card.imageUrl ? (
+          <img
+            src={card.imageUrl}
+            alt=""
+            loading={eager ? "eager" : "lazy"}
+            decoding="async"
+            width={630}
+            height={880}
+          />
+        ) : (
+          <span className="deck-curve-card-fallback">
+            <strong>{name}</strong>
+            <span>{card.manaCost ? `Mana cost ${card.manaCost}` : "Preview unavailable"}</span>
+          </span>
+        )}
+        {quantityBadge ? <span className="deck-curve-card-qty">x{quantityBadge}</span> : null}
+      </a>
+
+      {isOpen && popoverPosition && card.imageUrl && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="card-preview-popover card-preview-popover-floating deck-curve-card-preview"
+              style={{
+                top: `${popoverPosition.top}px`,
+                left: `${popoverPosition.left}px`,
+                width: `${popoverPosition.width}px`,
+              }}
+              role="tooltip"
+            >
+              <img src={card.imageUrl} alt={name} loading="lazy" />
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+function DeckCurveSection({
+  title,
+  cards,
+}: {
+  title: string;
+  cards: MainboardDeckListCard[];
+}) {
+  const columns = useMemo(() => buildCurveColumns(cards), [cards]);
+
+  if (columns.length === 0) {
+    return null;
+  }
+
+  return (
+    <article className="deck-curve-panel" aria-label={`${title} arranged by mana value`}>
+      <div className="deck-curve-panel-head">
+        <h4>{title}</h4>
+        <p>{sectionTotal(cards).toLocaleString()} cards</p>
+      </div>
+      <div className="deck-curve-scroll">
+        <div className="deck-curve-grid">
+          {columns.map((column, columnIndex) => (
+            <section className="deck-curve-column" key={column.key} aria-label={column.accessibleLabel}>
+              <div className="deck-curve-column-head">
+                <p className="deck-curve-column-count">{column.totalCards.toLocaleString()}</p>
+                <p className="deck-curve-column-label">{column.label}</p>
+              </div>
+              <div className="deck-curve-stack">
+                {buildCurveCardEntries(column.key, column.cards).map((entry, entryIndex) => (
+                  <DeckCurveCardLink
+                    key={entry.key}
+                    card={entry.card}
+                    quantityBadge={entry.quantityBadge}
+                    eager={columnIndex < 2 && entryIndex < 2}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DeckCurveSkeleton({ title = "Mainboard", columnCount = 6 }: { title?: string; columnCount?: number }) {
+  return (
+    <article className="deck-curve-panel is-skeleton" aria-hidden="true">
+      <div className="deck-curve-panel-head">
+        <span className="skeleton-line skeleton-heading-sm" />
+        <span className="skeleton-line skeleton-count" />
+      </div>
+      <div className="deck-curve-scroll">
+        <div className="deck-curve-grid">
+          {Array.from({ length: columnCount }).map((_, columnIndex) => (
+            <div className="deck-curve-column" key={`${title}-curve-skeleton-${columnIndex}`}>
+              <div className="deck-curve-column-head">
+                <span className="skeleton-line skeleton-count" />
+                <span className="skeleton-line skeleton-table-line is-short" />
+              </div>
+              <div className="deck-curve-stack">
+                {Array.from({ length: 4 }).map((_, cardIndex) => (
+                  <span className="deck-curve-card is-skeleton" key={`${title}-curve-card-${columnIndex}-${cardIndex}`} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -392,7 +746,9 @@ function DeckDetailSkeleton() {
 
 export function DeckDetailPage() {
   const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const deckId = Number(params.deckId);
+  const deckDisplayMode = parseDeckDisplayMode(searchParams.get("view"));
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["deck", deckId],
@@ -437,6 +793,21 @@ export function DeckDetailPage() {
     return out;
   }, [mainboardCards, mainCardPreviewQueries]);
 
+  const enrichedMainboardCards = useMemo(() => {
+    return mainboardCards.map((card): MainboardDeckListCard => {
+      const metadata = mainboardMetadataByCardID.get(card.cardId);
+      return {
+        ...card,
+        manaCost: metadata?.manaCost?.trim() ?? "",
+        manaValue:
+          typeof metadata?.manaValue === "number" && Number.isFinite(metadata.manaValue) ? metadata.manaValue : null,
+        imageUrl: metadata?.imageUrl,
+        scryfallUrl: metadata?.scryfallUrl,
+        typeLine: metadata?.typeLine,
+      };
+    });
+  }, [mainboardCards, mainboardMetadataByCardID]);
+
   const groupedMainboardCards = useMemo(() => {
     const byCategory: Record<MainboardCategory, MainboardDeckListCard[]> = {
       creatures: [],
@@ -446,15 +817,9 @@ export function DeckDetailPage() {
       lands: [],
     };
 
-    for (const card of mainboardCards) {
-      const metadata = mainboardMetadataByCardID.get(card.cardId);
-      const category = classifyMainboardCard(metadata?.typeLine);
-      byCategory[category].push({
-        ...card,
-        manaCost: metadata?.manaCost?.trim() ?? "",
-        manaValue:
-          typeof metadata?.manaValue === "number" && Number.isFinite(metadata.manaValue) ? metadata.manaValue : null,
-      });
+    for (const card of enrichedMainboardCards) {
+      const category = classifyMainboardCard(card.typeLine);
+      byCategory[category].push(card);
     }
 
     for (const category of MAINBOARD_CATEGORY_ORDER) {
@@ -466,7 +831,7 @@ export function DeckDetailPage() {
     }
 
     return byCategory;
-  }, [mainboardCards, mainboardMetadataByCardID]);
+  }, [enrichedMainboardCards]);
 
   const nonMainSections = useMemo(() => {
     const bySection: Record<string, DeckListCard[]> = {};
@@ -522,6 +887,11 @@ export function DeckDetailPage() {
       return {
         ...card,
         manaCost: metadata?.manaCost?.trim() ?? "",
+        manaValue:
+          typeof metadata?.manaValue === "number" && Number.isFinite(metadata.manaValue) ? metadata.manaValue : null,
+        imageUrl: metadata?.imageUrl,
+        scryfallUrl: metadata?.scryfallUrl,
+        typeLine: metadata?.typeLine,
       };
     });
   }, [sideboardCards, sideboardMetadataByCardID]);
@@ -538,6 +908,20 @@ export function DeckDetailPage() {
   if (!data) return <StatusMessage>Deck not found.</StatusMessage>;
 
   const matches = data.matches ?? [];
+  const setDeckDisplayMode = (mode: DeckDisplayMode) => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (mode === "list") {
+          next.delete("view");
+        } else {
+          next.set("view", mode);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   return (
     <div className="stack-lg deck-detail-stack">
@@ -549,49 +933,83 @@ export function DeckDetailPage() {
               {data.format || "Unknown format"} • {data.eventName || "No event"}
             </p>
           </div>
-          <Link className="text-link" to="/decks">
-            Back to decks
-          </Link>
+          <div className="deck-detail-actions">
+            <div className="tabs deck-view-toggle" role="group" aria-label="Deck display mode">
+              <button
+                type="button"
+                className={`tab ${deckDisplayMode === "list" ? "is-active" : ""}`}
+                aria-pressed={deckDisplayMode === "list"}
+                onClick={() => setDeckDisplayMode("list")}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                className={`tab ${deckDisplayMode === "curve" ? "is-active" : ""}`}
+                aria-pressed={deckDisplayMode === "curve"}
+                onClick={() => setDeckDisplayMode("curve")}
+              >
+                Curve
+              </button>
+            </div>
+            <Link className="text-link" to="/decks">
+              Back to decks
+            </Link>
+          </div>
         </div>
 
         <div className="stack-md">
-          {isMainboardMetadataLoading ? (
-            <div className="grid-cards deck-mainboard-skeleton-grid">
-              {MAINBOARD_SKELETON_CATEGORY_ORDER.map((category) => (
-                <DeckSectionSkeleton key={`main-loading-${category}`} rowCount={mainboardSkeletonRows} />
-              ))}
-            </div>
+          {deckDisplayMode === "curve" ? (
+            isMainboardMetadataLoading ? (
+              <DeckCurveSkeleton title="Mainboard" />
+            ) : (
+              <DeckCurveSection title="Mainboard" cards={enrichedMainboardCards} />
+            )
           ) : (
-            <div className="grid-cards">
-              {MAINBOARD_CATEGORY_ORDER.map((category) => {
-                const categoryCards = groupedMainboardCards[category];
-                if (categoryCards.length === 0) {
-                  return null;
-                }
-                return (
-                  <article className="deck-card" key={`main-${category}`}>
-                    <h4>
-                      {formatSectionLabel(category)} ({sectionTotal(categoryCards)})
-                    </h4>
-                    <ul>
-                      {categoryCards.map((card) => (
-                        <li key={`main-${category}-${card.cardId}`}>
-                          <span className="deck-card-qty">{card.quantity}x</span>
-                          <DeckCardPreviewName card={card} />
-                          <span className="deck-card-mana">
-                            <ManaCostDisplay manaCost={card.manaCost} />
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                );
-              })}
-            </div>
+            isMainboardMetadataLoading ? (
+              <div className="grid-cards deck-mainboard-skeleton-grid">
+                {MAINBOARD_SKELETON_CATEGORY_ORDER.map((category) => (
+                  <DeckSectionSkeleton key={`main-loading-${category}`} rowCount={mainboardSkeletonRows} />
+                ))}
+              </div>
+            ) : (
+              <div className="grid-cards">
+                {MAINBOARD_CATEGORY_ORDER.map((category) => {
+                  const categoryCards = groupedMainboardCards[category];
+                  if (categoryCards.length === 0) {
+                    return null;
+                  }
+                  return (
+                    <article className="deck-card" key={`main-${category}`}>
+                      <h4>
+                        {formatSectionLabel(category)} ({sectionTotal(categoryCards)})
+                      </h4>
+                      <ul>
+                        {categoryCards.map((card) => (
+                          <li key={`main-${category}-${card.cardId}`}>
+                            <span className="deck-card-qty">{card.quantity}x</span>
+                            <DeckCardPreviewName card={card} />
+                            <span className="deck-card-mana">
+                              <ManaCostDisplay manaCost={card.manaCost} />
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </article>
+                  );
+                })}
+              </div>
+            )
           )}
 
           {sideboardCards.length > 0 ? (
-            isSideboardMetadataLoading ? (
+            deckDisplayMode === "curve" ? (
+              isSideboardMetadataLoading ? (
+                <DeckCurveSkeleton title="Sideboard" columnCount={4} />
+              ) : (
+                <DeckCurveSection title="Sideboard" cards={enrichedSideboardCards} />
+              )
+            ) : isSideboardMetadataLoading ? (
               <DeckSectionSkeleton rowCount={sideboardSkeletonRows} />
             ) : (
               <article className="deck-card">
@@ -633,7 +1051,7 @@ export function DeckDetailPage() {
             </div>
           ) : null}
         </div>
-        {isCardMetadataLoading ? <StatusMessage>Loading deck mana/type details…</StatusMessage> : null}
+        {isCardMetadataLoading ? <StatusMessage>Loading deck card details…</StatusMessage> : null}
       </section>
 
       <section className="panel">
