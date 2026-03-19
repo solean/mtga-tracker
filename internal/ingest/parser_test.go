@@ -766,6 +766,77 @@ func TestReplayFramesClearSummoningSicknessOnControllersNextTurn(t *testing.T) {
 	}
 }
 
+func TestReplayFramesTrackSelfHandOnly(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test-replay-hand.db")
+	logPath := filepath.Join(tmpDir, "Player.log")
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+
+	parser := NewParser(db.NewStore(database))
+	lines := []string{
+		`{"clientId":"self-user","screenName":"Self"}`,
+		`{"timestamp":"1773532594890","matchGameRoomStateChangedEvent":{"gameRoomInfo":{"gameRoomConfig":{"reservedPlayers":[{"userId":"self-user","playerName":"Self","systemSeatId":1,"teamId":1,"eventId":"Traditional_Ladder"},{"userId":"opp-user","playerName":"Opp","systemSeatId":2,"teamId":2,"eventId":"Traditional_Ladder"}],"matchId":"match-replay-hand"},"stateType":"MatchGameRoomStateType_Playing"}}}`,
+		`{"timestamp":"1773532605936","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Full","gameStateId":1,"gameInfo":{"matchID":"match-replay-hand","gameNumber":1},"turnInfo":{"phase":"Phase_Main1","turnNumber":1,"activePlayer":1},"zones":[{"zoneId":27,"type":"ZoneType_Stack","visibility":"Visibility_Public","objectInstanceIds":[]},{"zoneId":28,"type":"ZoneType_Battlefield","visibility":"Visibility_Public","objectInstanceIds":[]},{"zoneId":31,"type":"ZoneType_Hand","visibility":"Visibility_Private","ownerSeatId":1,"objectInstanceIds":[101,102]},{"zoneId":35,"type":"ZoneType_Hand","visibility":"Visibility_Private","ownerSeatId":2,"objectInstanceIds":[201,202]}],"gameObjects":[{"instanceId":101,"grpId":90189,"type":"GameObjectType_Card","zoneId":31,"visibility":"Visibility_Private","ownerSeatId":1,"controllerSeatId":1,"superTypes":["SuperType_Basic"],"cardTypes":["CardType_Land"],"subtypes":["SubType_Swamp"]},{"instanceId":102,"grpId":87246,"type":"GameObjectType_Card","zoneId":31,"visibility":"Visibility_Private","ownerSeatId":1,"controllerSeatId":1,"cardTypes":["CardType_Creature"],"subtypes":["SubType_Bat"],"power":{"value":1},"toughness":{"value":1}}]}}]}}`,
+		`{"timestamp":"1773532605937","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Diff","gameStateId":2,"prevGameStateId":1,"turnInfo":{"phase":"Phase_Main1","turnNumber":1,"activePlayer":1},"zones":[{"zoneId":27,"type":"ZoneType_Stack","visibility":"Visibility_Public","objectInstanceIds":[102]},{"zoneId":31,"type":"ZoneType_Hand","visibility":"Visibility_Private","ownerSeatId":1,"objectInstanceIds":[101]}],"gameObjects":[{"instanceId":102,"grpId":87246,"type":"GameObjectType_Card","zoneId":27,"visibility":"Visibility_Public","ownerSeatId":1,"controllerSeatId":1,"cardTypes":["CardType_Creature"],"subtypes":["SubType_Bat"],"power":{"value":1},"toughness":{"value":1}}]}}]}}`,
+	}
+
+	if err := writeLogLines(logPath, lines, false); err != nil {
+		t.Fatalf("write log lines: %v", err)
+	}
+	if _, err := parser.ParseFile(ctx, logPath, false); err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+
+	store := db.NewStore(database)
+	frames, err := store.ListMatchReplayFrames(ctx, 1)
+	if err != nil {
+		t.Fatalf("list replay frames: %v", err)
+	}
+	if len(frames) != 2 {
+		t.Fatalf("expected 2 replay frames, got %d", len(frames))
+	}
+
+	firstHand := replayObjectsInZone(frames[0], "hand")
+	if len(firstHand) != 2 {
+		t.Fatalf("expected 2 self hand cards in first frame, got %#v", firstHand)
+	}
+	for _, object := range firstHand {
+		if object.PlayerSide != "self" {
+			t.Fatalf("expected self hand object, got %#v", object)
+		}
+		if object.Visibility != "private" {
+			t.Fatalf("expected private hand visibility, got %#v", object)
+		}
+	}
+
+	secondHand := replayObjectsInZone(frames[1], "hand")
+	if len(secondHand) != 1 || secondHand[0].InstanceID != 101 {
+		t.Fatalf("expected only remaining hand card 101, got %#v", secondHand)
+	}
+	secondStack := replayObjectsInZone(frames[1], "stack")
+	if len(secondStack) != 1 || secondStack[0].InstanceID != 102 {
+		t.Fatalf("expected 102 on the stack, got %#v", secondStack)
+	}
+
+	for _, frame := range frames {
+		for _, object := range frame.Objects {
+			if object.ZoneType == "hand" && object.PlayerSide != "self" {
+				t.Fatalf("unexpected opponent hand object in replay frame: %#v", object)
+			}
+		}
+	}
+}
+
 func replayObjectsInZone(frame model.MatchReplayFrameRow, zoneType string) []model.MatchReplayFrameObjectRow {
 	out := make([]model.MatchReplayFrameObjectRow, 0)
 	for _, obj := range frame.Objects {

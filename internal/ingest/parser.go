@@ -89,6 +89,7 @@ type parseState struct {
 	phaseByMatch              map[string]string
 	zoneTypeByMatch           map[string]map[int64]string
 	zoneVisibilityByMatch     map[string]map[int64]string
+	zoneOwnerSeatByMatch      map[string]map[int64]int64
 	gameNumberByMatch         map[string]int64
 	replayByMatchGame         map[string]*replayPublicState
 	lastUnityLogTimestamp     string
@@ -228,6 +229,34 @@ func (s *parseState) zoneVisibility(matchID string, zoneID int64) string {
 	byZone := s.zoneVisibilityByMatch[matchID]
 	if byZone == nil {
 		return ""
+	}
+	return byZone[zoneID]
+}
+
+func (s *parseState) rememberZoneOwnerSeat(matchID string, zoneID, ownerSeatID int64) {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || zoneID <= 0 || ownerSeatID <= 0 {
+		return
+	}
+	if s.zoneOwnerSeatByMatch == nil {
+		s.zoneOwnerSeatByMatch = make(map[string]map[int64]int64)
+	}
+	byZone, ok := s.zoneOwnerSeatByMatch[matchID]
+	if !ok {
+		byZone = make(map[int64]int64)
+		s.zoneOwnerSeatByMatch[matchID] = byZone
+	}
+	byZone[zoneID] = ownerSeatID
+}
+
+func (s *parseState) zoneOwnerSeat(matchID string, zoneID int64) int64 {
+	matchID = strings.TrimSpace(matchID)
+	if matchID == "" || zoneID <= 0 || s.zoneOwnerSeatByMatch == nil {
+		return 0
+	}
+	byZone := s.zoneOwnerSeatByMatch[matchID]
+	if byZone == nil {
+		return 0
 	}
 	return byZone[zoneID]
 }
@@ -1132,6 +1161,23 @@ func isPublicGREVisibility(raw string) bool {
 	return strings.EqualFold(strings.TrimSpace(normalizeGREVisibility(raw)), "public")
 }
 
+func replayZoneVisibility(matchID string, zoneID int64, state *parseState) string {
+	if state == nil || zoneID <= 0 {
+		return ""
+	}
+	return normalizeGREVisibility(state.zoneVisibility(matchID, zoneID))
+}
+
+func isReplaySelfHandZone(matchID string, zoneID, selfSeat int64, state *parseState) bool {
+	if state == nil || zoneID <= 0 || selfSeat <= 0 {
+		return false
+	}
+	if strings.TrimSpace(state.zoneType(matchID, zoneID)) != "hand" {
+		return false
+	}
+	return state.zoneOwnerSeat(matchID, zoneID) == selfSeat
+}
+
 func isTimelinePlayableZone(zoneType string) bool {
 	zoneType = strings.TrimSpace(strings.ToLower(zoneType))
 	return zoneType == "stack" || zoneType == "battlefield"
@@ -1199,6 +1245,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 		for _, zone := range msg.GameStateMessage.Zones {
 			state.rememberZoneType(matchID, zone.ZoneID, zone.Type)
 			state.rememberZoneVisibility(matchID, zone.ZoneID, zone.Visibility)
+			state.rememberZoneOwnerSeat(matchID, zone.ZoneID, zone.OwnerSeatID)
 		}
 
 		selfSeat := state.selfSeat(matchID)
@@ -1227,7 +1274,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 		}
 		clearExpiredReplaySummoningSickness(replayState, turnNumber, activePlayer)
 
-		_, previousPublicByInstance := buildReplayPublicSnapshot(matchID, replayState, state)
+		_, previousPublicByInstance := buildReplayPublicSnapshot(matchID, replayState, state, selfSeat)
 		if phase != "combat" {
 			clearReplayCombatState(replayState)
 		}
@@ -1329,21 +1376,21 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			}
 			replayState.Objects[obj.InstanceID] = current
 
-			if current.ZoneID > 0 && isReplayPublicZone(matchID, current.ZoneID, replayState, state) {
-				if current.Visibility != "" && !isPublicGREVisibility(current.Visibility) {
+			if current.ZoneID > 0 && isReplayTrackedZone(matchID, current.ZoneID, replayState, state, selfSeat) {
+				zoneType := state.zoneType(matchID, current.ZoneID)
+				if zoneType == "" {
+					zoneType = fallbackGREZoneType(current.ZoneID)
+				}
+				if current.Visibility == "" {
+					current.Visibility = replayZoneVisibility(matchID, current.ZoneID, state)
+				}
+				if !isReplayVisibleObject(matchID, current, zoneType, state, selfSeat) {
 					removeReplayInstanceFromAllZones(replayState, obj.InstanceID)
 				} else {
 					removeReplayInstanceFromOtherZones(replayState, current.ZoneID, obj.InstanceID)
 					replayState.PublicZoneMembers[current.ZoneID] = appendReplayInstance(replayState.PublicZoneMembers[current.ZoneID], obj.InstanceID)
-					zoneType := state.zoneType(matchID, current.ZoneID)
-					if zoneType == "" {
-						zoneType = fallbackGREZoneType(current.ZoneID)
-					}
 					if zoneType != "" {
 						replayState.PublicZoneTypes[current.ZoneID] = zoneType
-					}
-					if current.Visibility == "" {
-						current.Visibility = "public"
 					}
 					replayState.Objects[obj.InstanceID] = current
 				}
@@ -1352,7 +1399,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 		applyReplayAnnotations(replayState, msg.GameStateMessage.Annotations)
 
 		for _, zone := range msg.GameStateMessage.Zones {
-			if !isReplayPublicZone(matchID, zone.ZoneID, replayState, state) || zone.ObjectInstanceIDs == nil {
+			if !isReplayTrackedZone(matchID, zone.ZoneID, replayState, state, selfSeat) || zone.ObjectInstanceIDs == nil {
 				continue
 			}
 
@@ -1370,10 +1417,10 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 				current.InstanceID = instanceID
 				current.ZoneID = zone.ZoneID
 				if current.Visibility == "" {
-					current.Visibility = "public"
+					current.Visibility = replayZoneVisibility(matchID, zone.ZoneID, state)
 				}
 				replayState.Objects[instanceID] = current
-				if !isPublicGREVisibility(current.Visibility) {
+				if !isReplayVisibleObject(matchID, current, zoneType, state, selfSeat) {
 					removeReplayInstanceFromAllZones(replayState, instanceID)
 					continue
 				}
@@ -1384,7 +1431,7 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 		}
 
 		replayState.LastGameStateID = msg.GameStateMessage.GameStateID
-		snapshotObjects, currentPublicByInstance := buildReplayPublicSnapshot(matchID, replayState, state)
+		snapshotObjects, currentPublicByInstance := buildReplayPublicSnapshot(matchID, replayState, state, selfSeat)
 		if _, err := p.store.ReplaceMatchReplayFrame(
 			ctx,
 			tx,
@@ -1488,7 +1535,7 @@ func hydrateReplayStateFromFrameObjects(replay *replayPublicState, latestTurnNum
 			OwnerSeatID:          replayIntValue(obj.OwnerSeatID),
 			ControllerSeatID:     replayIntValue(obj.ControllerSeatID),
 			ZoneID:               zoneID,
-			Visibility:           "public",
+			Visibility:           normalizeGREVisibility(obj.Visibility),
 			Power:                copyReplayIntPtr(obj.Power),
 			Toughness:            copyReplayIntPtr(obj.Toughness),
 			AttackTargetID:       replayIntValue(obj.AttackTargetID),
@@ -1520,6 +1567,7 @@ func buildReplayPublicSnapshot(
 	matchID string,
 	replay *replayPublicState,
 	state *parseState,
+	selfSeat int64,
 ) ([]model.MatchReplayFrameObjectRow, map[int64]model.MatchReplayFrameObjectRow) {
 	if replay == nil {
 		return nil, map[int64]model.MatchReplayFrameObjectRow{}
@@ -1546,7 +1594,7 @@ func buildReplayPublicSnapshot(
 		members := replay.PublicZoneMembers[zoneID]
 		for idx, instanceID := range members {
 			current, ok := replay.Objects[instanceID]
-			if !ok || current.CardID <= 0 || !isPublicGREVisibility(current.Visibility) {
+			if !ok || current.CardID <= 0 || !isReplayVisibleObject(matchID, current, zoneType, state, selfSeat) {
 				continue
 			}
 			if _, duplicate := byInstance[instanceID]; duplicate {
@@ -1561,7 +1609,7 @@ func buildReplayPublicSnapshot(
 				ZoneID:               &zoneIDCopy,
 				ZoneType:             zoneType,
 				ZonePosition:         &zonePosition,
-				Visibility:           "public",
+				Visibility:           normalizeGREVisibility(current.Visibility),
 				Power:                copyReplayIntPtr(current.Power),
 				Toughness:            copyReplayIntPtr(current.Toughness),
 				AttackState:          strings.TrimSpace(current.AttackState),
@@ -1638,7 +1686,7 @@ func encodeReplayPlayerLifeTotals(values map[int64]int64) []byte {
 	return encoded
 }
 
-func isReplayPublicZone(matchID string, zoneID int64, replay *replayPublicState, state *parseState) bool {
+func isReplayTrackedZone(matchID string, zoneID int64, replay *replayPublicState, state *parseState, selfSeat int64) bool {
 	if zoneID <= 0 {
 		return false
 	}
@@ -1650,7 +1698,7 @@ func isReplayPublicZone(matchID string, zoneID int64, replay *replayPublicState,
 			return true
 		}
 	}
-	if isPublicGREVisibility(state.zoneVisibility(matchID, zoneID)) {
+	if isPublicGREVisibility(replayZoneVisibility(matchID, zoneID, state)) {
 		return true
 	}
 
@@ -1658,12 +1706,35 @@ func isReplayPublicZone(matchID string, zoneID int64, replay *replayPublicState,
 	if zoneType == "" {
 		zoneType = fallbackGREZoneType(zoneID)
 	}
+	if zoneType == "hand" && isReplaySelfHandZone(matchID, zoneID, selfSeat, state) {
+		return true
+	}
 	switch zoneType {
 	case "revealed", "suppressed", "pending", "command", "stack", "battlefield", "exile", "limbo", "graveyard":
 		return true
 	default:
 		return false
 	}
+}
+
+func isReplayVisibleObject(
+	matchID string,
+	current replayCardState,
+	zoneType string,
+	state *parseState,
+	selfSeat int64,
+) bool {
+	if isPublicGREVisibility(current.Visibility) {
+		return true
+	}
+	if strings.TrimSpace(zoneType) != "hand" {
+		return false
+	}
+	ownerSeatID := current.OwnerSeatID
+	if ownerSeatID <= 0 && current.ZoneID > 0 {
+		ownerSeatID = state.zoneOwnerSeat(matchID, current.ZoneID)
+	}
+	return selfSeat > 0 && ownerSeatID > 0 && ownerSeatID == selfSeat
 }
 
 func appendReplayInstance(values []int64, target int64) []int64 {

@@ -41,6 +41,7 @@ type ManaCostPart =
   | { kind: "separator"; value: string };
 type TimelineDisplayMode = "board" | "list";
 type BoardZoneKind =
+  | "hand"
   | "battlefield"
   | "stack"
   | "graveyard"
@@ -60,6 +61,7 @@ type ReplayCounterSummary = {
 };
 
 const BOARD_ZONE_ORDER: BoardZoneKind[] = [
+  "hand",
   "battlefield",
   "stack",
   "graveyard",
@@ -165,6 +167,7 @@ function parseManaCostParts(manaCost: string): ManaCostPart[] {
 function boardZoneKind(zone: string): BoardZoneKind {
   const normalized = zone.trim().toLowerCase();
   if (!normalized) return "other";
+  if (normalized.includes("hand")) return "hand";
   if (normalized.includes("battlefield")) return "battlefield";
   if (normalized.includes("stack")) return "stack";
   if (normalized.includes("graveyard")) return "graveyard";
@@ -174,6 +177,7 @@ function boardZoneKind(zone: string): BoardZoneKind {
 }
 
 function boardZoneLabel(kind: BoardZoneKind): string {
+  if (kind === "hand") return "Hand";
   if (kind === "battlefield") return "Battlefield";
   if (kind === "stack") return "Stack";
   if (kind === "graveyard") return "Graveyard";
@@ -852,7 +856,7 @@ function replayFramePrimarySummary(
     const summary = replayFrameLifeTotalsSummary(frame);
     return summary ? `Life totals changed. ${summary}.` : "Life totals changed.";
   }
-  return "Initial public replay snapshot for this game state.";
+  return "Initial replay snapshot for this game state.";
 }
 
 function describeReplayChange(change: MatchReplayChange): string {
@@ -1076,20 +1080,23 @@ function MatchReplayObjectCard({
   object: MatchReplayFrameObject;
   preview: CardPreview | null;
   active?: boolean;
-  size?: "board" | "stack";
+  size?: "board" | "stack" | "hand";
   chipLabel?: string;
 }) {
   const card = { cardId: object.cardId, cardName: object.cardName };
   const name = preview?.name ?? cardDisplayName(card);
   const href = preview?.scryfallUrl ?? cardFallbackHref(card);
   const statusText = replayObjectStatusText(object, preview);
-  const ptLabel = replayObjectPTLabel(object, preview);
   const statePills = replayObjectStatePills(object);
   const counterPills = replayObjectCounterSummaries(object);
   const isTappedBoardCard =
     size === "board" &&
     boardZoneKind(object.zoneType) === "battlefield" &&
     object.isTapped;
+  const statBadge =
+    size === "board" && boardZoneKind(object.zoneType) === "battlefield"
+      ? replayObjectPTLabel(object, preview)
+      : null;
 
   const cardNode = (
     <a
@@ -1119,11 +1126,11 @@ function MatchReplayObjectCard({
       {chipLabel ? (
         <span className="match-replay-card-chip">{chipLabel}</span>
       ) : null}
-      {ptLabel ? <span className="match-replay-card-power">{ptLabel}</span> : null}
+      {statBadge ? <span className="match-replay-card-power">{statBadge}</span> : null}
     </a>
   );
 
-  if (size === "stack") {
+  if (size === "stack" || size === "hand") {
     return cardNode;
   }
 
@@ -1158,10 +1165,12 @@ function MatchReplayFrameSideSummary({
   side,
   objects,
   lifeTotal,
+  includeHand = false,
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
   lifeTotal?: number;
+  includeHand?: boolean;
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -1171,17 +1180,14 @@ function MatchReplayFrameSideSummary({
     () => summarizeReplayFrameZones(sideObjects),
     [sideObjects],
   );
-  const stats: BoardZoneKind[] = [
-    "battlefield",
-    "graveyard",
-    "exile",
-    "revealed",
-  ];
+  const stats: BoardZoneKind[] = includeHand
+    ? ["hand", "battlefield", "graveyard", "exile", "revealed"]
+    : ["battlefield", "graveyard", "exile", "revealed"];
 
   return (
     <section
       className={`match-replay-sidebox is-${side}`}
-      aria-label={`${timelinePlayerLabel(side)} public summary`}
+      aria-label={`${timelinePlayerLabel(side)} visible summary`}
     >
       <div className="match-replay-sidebox-head">
         <div className="match-replay-sidebox-head-copy">
@@ -1189,7 +1195,7 @@ function MatchReplayFrameSideSummary({
             {timelinePlayerLabel(side)}
           </p>
           <p className="match-replay-sidebox-total">
-            {sideObjects.length} public card{sideObjects.length === 1 ? "" : "s"}
+            {sideObjects.length} visible card{sideObjects.length === 1 ? "" : "s"}
           </p>
         </div>
         {typeof lifeTotal === "number" ? (
@@ -1319,6 +1325,56 @@ function MatchReplayFrameBattlefield({
                 ))}
               </div>
             </section>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MatchReplayHand({
+  objects,
+  previewByCardID,
+  highlightedInstanceIDs,
+}: {
+  objects: MatchReplayFrameObject[];
+  previewByCardID: Map<number, CardPreview | null>;
+  highlightedInstanceIDs: Set<number>;
+}) {
+  const handObjects = useMemo(
+    () =>
+      objects
+        .filter(
+          (object) =>
+            object.playerSide === "self" && boardZoneKind(object.zoneType) === "hand",
+        )
+        .sort(sortReplayObjects),
+    [objects],
+  );
+
+  return (
+    <section className="match-replay-lane is-hand" aria-label="Your hand">
+      <div className="match-replay-lane-head">
+        <div>
+          <p className="match-replay-lane-title">Your Hand</p>
+          <p className="match-replay-lane-subtitle">
+            {handObjects.length} card{handObjects.length === 1 ? "" : "s"} currently in
+            hand
+          </p>
+        </div>
+      </div>
+      {handObjects.length === 0 ? (
+        <p className="match-replay-empty">No cards in hand in this step.</p>
+      ) : (
+        <div className="match-replay-card-row is-hand" aria-label="Current hand">
+          {handObjects.map((object) => (
+            <MatchReplayObjectCard
+              key={object.instanceId}
+              object={object}
+              preview={previewByCardID.get(object.cardId) ?? null}
+              active={highlightedInstanceIDs.has(object.instanceId)}
+              size="hand"
+            />
           ))}
         </div>
       )}
@@ -1555,7 +1611,7 @@ function MatchReplayFrameBoard({
             {selectedFrameIndex + 1} of {frames.length}
           </p>
         </div>
-        <p className="match-replay-kicker">Public replay</p>
+        <p className="match-replay-kicker">Replay</p>
       </div>
 
       <div className="match-replay-controls">
@@ -1656,6 +1712,7 @@ function MatchReplayFrameBoard({
             side="self"
             objects={currentObjects}
             lifeTotal={currentFrame.selfLifeTotal}
+            includeHand
           />
         </aside>
 
@@ -1676,7 +1733,7 @@ function MatchReplayFrameBoard({
             </p>
             <p className="match-replay-centerline-copy">{primarySummary}</p>
             <p className="match-replay-centerline-copy">
-              {currentObjects.length} public object
+              {currentObjects.length} tracked card
               {currentObjects.length === 1 ? "" : "s"} visible
               {stackCount > 0
                 ? ` • ${stackCount} currently on the stack`
@@ -1705,6 +1762,12 @@ function MatchReplayFrameBoard({
 
           <MatchReplayFrameBattlefield
             side="self"
+            objects={currentObjects}
+            previewByCardID={previewByCardID}
+            highlightedInstanceIDs={changedInstanceIDs}
+          />
+
+          <MatchReplayHand
             objects={currentObjects}
             previewByCardID={previewByCardID}
             highlightedInstanceIDs={changedInstanceIDs}

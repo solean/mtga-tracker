@@ -1640,7 +1640,7 @@ h1 {
 
 .match-replay-board {
   display: grid;
-  grid-template-rows: minmax(11rem, auto) auto minmax(11rem, auto);
+  grid-template-rows: minmax(11rem, auto) auto minmax(11rem, auto) auto;
   gap: 0.75rem;
   padding: 0.92rem;
   border: 1px solid var(--line);
@@ -1679,6 +1679,11 @@ h1 {
   display: grid;
   gap: 0.72rem;
   padding: 0.78rem;
+}
+
+.match-replay-lane.is-hand {
+  background:
+    linear-gradient(165deg, rgba(9, 16, 28, 0.96) 0%, rgba(7, 13, 24, 0.94) 100%);
 }
 
 .match-replay-zone-groups {
@@ -1733,6 +1738,13 @@ h1 {
 
 .match-replay-card-row.is-sectioned {
   min-height: 0;
+}
+
+.match-replay-card-row.is-hand {
+  flex-wrap: nowrap;
+  align-items: stretch;
+  overflow-x: auto;
+  padding-bottom: 0.22rem;
 }
 
 .match-replay-object {
@@ -1826,6 +1838,12 @@ h1 {
 .match-replay-card.is-stack {
   width: min(100%, 180px);
   height: auto;
+}
+
+.match-replay-card.is-hand {
+  width: 116px;
+  height: auto;
+  flex: 0 0 auto;
 }
 
 .match-replay-card img {
@@ -2940,6 +2958,10 @@ select {
     --match-replay-card-width: 92px;
   }
 
+  .match-replay-card.is-hand {
+    width: 104px;
+  }
+
   .match-replay-object {
     --match-replay-board-card-width: 92px;
   }
@@ -3031,6 +3053,10 @@ select {
 
   .match-replay-card {
     --match-replay-card-width: 78px;
+  }
+
+  .match-replay-card.is-hand {
+    width: 90px;
   }
 
   .match-replay-object {
