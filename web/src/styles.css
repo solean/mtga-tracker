@@ -1558,7 +1558,7 @@ h1 {
   );
 }
 
-.match-replay-stat dt {
+.match-replay-stat-term {
   margin: 0;
   color: var(--muted);
   font-family: "IBM Plex Mono", "Menlo", monospace;
@@ -1567,7 +1567,7 @@ h1 {
   text-transform: uppercase;
 }
 
-.match-replay-stat dd {
+.match-replay-stat-value {
   margin: 0;
   color: var(--text);
   font-family: "IBM Plex Mono", "Menlo", monospace;
@@ -1575,6 +1575,149 @@ h1 {
   font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+.match-replay-stat-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.match-replay-stat-button {
+  width: 100%;
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.match-replay-stat-button:hover {
+  border-color: rgba(124, 211, 255, 0.3);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.16);
+  transform: translateY(-1px);
+}
+
+.match-replay-stat-button:focus-visible {
+  border-color: rgba(124, 211, 255, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(124, 211, 255, 0.14) inset,
+    0 0 0 3px rgba(124, 211, 255, 0.18);
+  outline: none;
+}
+
+.match-replay-zone-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(4, 8, 16, 0.74);
+  backdrop-filter: blur(16px);
+}
+
+.match-replay-zone-dialog {
+  width: min(980px, calc(100vw - 2rem));
+  max-height: min(88vh, calc(100dvh - 2rem));
+  display: grid;
+  gap: 0;
+  border: 1px solid rgba(124, 211, 255, 0.2);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at top, rgba(24, 50, 78, 0.38), transparent 54%),
+    linear-gradient(160deg, rgba(8, 16, 28, 0.98) 0%, rgba(6, 12, 22, 0.98) 100%);
+  box-shadow:
+    0 32px 72px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(124, 211, 255, 0.06) inset;
+  overflow: hidden;
+}
+
+.match-replay-zone-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.9rem 1rem;
+  padding: 1rem 1rem 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.match-replay-zone-dialog-head-copy {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.match-replay-zone-dialog-head h5,
+.match-replay-zone-dialog-description {
+  margin: 0;
+}
+
+.match-replay-zone-dialog-head h5 {
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.match-replay-zone-dialog-description {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.match-replay-zone-dialog-close {
+  appearance: none;
+  align-self: center;
+  padding: 0.62rem 0.8rem;
+  border: 1px solid rgba(124, 211, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(10, 20, 34, 0.92);
+  color: var(--text);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.match-replay-zone-dialog-close:hover {
+  border-color: rgba(124, 211, 255, 0.34);
+  background: rgba(14, 28, 46, 0.96);
+}
+
+.match-replay-zone-dialog-close:focus-visible {
+  border-color: rgba(124, 211, 255, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(124, 211, 255, 0.12) inset,
+    0 0 0 3px rgba(124, 211, 255, 0.16);
+  outline: none;
+}
+
+.match-replay-zone-dialog-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+.match-replay-zone-dialog-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.match-replay-zone-dialog-card {
+  display: grid;
+  gap: 0.4rem;
 }
 
 .match-replay-stackbox-body {

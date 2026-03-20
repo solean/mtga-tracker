@@ -48,6 +48,7 @@ type BoardZoneKind =
   | "exile"
   | "revealed"
   | "other";
+type InspectableZoneKind = "graveyard" | "exile";
 type BattlefieldSectionKind =
   | "lands"
   | "creatures"
@@ -59,6 +60,19 @@ type ReplayCounterSummary = {
   label: string;
   count: number;
 };
+type MatchReplayZoneDialogState =
+  | {
+      source: "replay";
+      side: "self" | "opponent";
+      zone: InspectableZoneKind;
+      objects: MatchReplayFrameObject[];
+    }
+  | {
+      source: "observed";
+      side: "self" | "opponent";
+      zone: InspectableZoneKind;
+      plays: MatchCardPlay[];
+    };
 
 const BOARD_ZONE_ORDER: BoardZoneKind[] = [
   "hand",
@@ -184,6 +198,10 @@ function boardZoneLabel(kind: BoardZoneKind): string {
   if (kind === "exile") return "Exile";
   if (kind === "revealed") return "Revealed";
   return "Other";
+}
+
+function isInspectableZoneKind(kind: BoardZoneKind): kind is InspectableZoneKind {
+  return kind === "graveyard" || kind === "exile";
 }
 
 function boardTurnLabel(turnNumber?: number): string {
@@ -1161,16 +1179,211 @@ function MatchReplayObjectCard({
   );
 }
 
+function MatchReplayZoneDialog({
+  state,
+  previewByCardID,
+  onClose,
+}: {
+  state: MatchReplayZoneDialogState | null;
+  previewByCardID: Map<number, CardPreview | null>;
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusFrameID = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!dialogRef.current) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(
+        (element) =>
+          !element.hasAttribute("disabled") &&
+          element.getAttribute("aria-hidden") !== "true",
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+
+      if (event.shiftKey) {
+        if (!activeElement || activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.cancelAnimationFrame(focusFrameID);
+      document.body.style.overflow = originalOverflow;
+      previousFocusRef.current?.focus();
+    };
+  }, [onClose, state]);
+
+  if (!state || typeof document === "undefined") {
+    return null;
+  }
+
+  const title = `${timelinePlayerLabel(state.side)} ${boardZoneLabel(state.zone)}`;
+  const cardCount =
+    state.source === "replay" ? state.objects.length : state.plays.length;
+  const subtitle =
+    state.source === "replay"
+      ? `${cardCount} card${cardCount === 1 ? "" : "s"} currently in ${boardZoneLabel(state.zone).toLowerCase()} this step.`
+      : `${cardCount} observed card${cardCount === 1 ? "" : "s"} first seen in ${boardZoneLabel(state.zone).toLowerCase()} in this game.`;
+  const replayObjects =
+    state.source === "replay" ? [...state.objects].sort(sortReplayObjects) : [];
+  const observedPlays = state.source === "observed" ? [...state.plays] : [];
+
+  return createPortal(
+    <div
+      className="match-replay-zone-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="match-replay-zone-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
+      >
+        <div className="match-replay-zone-dialog-head">
+          <div className="match-replay-zone-dialog-head-copy">
+            <p className="match-replay-sidebox-label">Zone Viewer</p>
+            <h5 id={titleId}>{title}</h5>
+            <p
+              id={descriptionId}
+              className="match-replay-zone-dialog-description"
+            >
+              {subtitle}
+            </p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="match-replay-zone-dialog-close"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="match-replay-zone-dialog-body">
+          {state.source === "replay" ? (
+            replayObjects.length === 0 ? (
+              <p className="match-replay-empty">No cards in this zone.</p>
+            ) : (
+              <div
+                className="match-replay-zone-dialog-grid"
+                aria-label={`${title} cards`}
+              >
+                {replayObjects.map((object) => (
+                  <div
+                    className="match-replay-zone-dialog-card"
+                    key={object.instanceId}
+                  >
+                    <MatchReplayObjectCard
+                      object={object}
+                      preview={previewByCardID.get(object.cardId) ?? null}
+                      size="hand"
+                    />
+                  </div>
+                ))}
+              </div>
+            )
+          ) : observedPlays.length === 0 ? (
+            <p className="match-replay-empty">No cards in this zone.</p>
+          ) : (
+            <div
+              className="match-replay-zone-dialog-grid"
+              aria-label={`${title} cards`}
+            >
+              {observedPlays.map((play) => (
+                <div className="match-replay-zone-dialog-card" key={play.id}>
+                  <MatchReplayCard
+                    play={play}
+                    preview={previewByCardID.get(play.cardId) ?? null}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function MatchReplayFrameSideSummary({
   side,
   objects,
   lifeTotal,
   includeHand = false,
+  onOpenZone,
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
   lifeTotal?: number;
   includeHand?: boolean;
+  onOpenZone?: (state: MatchReplayZoneDialogState) => void;
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -1209,12 +1422,49 @@ function MatchReplayFrameSideSummary({
         ) : null}
       </div>
       <dl className="match-replay-stats">
-        {stats.map((kind) => (
-          <div className="match-replay-stat" key={kind}>
-            <dt>{boardZoneLabel(kind)}</dt>
-            <dd>{zoneCounts.get(kind) ?? 0}</dd>
-          </div>
-        ))}
+        {stats.map((kind) => {
+          const count = zoneCounts.get(kind) ?? 0;
+          const canOpen = isInspectableZoneKind(kind) && count > 0 && onOpenZone;
+          const content = (
+            <>
+              <span className="match-replay-stat-term">{boardZoneLabel(kind)}</span>
+              <span className="match-replay-stat-value">{count}</span>
+              {canOpen ? (
+                <span className="match-replay-stat-hint">View cards</span>
+              ) : null}
+            </>
+          );
+
+          if (canOpen) {
+            return (
+              <button
+                type="button"
+                className="match-replay-stat match-replay-stat-button"
+                key={kind}
+                aria-haspopup="dialog"
+                aria-label={`View ${timelinePlayerLabel(side)} ${boardZoneLabel(kind).toLowerCase()}, ${count} card${count === 1 ? "" : "s"}`}
+                onClick={() =>
+                  onOpenZone({
+                    source: "replay",
+                    side,
+                    zone: kind,
+                    objects: sideObjects.filter(
+                      (object) => boardZoneKind(object.zoneType) === kind,
+                    ),
+                  })
+                }
+              >
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <div className="match-replay-stat" key={kind}>
+              {content}
+            </div>
+          );
+        })}
       </dl>
     </section>
   );
@@ -1525,6 +1775,8 @@ function MatchReplayFrameBoard({
     frames.length > 0 ? frames.length - 1 : 0,
   );
   const [isPlaying, setIsPlaying] = useState(false);
+  const [zoneDialogState, setZoneDialogState] =
+    useState<MatchReplayZoneDialogState | null>(null);
 
   useEffect(() => {
     if (frames.length === 0) {
@@ -1700,6 +1952,7 @@ function MatchReplayFrameBoard({
             side="opponent"
             objects={currentObjects}
             lifeTotal={currentFrame.opponentLifeTotal}
+            onOpenZone={setZoneDialogState}
           />
 
           <MatchReplayStack
@@ -1713,6 +1966,7 @@ function MatchReplayFrameBoard({
             objects={currentObjects}
             lifeTotal={currentFrame.selfLifeTotal}
             includeHand
+            onOpenZone={setZoneDialogState}
           />
         </aside>
 
@@ -1774,6 +2028,12 @@ function MatchReplayFrameBoard({
           />
         </div>
       </div>
+
+      <MatchReplayZoneDialog
+        state={zoneDialogState}
+        previewByCardID={previewByCardID}
+        onClose={() => setZoneDialogState(null)}
+      />
     </article>
   );
 }
@@ -1781,9 +2041,11 @@ function MatchReplayFrameBoard({
 function MatchReplaySideSummary({
   side,
   plays,
+  onOpenZone,
 }: {
   side: "self" | "opponent";
   plays: MatchCardPlay[];
+  onOpenZone?: (state: MatchReplayZoneDialogState) => void;
 }) {
   const zoneCounts = useMemo(() => summarizeReplayZones(plays), [plays]);
   const stats: BoardZoneKind[] = [
@@ -1809,12 +2071,49 @@ function MatchReplaySideSummary({
         </div>
       </div>
       <dl className="match-replay-stats">
-        {stats.map((kind) => (
-          <div className="match-replay-stat" key={kind}>
-            <dt>{boardZoneLabel(kind)}</dt>
-            <dd>{zoneCounts.get(kind) ?? 0}</dd>
-          </div>
-        ))}
+        {stats.map((kind) => {
+          const count = zoneCounts.get(kind) ?? 0;
+          const canOpen = isInspectableZoneKind(kind) && count > 0 && onOpenZone;
+          const content = (
+            <>
+              <span className="match-replay-stat-term">{boardZoneLabel(kind)}</span>
+              <span className="match-replay-stat-value">{count}</span>
+              {canOpen ? (
+                <span className="match-replay-stat-hint">View cards</span>
+              ) : null}
+            </>
+          );
+
+          if (canOpen) {
+            return (
+              <button
+                type="button"
+                className="match-replay-stat match-replay-stat-button"
+                key={kind}
+                aria-haspopup="dialog"
+                aria-label={`View ${timelinePlayerLabel(side)} ${boardZoneLabel(kind).toLowerCase()}, ${count} card${count === 1 ? "" : "s"}`}
+                onClick={() =>
+                  onOpenZone({
+                    source: "observed",
+                    side,
+                    zone: kind,
+                    plays: plays.filter(
+                      (play) => boardZoneKind(play.firstPublicZone) === kind,
+                    ),
+                  })
+                }
+              >
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <div className="match-replay-stat" key={kind}>
+              {content}
+            </div>
+          );
+        })}
       </dl>
     </section>
   );
@@ -1930,6 +2229,8 @@ function MatchTimelineBoard({
     plays.length > 0 ? plays.length - 1 : 0,
   );
   const [isPlaying, setIsPlaying] = useState(false);
+  const [zoneDialogState, setZoneDialogState] =
+    useState<MatchReplayZoneDialogState | null>(null);
 
   useEffect(() => {
     if (plays.length === 0) {
@@ -2105,6 +2406,7 @@ function MatchTimelineBoard({
           <MatchReplaySideSummary
             side="opponent"
             plays={opponentVisiblePlays}
+            onOpenZone={setZoneDialogState}
           />
 
           <section
@@ -2140,7 +2442,11 @@ function MatchTimelineBoard({
             </div>
           </section>
 
-          <MatchReplaySideSummary side="self" plays={selfVisiblePlays} />
+          <MatchReplaySideSummary
+            side="self"
+            plays={selfVisiblePlays}
+            onOpenZone={setZoneDialogState}
+          />
         </aside>
 
         <div className="match-replay-board">
@@ -2180,6 +2486,12 @@ function MatchTimelineBoard({
           />
         </div>
       </div>
+
+      <MatchReplayZoneDialog
+        state={zoneDialogState}
+        previewByCardID={previewByCardID}
+        onClose={() => setZoneDialogState(null)}
+      />
     </article>
   );
 }
