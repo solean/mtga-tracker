@@ -4,37 +4,14 @@ import { useId, useMemo, useState, type KeyboardEvent } from "react";
 
 import { api } from "../lib/api";
 import { formatDateTime } from "../lib/format";
+import {
+  buildGraphPoints,
+  LADDER_CONFIG,
+  rankStateFor,
+  tierLabelAt,
+  type Ladder,
+} from "../lib/rankProgress";
 import { useTheme, type Theme } from "../lib/theme";
-import type { RankHistoryPoint, RankState } from "../lib/types";
-
-type Ladder = "constructed" | "limited";
-
-type LadderConfig = {
-  label: string;
-  tiers: string[];
-};
-
-type GraphPoint = {
-  matchNumber: number;
-  score: number;
-  rankLabel: string;
-  result: RankHistoryPoint["result"];
-  eventName: string;
-  opponent: string;
-  observedAt: string;
-  endedAt: string;
-};
-
-const LADDER_CONFIG: Record<Ladder, LadderConfig> = {
-  constructed: {
-    label: "Constructed",
-    tiers: ["Spark", "Bronze", "Silver", "Gold", "Platinum", "Diamond", "Mythic"],
-  },
-  limited: {
-    label: "Limited",
-    tiers: ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "Mythic"],
-  },
-};
 
 type ChartThemeTokens = {
   accent: string;
@@ -77,89 +54,6 @@ const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
     tooltipBorder: "rgba(0, 80, 140, 0.28)",
     tooltipText: "#0d1b2a",
   },
-};
-
-function rankStateFor(point: RankHistoryPoint, ladder: Ladder): RankState {
-  return ladder === "constructed" ? point.constructed : point.limited;
-}
-
-function normalizeRankClass(rankClass: string, ladder: Ladder): string {
-  const trimmed = rankClass.trim();
-  if (trimmed) return trimmed;
-  return ladder === "constructed" ? "Bronze" : "Bronze";
-}
-
-function stepsPerLevel(ladder: Ladder, rankClass: string): number {
-  if (rankClass === "Mythic") return 1;
-  if (ladder === "constructed") {
-    if (rankClass === "Spark") return 5;
-    return 6;
-  }
-  if (rankClass === "Bronze") return 4;
-  return 5;
-}
-
-function formatRankLabel(rank: RankState, ladder: Ladder): string {
-  if (rank.level == null || rank.seasonOrdinal == null) return "Unranked";
-  const rankClass = normalizeRankClass(rank.rankClass, ladder);
-  if (rankClass === "Mythic") return "Mythic";
-  return `${rankClass} ${rank.level}`;
-}
-
-function rankScore(rank: RankState, ladder: Ladder): number | null {
-  if (rank.level == null || rank.seasonOrdinal == null) return null;
-
-  const rankClass = normalizeRankClass(rank.rankClass, ladder);
-  const config = LADDER_CONFIG[ladder];
-  const tierIndex = config.tiers.indexOf(rankClass);
-  if (tierIndex === -1) return null;
-  if (rankClass === "Mythic") return tierIndex + 0.92;
-
-  const level = Math.min(Math.max(rank.level, 1), 4);
-  const totalSteps = stepsPerLevel(ladder, rankClass);
-  const stepProgress =
-    rank.step != null ? Math.min(Math.max(rank.step, 0), totalSteps) / totalSteps : 0;
-
-  return tierIndex + ((4 - level) + stepProgress) / 4;
-}
-
-function buildGraphPoints(history: RankHistoryPoint[], ladder: Ladder): {
-  seasonOrdinal: number;
-  points: GraphPoint[];
-} | null {
-  const rankedPoints = history.filter((point) => rankStateFor(point, ladder).seasonOrdinal != null);
-  if (rankedPoints.length === 0) return null;
-
-  const seasonOrdinal = rankStateFor(rankedPoints[rankedPoints.length - 1], ladder).seasonOrdinal;
-  if (seasonOrdinal == null) return null;
-
-  const points = rankedPoints
-    .filter((point) => rankStateFor(point, ladder).seasonOrdinal === seasonOrdinal)
-    .map((point, index) => {
-      const rank = rankStateFor(point, ladder);
-      const score = rankScore(rank, ladder);
-      if (score == null) return null;
-      return {
-        matchNumber: index + 1,
-        score,
-        rankLabel: formatRankLabel(rank, ladder),
-        result: point.result,
-        eventName: point.eventName,
-        opponent: point.opponent,
-        observedAt: point.observedAt,
-        endedAt: point.endedAt,
-      } satisfies GraphPoint;
-    })
-    .filter((point): point is GraphPoint => point !== null);
-
-  if (points.length === 0) return null;
-  return { seasonOrdinal, points };
-}
-
-function tierLabelAt(value: number, ladder: Ladder): string {
-  const rounded = Math.round(value);
-  if (Math.abs(value - rounded) > 0.001) return "";
-  return LADDER_CONFIG[ladder].tiers[rounded] ?? "";
 }
 
 export function RankProgressPanel() {

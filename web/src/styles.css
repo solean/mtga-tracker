@@ -2245,7 +2245,7 @@ h1 {
 }
 
 .deck-curve-grid {
-  --deck-curve-card-width: 150px;
+  --deck-curve-card-width: 200px;
   --deck-curve-card-height: calc(var(--deck-curve-card-width) * 88 / 63);
   --deck-curve-card-peek: 1.9rem;
   display: flex;
