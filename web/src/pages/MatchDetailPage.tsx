@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MutableRefObject,
+  type RefObject,
 } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -59,6 +61,10 @@ type BattlefieldSectionKind =
 type ReplayCounterSummary = {
   label: string;
   count: number;
+};
+type ReplayCombatConnection = {
+  blockerId: number;
+  attackerId: number;
 };
 type MatchReplayZoneDialogState =
   | {
@@ -605,16 +611,22 @@ function replayObjectCounterSummaries(
 }
 
 function replayObjectBlockCount(object: MatchReplayFrameObject): number {
+  return replayObjectBlockAttackerIDs(object).length;
+}
+
+function replayObjectBlockAttackerIDs(object: MatchReplayFrameObject): number[] {
   const raw = object.blockAttackerIdsJson?.trim();
   if (!raw) {
-    return 0;
+    return [];
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.length : 0;
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is number => typeof value === "number")
+      : [];
   } catch {
-    return 0;
+    return [];
   }
 }
 
@@ -1094,12 +1106,18 @@ function MatchReplayObjectCard({
   active = false,
   size = "board",
   chipLabel,
+  shellRef,
+  combatHighlighted = false,
+  onCombatFocusChange,
 }: {
   object: MatchReplayFrameObject;
   preview: CardPreview | null;
   active?: boolean;
   size?: "board" | "stack" | "hand";
   chipLabel?: string;
+  shellRef?: (element: HTMLDivElement | null) => void;
+  combatHighlighted?: boolean;
+  onCombatFocusChange?: (instanceId: number | null) => void;
 }) {
   const card = { cardId: object.cardId, cardName: object.cardName };
   const name = preview?.name ?? cardDisplayName(card);
@@ -1153,8 +1171,24 @@ function MatchReplayObjectCard({
   }
 
   return (
-    <div className={`match-replay-object ${isTappedBoardCard ? "is-tapped" : ""}`}>
-      <div className="match-replay-card-shell">{cardNode}</div>
+    <div
+      className={`match-replay-object ${isTappedBoardCard ? "is-tapped" : ""} ${combatHighlighted ? "is-combat-highlighted" : ""}`}
+      onMouseEnter={
+        onCombatFocusChange ? () => onCombatFocusChange(object.instanceId) : undefined
+      }
+      onMouseLeave={
+        onCombatFocusChange ? () => onCombatFocusChange(null) : undefined
+      }
+      onFocus={
+        onCombatFocusChange ? () => onCombatFocusChange(object.instanceId) : undefined
+      }
+      onBlur={
+        onCombatFocusChange ? () => onCombatFocusChange(null) : undefined
+      }
+    >
+      <div className="match-replay-card-shell" ref={shellRef}>
+        {cardNode}
+      </div>
       {statePills.length > 0 || counterPills.length > 0 ? (
         <div className="match-replay-card-statusrow">
           {statePills.map((pill) => (
@@ -1176,6 +1210,158 @@ function MatchReplayObjectCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function MatchReplayCombatOverlay({
+  boardRef,
+  cardShellsRef,
+  connections,
+  focusedInstanceId,
+}: {
+  boardRef: RefObject<HTMLDivElement | null>;
+  cardShellsRef: MutableRefObject<Map<number, HTMLDivElement>>;
+  connections: ReplayCombatConnection[];
+  focusedInstanceId: number | null;
+}) {
+  const markerId = useId();
+  const [snapshot, setSnapshot] = useState<{
+    width: number;
+    height: number;
+    paths: Array<{
+      key: string;
+      d: string;
+      highlighted: boolean;
+    }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (connections.length === 0) {
+      setSnapshot(null);
+      return;
+    }
+
+    const boardElement = boardRef.current;
+    if (!boardElement) {
+      setSnapshot(null);
+      return;
+    }
+
+    let frameID = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const measure = () => {
+      frameID = 0;
+      const root = boardRef.current;
+      if (!root) {
+        setSnapshot(null);
+        return;
+      }
+
+      const boardRect = root.getBoundingClientRect();
+      if (boardRect.width <= 0 || boardRect.height <= 0) {
+        setSnapshot(null);
+        return;
+      }
+
+      const paths = connections.flatMap((connection) => {
+        const blockerElement = cardShellsRef.current.get(connection.blockerId);
+        const attackerElement = cardShellsRef.current.get(connection.attackerId);
+        if (!blockerElement || !attackerElement) {
+          return [];
+        }
+
+        const blockerRect = blockerElement.getBoundingClientRect();
+        const attackerRect = attackerElement.getBoundingClientRect();
+        const startX = blockerRect.left + blockerRect.width / 2 - boardRect.left;
+        const startY = blockerRect.top + blockerRect.height / 2 - boardRect.top;
+        const endX = attackerRect.left + attackerRect.width / 2 - boardRect.left;
+        const endY = attackerRect.top + attackerRect.height / 2 - boardRect.top;
+        const deltaY = endY - startY;
+
+        return [
+          {
+            key: `${connection.blockerId}-${connection.attackerId}`,
+            d: `M ${startX} ${startY} C ${startX} ${startY + deltaY * 0.34}, ${endX} ${endY - deltaY * 0.34}, ${endX} ${endY}`,
+            highlighted:
+              focusedInstanceId !== null &&
+              (connection.blockerId === focusedInstanceId ||
+                connection.attackerId === focusedInstanceId),
+          },
+        ];
+      });
+
+      setSnapshot({
+        width: boardRect.width,
+        height: boardRect.height,
+        paths,
+      });
+    };
+
+    const scheduleMeasure = () => {
+      if (frameID !== 0) {
+        return;
+      }
+      frameID = window.requestAnimationFrame(measure);
+    };
+
+    scheduleMeasure();
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        scheduleMeasure();
+      });
+      resizeObserver.observe(boardElement);
+      for (const element of cardShellsRef.current.values()) {
+        resizeObserver.observe(element);
+      }
+    }
+    window.addEventListener("resize", scheduleMeasure);
+
+    return () => {
+      if (frameID !== 0) {
+        window.cancelAnimationFrame(frameID);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+    };
+  }, [boardRef, cardShellsRef, connections, focusedInstanceId]);
+
+  if (!snapshot || snapshot.paths.length === 0) {
+    return null;
+  }
+
+  const shouldMuteIdleLines =
+    focusedInstanceId === null && snapshot.paths.length > 3;
+
+  return (
+    <svg
+      className={`match-replay-combat-overlay ${shouldMuteIdleLines ? "is-muted" : ""}`}
+      viewBox={`0 0 ${snapshot.width} ${snapshot.height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <marker
+          id={markerId}
+          markerWidth="10"
+          markerHeight="10"
+          refX="9"
+          refY="5"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+        </marker>
+      </defs>
+      {snapshot.paths.map((path) => (
+        <path
+          key={path.key}
+          className={`match-replay-combat-path ${path.highlighted ? "is-highlighted" : ""}`}
+          d={path.d}
+          markerEnd={`url(#${markerId})`}
+        />
+      ))}
+    </svg>
   );
 }
 
@@ -1475,11 +1661,19 @@ function MatchReplayFrameBattlefield({
   objects,
   previewByCardID,
   highlightedInstanceIDs,
+  onRegisterCardShell,
+  combatHighlightedInstanceIDs,
+  combatInteractiveInstanceIDs,
+  onCombatFocusChange,
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
   previewByCardID: Map<number, CardPreview | null>;
   highlightedInstanceIDs: Set<number>;
+  onRegisterCardShell?: (instanceId: number, element: HTMLDivElement | null) => void;
+  combatHighlightedInstanceIDs?: Set<number>;
+  combatInteractiveInstanceIDs?: Set<number>;
+  onCombatFocusChange?: (instanceId: number | null) => void;
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -1571,6 +1765,20 @@ function MatchReplayFrameBattlefield({
                     object={object}
                     preview={previewByCardID.get(object.cardId) ?? null}
                     active={highlightedInstanceIDs.has(object.instanceId)}
+                    shellRef={
+                      onRegisterCardShell
+                        ? (element) =>
+                            onRegisterCardShell(object.instanceId, element)
+                        : undefined
+                    }
+                    combatHighlighted={
+                      combatHighlightedInstanceIDs?.has(object.instanceId) ?? false
+                    }
+                    onCombatFocusChange={
+                      combatInteractiveInstanceIDs?.has(object.instanceId)
+                        ? onCombatFocusChange
+                        : undefined
+                    }
                   />
                 ))}
               </div>
@@ -1777,6 +1985,9 @@ function MatchReplayFrameBoard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoneDialogState, setZoneDialogState] =
     useState<MatchReplayZoneDialogState | null>(null);
+  const [focusedCombatInstanceId, setFocusedCombatInstanceId] = useState<number | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const boardCardShellsRef = useRef(new Map<number, HTMLDivElement>());
 
   useEffect(() => {
     if (frames.length === 0) {
@@ -1830,6 +2041,58 @@ function MatchReplayFrameBoard({
   }
 
   const currentObjects = currentFrame.objects ?? [];
+  const combatConnections = useMemo(() => {
+    const battlefieldByID = new Map<number, MatchReplayFrameObject>();
+    for (const object of currentObjects) {
+      if (boardZoneKind(object.zoneType) !== "battlefield") {
+        continue;
+      }
+      battlefieldByID.set(object.instanceId, object);
+    }
+
+    const next: ReplayCombatConnection[] = [];
+    for (const object of battlefieldByID.values()) {
+      if (!replayObjectIsBlocking(object)) {
+        continue;
+      }
+      for (const attackerId of replayObjectBlockAttackerIDs(object)) {
+        const attacker = battlefieldByID.get(attackerId);
+        if (!attacker || !replayObjectIsAttacking(attacker)) {
+          continue;
+        }
+        next.push({
+          blockerId: object.instanceId,
+          attackerId,
+        });
+      }
+    }
+    return next;
+  }, [currentObjects]);
+  const combatInteractiveInstanceIDs = useMemo(() => {
+    const ids = new Set<number>();
+    for (const connection of combatConnections) {
+      ids.add(connection.blockerId);
+      ids.add(connection.attackerId);
+    }
+    return ids;
+  }, [combatConnections]);
+  const combatHighlightedInstanceIDs = useMemo(() => {
+    if (focusedCombatInstanceId === null) {
+      return new Set<number>();
+    }
+
+    const ids = new Set<number>([focusedCombatInstanceId]);
+    for (const connection of combatConnections) {
+      if (
+        connection.blockerId === focusedCombatInstanceId ||
+        connection.attackerId === focusedCombatInstanceId
+      ) {
+        ids.add(connection.blockerId);
+        ids.add(connection.attackerId);
+      }
+    }
+    return ids;
+  }, [combatConnections, focusedCombatInstanceId]);
   const changedInstanceIDs = new Set(
     (currentFrame.changes ?? []).map((change) => change.instanceId),
   );
@@ -1852,6 +2115,18 @@ function MatchReplayFrameBoard({
   const canJumpNextTurn =
     currentTurnBoundaryIndex >= 0 &&
     currentTurnBoundaryIndex < turnBoundaries.length - 1;
+
+  useEffect(() => {
+    setFocusedCombatInstanceId(null);
+  }, [currentFrame?.id]);
+
+  function registerCardShell(instanceId: number, element: HTMLDivElement | null) {
+    if (element) {
+      boardCardShellsRef.current.set(instanceId, element);
+      return;
+    }
+    boardCardShellsRef.current.delete(instanceId);
+  }
 
   return (
     <article className="panel inner match-replay-game">
@@ -1970,12 +2245,22 @@ function MatchReplayFrameBoard({
           />
         </aside>
 
-        <div className="match-replay-board">
+        <div className="match-replay-board" ref={boardRef}>
+          <MatchReplayCombatOverlay
+            boardRef={boardRef}
+            cardShellsRef={boardCardShellsRef}
+            connections={combatConnections}
+            focusedInstanceId={focusedCombatInstanceId}
+          />
           <MatchReplayFrameBattlefield
             side="opponent"
             objects={currentObjects}
             previewByCardID={previewByCardID}
             highlightedInstanceIDs={changedInstanceIDs}
+            onRegisterCardShell={registerCardShell}
+            combatHighlightedInstanceIDs={combatHighlightedInstanceIDs}
+            combatInteractiveInstanceIDs={combatInteractiveInstanceIDs}
+            onCombatFocusChange={setFocusedCombatInstanceId}
           />
 
           <section
@@ -2019,6 +2304,10 @@ function MatchReplayFrameBoard({
             objects={currentObjects}
             previewByCardID={previewByCardID}
             highlightedInstanceIDs={changedInstanceIDs}
+            onRegisterCardShell={registerCardShell}
+            combatHighlightedInstanceIDs={combatHighlightedInstanceIDs}
+            combatInteractiveInstanceIDs={combatInteractiveInstanceIDs}
+            onCombatFocusChange={setFocusedCombatInstanceId}
           />
 
           <MatchReplayHand

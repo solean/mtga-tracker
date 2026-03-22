@@ -1782,6 +1782,8 @@ h1 {
 }
 
 .match-replay-board {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-rows: minmax(11rem, auto) auto minmax(11rem, auto) auto;
   gap: 0.75rem;
@@ -1816,12 +1818,53 @@ h1 {
       rgba(10, 14, 20, 0.42) 0%,
       var(--surface-faint) 100%
     );
+  overflow: hidden;
 }
 
 .match-replay-lane {
   display: grid;
   gap: 0.72rem;
   padding: 0.78rem;
+}
+
+.match-replay-board > .match-replay-lane,
+.match-replay-board > .match-replay-centerline {
+  position: relative;
+  z-index: 2;
+}
+
+.match-replay-combat-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: rgba(255, 244, 124, 0.88);
+  filter: drop-shadow(0 0 8px rgba(255, 244, 124, 0.18));
+}
+
+.match-replay-combat-overlay.is-muted .match-replay-combat-path {
+  opacity: 0.34;
+}
+
+.match-replay-combat-path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.7;
+  transition:
+    opacity 140ms ease,
+    stroke-width 140ms ease,
+    filter 140ms ease;
+}
+
+.match-replay-combat-path.is-highlighted {
+  opacity: 1;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 6px rgba(255, 244, 124, 0.28));
 }
 
 .match-replay-lane.is-hand {
@@ -1964,6 +2007,14 @@ h1 {
 
 .match-replay-object.is-tapped .match-replay-card:hover {
   transform: translateY(-2px) rotate(90deg);
+}
+
+.match-replay-object.is-combat-highlighted .match-replay-card {
+  border-color: rgba(255, 244, 124, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(255, 244, 124, 0.22) inset,
+    0 0 18px rgba(255, 244, 124, 0.18),
+    0 14px 24px rgba(0, 0, 0, 0.32);
 }
 
 .match-replay-card.is-active {
@@ -3067,6 +3118,10 @@ select {
 
   .match-replay-board {
     padding: 0.78rem;
+  }
+
+  .match-replay-combat-overlay {
+    display: none;
   }
 
   .match-replay-sidebox,
