@@ -2115,6 +2115,19 @@ function MatchReplayFrameBoard({
   const canJumpNextTurn =
     currentTurnBoundaryIndex >= 0 &&
     currentTurnBoundaryIndex < turnBoundaries.length - 1;
+  const frameVisibilitySummary = `${currentObjects.length} tracked card${
+    currentObjects.length === 1 ? "" : "s"
+  } visible${
+    stackCount > 0 ? ` • ${stackCount} currently on the stack` : " • stack empty"
+  }${
+    replayFrameLifeTotalsSummary(currentFrame)
+      ? ` • ${replayFrameLifeTotalsSummary(currentFrame)}`
+      : ""
+  }${
+    unknownObjectsCount > 0
+      ? ` • ${unknownObjectsCount} with unknown owner`
+      : ""
+  }.`;
 
   useEffect(() => {
     setFocusedCombatInstanceId(null);
@@ -2245,48 +2258,26 @@ function MatchReplayFrameBoard({
           />
         </aside>
 
-        <div className="match-replay-board" ref={boardRef}>
-          <MatchReplayCombatOverlay
-            boardRef={boardRef}
-            cardShellsRef={boardCardShellsRef}
-            connections={combatConnections}
-            focusedInstanceId={focusedCombatInstanceId}
-          />
-          <MatchReplayFrameBattlefield
-            side="opponent"
-            objects={currentObjects}
-            previewByCardID={previewByCardID}
-            highlightedInstanceIDs={changedInstanceIDs}
-            onRegisterCardShell={registerCardShell}
-            combatHighlightedInstanceIDs={combatHighlightedInstanceIDs}
-            combatInteractiveInstanceIDs={combatInteractiveInstanceIDs}
-            onCombatFocusChange={setFocusedCombatInstanceId}
-          />
-
+        <div className="match-replay-board-column">
           <section
-            className="match-replay-centerline"
+            className="match-replay-statusbar"
             aria-label="Replay status"
           >
-            <p className="match-replay-centerline-title">
-              {replayFrameMomentLabel(currentFrame)}
-            </p>
-            <p className="match-replay-centerline-copy">{primarySummary}</p>
-            <p className="match-replay-centerline-copy">
-              {currentObjects.length} tracked card
-              {currentObjects.length === 1 ? "" : "s"} visible
-              {stackCount > 0
-                ? ` • ${stackCount} currently on the stack`
-                : " • stack empty"}
-              {replayFrameLifeTotalsSummary(currentFrame)
-                ? ` • ${replayFrameLifeTotalsSummary(currentFrame)}`
-                : ""}
-              {unknownObjectsCount > 0
-                ? ` • ${unknownObjectsCount} with unknown owner`
-                : ""}
-              .
+            <div className="match-replay-statusbar-head">
+              <p className="match-replay-sidebox-label">Replay Step</p>
+              <p className="match-replay-statusbar-title">
+                {replayFrameMomentLabel(currentFrame)}
+              </p>
+            </div>
+            <p className="match-replay-statusbar-copy">{primarySummary}</p>
+            <p className="match-replay-statusbar-copy">
+              {frameVisibilitySummary}
             </p>
             {notableChanges.length > 0 ? (
-              <div className="match-replay-change-list" aria-label="Frame changes">
+              <div
+                className="match-replay-change-list is-statusbar"
+                aria-label="Frame changes"
+              >
                 {notableChanges.map((change, index) => (
                   <span
                     className="match-replay-change-pill"
@@ -2299,22 +2290,41 @@ function MatchReplayFrameBoard({
             ) : null}
           </section>
 
-          <MatchReplayFrameBattlefield
-            side="self"
-            objects={currentObjects}
-            previewByCardID={previewByCardID}
-            highlightedInstanceIDs={changedInstanceIDs}
-            onRegisterCardShell={registerCardShell}
-            combatHighlightedInstanceIDs={combatHighlightedInstanceIDs}
-            combatInteractiveInstanceIDs={combatInteractiveInstanceIDs}
-            onCombatFocusChange={setFocusedCombatInstanceId}
-          />
+          <div className="match-replay-board is-combat-board" ref={boardRef}>
+            <MatchReplayCombatOverlay
+              boardRef={boardRef}
+              cardShellsRef={boardCardShellsRef}
+              connections={combatConnections}
+              focusedInstanceId={focusedCombatInstanceId}
+            />
+            <MatchReplayFrameBattlefield
+              side="opponent"
+              objects={currentObjects}
+              previewByCardID={previewByCardID}
+              highlightedInstanceIDs={changedInstanceIDs}
+              onRegisterCardShell={registerCardShell}
+              combatHighlightedInstanceIDs={combatHighlightedInstanceIDs}
+              combatInteractiveInstanceIDs={combatInteractiveInstanceIDs}
+              onCombatFocusChange={setFocusedCombatInstanceId}
+            />
 
-          <MatchReplayHand
-            objects={currentObjects}
-            previewByCardID={previewByCardID}
-            highlightedInstanceIDs={changedInstanceIDs}
-          />
+            <MatchReplayFrameBattlefield
+              side="self"
+              objects={currentObjects}
+              previewByCardID={previewByCardID}
+              highlightedInstanceIDs={changedInstanceIDs}
+              onRegisterCardShell={registerCardShell}
+              combatHighlightedInstanceIDs={combatHighlightedInstanceIDs}
+              combatInteractiveInstanceIDs={combatInteractiveInstanceIDs}
+              onCombatFocusChange={setFocusedCombatInstanceId}
+            />
+
+            <MatchReplayHand
+              objects={currentObjects}
+              previewByCardID={previewByCardID}
+              highlightedInstanceIDs={changedInstanceIDs}
+            />
+          </div>
         </div>
       </div>
 

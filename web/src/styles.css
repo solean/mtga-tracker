@@ -1427,6 +1427,7 @@ h1 {
 
 .match-replay-sidebar,
 .match-replay-board,
+.match-replay-board-column,
 .match-replay-controls {
   min-width: 0;
 }
@@ -1437,10 +1438,17 @@ h1 {
   align-content: start;
 }
 
+.match-replay-board-column {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
 .match-replay-sidebox,
 .match-replay-stackbox,
 .match-replay-lane,
 .match-replay-centerline,
+.match-replay-statusbar,
 .match-replay-track-panel {
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -1453,7 +1461,8 @@ h1 {
 }
 
 .match-replay-sidebox,
-.match-replay-stackbox {
+.match-replay-stackbox,
+.match-replay-statusbar {
   padding: 0.84rem;
 }
 
@@ -1821,6 +1830,10 @@ h1 {
   overflow: hidden;
 }
 
+.match-replay-board.is-combat-board {
+  grid-template-rows: minmax(11rem, auto) minmax(11rem, auto) auto;
+}
+
 .match-replay-lane {
   display: grid;
   gap: 0.72rem;
@@ -2137,6 +2150,19 @@ h1 {
   text-align: center;
 }
 
+.match-replay-statusbar {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.match-replay-statusbar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem 0.8rem;
+  flex-wrap: wrap;
+}
+
 .match-replay-centerline-title {
   margin: 0;
   color: var(--text);
@@ -2145,6 +2171,23 @@ h1 {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.match-replay-statusbar-title {
+  margin: 0;
+  color: var(--text);
+  font-family: "Rajdhani", "Arial", sans-serif;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.match-replay-statusbar-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .match-replay-controls {
@@ -2158,6 +2201,11 @@ h1 {
   justify-content: center;
   gap: 0.42rem;
   margin-top: 0.4rem;
+}
+
+.match-replay-change-list.is-statusbar {
+  justify-content: flex-start;
+  margin-top: 0.1rem;
 }
 
 .match-replay-change-pill {
@@ -3128,6 +3176,7 @@ select {
   .match-replay-stackbox,
   .match-replay-lane,
   .match-replay-centerline,
+  .match-replay-statusbar,
   .match-replay-track-panel {
     padding: 0.72rem;
   }
