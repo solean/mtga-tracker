@@ -2030,17 +2030,7 @@ function MatchReplayFrameBoard({
           boundary.turnKey === replayTurnValue(currentFrame.turnNumber),
       )
     : -1;
-
-  if (!currentFrame) {
-    return (
-      <article className="panel inner match-replay-game">
-        <h4>Game {gameNumber}</h4>
-        <StatusMessage>No replay steps for this game.</StatusMessage>
-      </article>
-    );
-  }
-
-  const currentObjects = currentFrame.objects ?? [];
+  const currentObjects = currentFrame?.objects ?? [];
   const combatConnections = useMemo(() => {
     const battlefieldByID = new Map<number, MatchReplayFrameObject>();
     for (const object of currentObjects) {
@@ -2139,6 +2129,15 @@ function MatchReplayFrameBoard({
       return;
     }
     boardCardShellsRef.current.delete(instanceId);
+  }
+
+  if (!currentFrame) {
+    return (
+      <article className="panel inner match-replay-game">
+        <h4>Game {gameNumber}</h4>
+        <StatusMessage>No replay steps for this game.</StatusMessage>
+      </article>
+    );
   }
 
   return (
