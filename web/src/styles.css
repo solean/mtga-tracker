@@ -1516,13 +1516,13 @@ h1 {
   gap: 0.1rem;
   min-width: 5.5rem;
   padding: 0.48rem 0.64rem 0.44rem;
-  border: 1px solid rgba(124, 211, 255, 0.24);
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
   background:
-    radial-gradient(circle at 50% 35%, rgba(124, 211, 255, 0.16), transparent 72%),
-    linear-gradient(160deg, rgba(10, 20, 32, 0.9) 0%, rgba(9, 16, 28, 0.96) 100%);
+    radial-gradient(circle at 50% 35%, var(--accent-soft) 0%, transparent 72%),
+    linear-gradient(160deg, var(--surface-strong) 0%, var(--surface-faint) 100%);
   box-shadow:
-    0 0 0 1px rgba(124, 211, 255, 0.06) inset,
+    0 0 0 1px var(--card-inner-border) inset,
     0 8px 18px rgba(0, 0, 0, 0.16);
 }
 
@@ -1635,14 +1635,14 @@ h1 {
   max-height: min(88vh, calc(100dvh - 2rem));
   display: grid;
   gap: 0;
-  border: 1px solid rgba(124, 211, 255, 0.2);
+  border: 1px solid var(--line-strong);
   border-radius: 12px;
   background:
-    radial-gradient(circle at top, rgba(24, 50, 78, 0.38), transparent 54%),
-    linear-gradient(160deg, rgba(8, 16, 28, 0.98) 0%, rgba(6, 12, 22, 0.98) 100%);
+    radial-gradient(circle at top, var(--accent-soft) 0%, transparent 54%),
+    linear-gradient(160deg, var(--surface-strong) 0%, var(--surface-faint) 100%);
   box-shadow:
-    0 32px 72px rgba(0, 0, 0, 0.42),
-    0 0 0 1px rgba(124, 211, 255, 0.06) inset;
+    var(--shadow-lg),
+    0 0 0 1px var(--card-inner-border) inset;
   overflow: hidden;
 }
 
@@ -1652,7 +1652,7 @@ h1 {
   align-items: flex-start;
   gap: 0.9rem 1rem;
   padding: 1rem 1rem 0.9rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
 }
 
 .match-replay-zone-dialog-head-copy {
@@ -1682,9 +1682,9 @@ h1 {
   appearance: none;
   align-self: center;
   padding: 0.62rem 0.8rem;
-  border: 1px solid rgba(124, 211, 255, 0.2);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(10, 20, 34, 0.92);
+  background: linear-gradient(160deg, var(--surface) 0%, var(--surface-strong) 100%);
   color: var(--text);
   font-family: "IBM Plex Mono", "Menlo", monospace;
   font-size: 0.72rem;
@@ -1699,8 +1699,8 @@ h1 {
 }
 
 .match-replay-zone-dialog-close:hover {
-  border-color: rgba(124, 211, 255, 0.34);
-  background: rgba(14, 28, 46, 0.96);
+  border-color: var(--line-strong);
+  background: linear-gradient(160deg, var(--surface-strong) 0%, var(--surface-faint) 100%);
 }
 
 .match-replay-zone-dialog-close:focus-visible {
@@ -1882,7 +1882,7 @@ h1 {
 
 .match-replay-lane.is-hand {
   background:
-    linear-gradient(165deg, rgba(9, 16, 28, 0.96) 0%, rgba(7, 13, 24, 0.94) 100%);
+    linear-gradient(165deg, var(--surface-strong) 0%, var(--surface-faint) 100%);
 }
 
 .match-replay-zone-groups {
