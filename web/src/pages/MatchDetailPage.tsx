@@ -1129,6 +1129,10 @@ function MatchReplayObjectCard({
     size === "board" &&
     boardZoneKind(object.zoneType) === "battlefield" &&
     object.isTapped;
+  const isAttackingBoardCard =
+    size === "board" &&
+    boardZoneKind(object.zoneType) === "battlefield" &&
+    replayObjectIsAttacking(object);
   const statBadge =
     size === "board" && boardZoneKind(object.zoneType) === "battlefield"
       ? replayObjectPTLabel(object, preview)
@@ -1172,7 +1176,7 @@ function MatchReplayObjectCard({
 
   return (
     <div
-      className={`match-replay-object ${isTappedBoardCard ? "is-tapped" : ""} ${combatHighlighted ? "is-combat-highlighted" : ""}`}
+      className={`match-replay-object ${isTappedBoardCard ? "is-tapped" : ""} ${isAttackingBoardCard ? "is-attacking" : ""} ${combatHighlighted ? "is-combat-highlighted" : ""}`}
       onMouseEnter={
         onCombatFocusChange ? () => onCombatFocusChange(object.instanceId) : undefined
       }

@@ -36,6 +36,9 @@
   --accent: #00d4ff;
   --accent-soft: rgba(0, 212, 255, 0.1);
   --accent-glow: rgba(0, 212, 255, 0.22);
+  --combat-attack-border: rgba(255, 107, 94, 0.62);
+  --combat-attack-glow: rgba(255, 107, 94, 0.22);
+  --combat-attack-inset: rgba(255, 107, 94, 0.28);
 
   --link: #4dd0e1;
   --link-hover: #80deea;
@@ -140,6 +143,9 @@
   --accent: #0277bd;
   --accent-soft: rgba(2, 119, 189, 0.1);
   --accent-glow: rgba(2, 119, 189, 0.15);
+  --combat-attack-border: rgba(198, 40, 40, 0.58);
+  --combat-attack-glow: rgba(198, 40, 40, 0.16);
+  --combat-attack-inset: rgba(198, 40, 40, 0.22);
 
   --link: #01579b;
   --link-hover: #003c6e;
@@ -2028,6 +2034,22 @@ h1 {
     0 0 0 1px rgba(255, 244, 124, 0.22) inset,
     0 0 18px rgba(255, 244, 124, 0.18),
     0 14px 24px rgba(0, 0, 0, 0.32);
+}
+
+.match-replay-object.is-attacking .match-replay-card {
+  border-color: var(--combat-attack-border);
+  box-shadow:
+    0 0 0 1px var(--combat-attack-inset) inset,
+    0 0 18px var(--combat-attack-glow),
+    0 14px 24px rgba(0, 0, 0, 0.32);
+}
+
+.match-replay-object.is-attacking .match-replay-card:hover {
+  border-color: var(--combat-attack-border);
+  box-shadow:
+    0 0 0 1px var(--combat-attack-inset) inset,
+    0 0 22px var(--combat-attack-glow),
+    0 16px 28px rgba(0, 0, 0, 0.34);
 }
 
 .match-replay-card.is-active {
