@@ -91,11 +91,11 @@ const BOARD_ZONE_ORDER: BoardZoneKind[] = [
 ];
 const BATTLEFIELD_SECTION_ORDER: BattlefieldSectionKind[] = [
   "lands",
-  "creatures",
-  "artifacts_enchantments",
-  "planeswalkers",
-  "battles",
   "other",
+  "battles",
+  "planeswalkers",
+  "artifacts_enchantments",
+  "creatures",
 ];
 const SELF_BATTLEFIELD_SECTION_ORDER: BattlefieldSectionKind[] = [
   "creatures",
