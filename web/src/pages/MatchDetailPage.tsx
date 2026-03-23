@@ -3286,11 +3286,11 @@ export function MatchDetailPage() {
         ) : null}
         {timelineDisplayMode === "board" ? (
           <div className="stack-md">
-            <p className="match-board-disclaimer">
-              {hasReplayFrames
-                ? "This view uses stored public replay frames, so the stack and battlefield follow public GRE state at each step. Hidden cards, targets, and private-zone interactions can still be incomplete."
-                : "Replay frames are not available for this match yet, so this fallback board still uses first public sightings and cannot show a true stack."}
-            </p>
+            {!hasReplayFrames ? (
+              <p className="match-board-disclaimer">
+                Replay frames are not available for this match yet, so this fallback board still uses first public sightings and cannot show a true stack.
+              </p>
+            ) : null}
             {replayQuery.isPending ? (
               <StatusMessage>Loading replay frames…</StatusMessage>
             ) : hasReplayFrames ? (
