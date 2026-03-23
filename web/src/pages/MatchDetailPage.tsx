@@ -4,8 +4,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type KeyboardEvent,
   type MutableRefObject,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -258,7 +260,7 @@ function ManaCostDisplay({ manaCost }: { manaCost: string }) {
   );
 }
 
-function CardPreviewName({ card }: { card: PreviewCard }) {
+function useFloatingCardPreviewPopover(isEnabled = true) {
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPlacement, setPopoverPlacement] =
     useState<PopoverPlacement>("right");
@@ -267,8 +269,6 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
     left: number;
   }>({ top: 0, left: 0 });
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const name = cardDisplayName(card);
-  const fallbackHref = cardFallbackHref(card);
 
   const updatePopoverPlacement = () => {
     if (typeof window === "undefined") {
@@ -317,18 +317,27 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
   };
 
   const openPopover = () => {
+    if (!isEnabled) {
+      return;
+    }
     updatePopoverPlacement();
     setIsOpen(true);
   };
 
-  const previewQuery = useQuery({
-    queryKey: cardPreviewQueryKey(card),
-    queryFn: () => fetchCardPreview(card.cardId, card.cardName),
-    enabled: isOpen,
-    staleTime: 1000 * 60 * 60 * 24,
-    gcTime: 1000 * 60 * 60 * 24,
-    retry: 1,
-  });
+  const closePopover = () => {
+    setIsOpen(false);
+  };
+
+  const handleBlur = (event: FocusEvent<HTMLElement>) => {
+    if (
+      wrapperRef.current &&
+      event.relatedTarget instanceof Node &&
+      wrapperRef.current.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+    closePopover();
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -344,13 +353,53 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isEnabled) {
+      return;
+    }
+    setIsOpen(false);
+  }, [isEnabled]);
+
+  return {
+    isOpen,
+    popoverPlacement,
+    popoverStyle,
+    wrapperRef,
+    openPopover,
+    closePopover,
+    handleBlur,
+  };
+}
+
+function CardPreviewName({ card }: { card: PreviewCard }) {
+  const name = cardDisplayName(card);
+  const fallbackHref = cardFallbackHref(card);
+  const {
+    isOpen,
+    popoverPlacement,
+    popoverStyle,
+    wrapperRef,
+    openPopover,
+    closePopover,
+    handleBlur,
+  } = useFloatingCardPreviewPopover();
+
+  const previewQuery = useQuery({
+    queryKey: cardPreviewQueryKey(card),
+    queryFn: () => fetchCardPreview(card.cardId, card.cardName),
+    enabled: isOpen,
+    staleTime: 1000 * 60 * 60 * 24,
+    gcTime: 1000 * 60 * 60 * 24,
+    retry: 1,
+  });
+
   return (
     <div
       className="card-preview-anchor"
       data-popover-placement={popoverPlacement}
       ref={wrapperRef}
       onMouseEnter={openPopover}
-      onMouseLeave={() => setIsOpen(false)}
+      onMouseLeave={closePopover}
     >
       <a
         className="card-preview-trigger"
@@ -358,16 +407,7 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
         target="_blank"
         rel="noreferrer"
         onFocus={openPopover}
-        onBlur={(event) => {
-          if (
-            wrapperRef.current &&
-            event.relatedTarget instanceof Node &&
-            wrapperRef.current.contains(event.relatedTarget)
-          ) {
-            return;
-          }
-          setIsOpen(false);
-        }}
+        onBlur={handleBlur}
         aria-label={`Open ${name} on Scryfall`}
       >
         <code>{name}</code>
@@ -394,6 +434,62 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
               ) : (
                 <p className="card-preview-status">Preview unavailable.</p>
               )}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+function ReplayCardPreviewAnchor({
+  preview,
+  children,
+}: {
+  preview: CardPreview | null;
+  children: ReactNode;
+}) {
+  const {
+    isOpen,
+    popoverPlacement,
+    popoverStyle,
+    wrapperRef,
+    openPopover,
+    closePopover,
+    handleBlur,
+  } = useFloatingCardPreviewPopover(Boolean(preview?.imageUrl));
+
+  if (!preview?.imageUrl) {
+    return <>{children}</>;
+  }
+
+  return (
+    <div
+      className="card-preview-anchor is-replay-card"
+      data-popover-placement={popoverPlacement}
+      ref={wrapperRef}
+      onMouseEnter={openPopover}
+      onMouseLeave={closePopover}
+      onFocus={openPopover}
+      onBlur={handleBlur}
+    >
+      {children}
+      {isOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="card-preview-popover card-preview-popover-floating"
+              style={{
+                top: `${popoverStyle.top}px`,
+                left: `${popoverStyle.left}px`,
+              }}
+              role="tooltip"
+            >
+              <img
+                src={preview.imageUrl}
+                alt=""
+                width={336}
+                height={468}
+              />
             </div>,
             document.body,
           )
@@ -1067,36 +1163,38 @@ function MatchReplayCard({
   const href = preview?.scryfallUrl ?? cardFallbackHref(card);
 
   return (
-    <a
-      className={`match-replay-card is-${size} ${active ? "is-active" : ""}`}
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Open ${name} on Scryfall`}
-      title={`${name} • ${timelinePlayerLabel(play.playerSide)} • ${timelineZoneLabel(play.firstPublicZone)} • ${
-        play.playedAt ? formatDateTime(play.playedAt) : "Unknown time"
-      }`}
-    >
-      {preview ? (
-        <img
-          src={preview.imageUrl}
-          alt=""
-          loading={size === "stack" ? "eager" : "lazy"}
-          decoding="async"
-          width={244}
-          height={340}
-        />
-      ) : (
-        <div className="match-replay-card-fallback">
-          <strong>{name}</strong>
-          <span>{timelineZoneLabel(play.firstPublicZone)}</span>
-          <span>{boardPlayMeta(play)}</span>
-        </div>
-      )}
-      <span className="match-replay-card-chip">
-        {boardTurnLabel(play.turnNumber)}
-      </span>
-    </a>
+    <ReplayCardPreviewAnchor preview={preview}>
+      <a
+        className={`match-replay-card is-${size} ${active ? "is-active" : ""}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open ${name} on Scryfall`}
+        title={`${name} • ${timelinePlayerLabel(play.playerSide)} • ${timelineZoneLabel(play.firstPublicZone)} • ${
+          play.playedAt ? formatDateTime(play.playedAt) : "Unknown time"
+        }`}
+      >
+        {preview ? (
+          <img
+            src={preview.imageUrl}
+            alt=""
+            loading={size === "stack" ? "eager" : "lazy"}
+            decoding="async"
+            width={244}
+            height={340}
+          />
+        ) : (
+          <div className="match-replay-card-fallback">
+            <strong>{name}</strong>
+            <span>{timelineZoneLabel(play.firstPublicZone)}</span>
+            <span>{boardPlayMeta(play)}</span>
+          </div>
+        )}
+        <span className="match-replay-card-chip">
+          {boardTurnLabel(play.turnNumber)}
+        </span>
+      </a>
+    </ReplayCardPreviewAnchor>
   );
 }
 
@@ -1139,35 +1237,39 @@ function MatchReplayObjectCard({
       : null;
 
   const cardNode = (
-    <a
-      className={`match-replay-card is-${size} ${active ? "is-active" : ""} ${isTappedBoardCard ? "is-tapped" : ""}`}
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Open ${name} on Scryfall`}
-      title={`${name} • ${statusText}`}
-    >
-      {preview ? (
-        <img
-          src={preview.imageUrl}
-          alt=""
-          loading={size === "stack" ? "eager" : "lazy"}
-          decoding="async"
-          width={244}
-          height={340}
-        />
-      ) : (
-        <div className="match-replay-card-fallback">
-          <strong>{name}</strong>
-          <span>{timelineZoneLabel(object.zoneType)}</span>
-          <span>{timelinePlayerLabel(object.playerSide)}</span>
-        </div>
-      )}
-      {chipLabel ? (
-        <span className="match-replay-card-chip">{chipLabel}</span>
-      ) : null}
-      {statBadge ? <span className="match-replay-card-power">{statBadge}</span> : null}
-    </a>
+    <ReplayCardPreviewAnchor preview={preview}>
+      <a
+        className={`match-replay-card is-${size} ${active ? "is-active" : ""} ${isTappedBoardCard ? "is-tapped" : ""}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open ${name} on Scryfall`}
+        title={`${name} • ${statusText}`}
+      >
+        {preview ? (
+          <img
+            src={preview.imageUrl}
+            alt=""
+            loading={size === "stack" ? "eager" : "lazy"}
+            decoding="async"
+            width={244}
+            height={340}
+          />
+        ) : (
+          <div className="match-replay-card-fallback">
+            <strong>{name}</strong>
+            <span>{timelineZoneLabel(object.zoneType)}</span>
+            <span>{timelinePlayerLabel(object.playerSide)}</span>
+          </div>
+        )}
+        {chipLabel ? (
+          <span className="match-replay-card-chip">{chipLabel}</span>
+        ) : null}
+        {statBadge ? (
+          <span className="match-replay-card-power">{statBadge}</span>
+        ) : null}
+      </a>
+    </ReplayCardPreviewAnchor>
   );
 
   if (size === "stack" || size === "hand") {

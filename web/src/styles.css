@@ -2017,7 +2017,7 @@ h1 {
 }
 
 .match-replay-card:hover {
-  transform: translateY(-2px) rotate(0deg);
+  transform: rotate(0deg);
   border-color: var(--line-strong);
   box-shadow:
     0 14px 24px rgba(0, 0, 0, 0.32),
@@ -2025,7 +2025,7 @@ h1 {
 }
 
 .match-replay-object.is-tapped .match-replay-card:hover {
-  transform: translateY(-2px) rotate(90deg);
+  transform: rotate(90deg);
 }
 
 .match-replay-object.is-combat-highlighted .match-replay-card {
@@ -2688,6 +2688,17 @@ h1 {
 .card-preview-anchor:hover,
 .card-preview-anchor:focus-within {
   z-index: 40;
+}
+
+.card-preview-anchor.is-replay-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+}
+
+.card-preview-anchor.is-replay-card:hover,
+.card-preview-anchor.is-replay-card:focus-within {
+  z-index: 60;
 }
 
 .card-preview-trigger {
