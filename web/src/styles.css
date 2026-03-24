@@ -39,6 +39,10 @@
   --combat-attack-border: rgba(255, 107, 94, 0.62);
   --combat-attack-glow: rgba(255, 107, 94, 0.22);
   --combat-attack-inset: rgba(255, 107, 94, 0.28);
+  --combat-connection-line: rgba(255, 244, 124, 0.88);
+  --combat-connection-glow: rgba(255, 244, 124, 0.28);
+  --spell-target-connection-line: rgba(124, 211, 255, 0.94);
+  --spell-target-connection-glow: rgba(0, 212, 255, 0.28);
 
   --link: #4dd0e1;
   --link-hover: #80deea;
@@ -146,6 +150,10 @@
   --combat-attack-border: rgba(198, 40, 40, 0.58);
   --combat-attack-glow: rgba(198, 40, 40, 0.16);
   --combat-attack-inset: rgba(198, 40, 40, 0.22);
+  --combat-connection-line: rgba(148, 111, 20, 0.84);
+  --combat-connection-glow: rgba(148, 111, 20, 0.22);
+  --spell-target-connection-line: rgba(2, 119, 189, 0.82);
+  --spell-target-connection-glow: rgba(2, 119, 189, 0.2);
 
   --link: #01579b;
   --link-hover: #003c6e;
@@ -1425,6 +1433,8 @@ h1 {
 }
 
 .match-replay-canvas {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(250px, 280px) minmax(0, 1fr);
   gap: 0.85rem;
@@ -1445,9 +1455,16 @@ h1 {
 }
 
 .match-replay-board-column {
+  position: relative;
+  z-index: 2;
   display: grid;
   gap: 0.75rem;
   align-content: start;
+}
+
+.match-replay-sidebar {
+  position: relative;
+  z-index: 2;
 }
 
 .match-replay-sidebox,
@@ -1770,8 +1787,17 @@ h1 {
   flex: 0 0 auto;
 }
 
+.match-replay-stack-card-shell {
+  display: flex;
+  justify-content: center;
+}
+
 .match-replay-stack-cards .match-replay-card.is-stack {
   width: 132px;
+}
+
+.match-replay-stack-slot.is-connection-highlighted .match-replay-stack-slot-copy {
+  color: var(--text-soft);
 }
 
 .match-replay-stack-slot-copy {
@@ -1852,24 +1878,22 @@ h1 {
   z-index: 2;
 }
 
-.match-replay-combat-overlay {
+.match-replay-connection-overlay {
   position: absolute;
   inset: 0;
   z-index: 4;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  color: rgba(255, 244, 124, 0.88);
-  filter: drop-shadow(0 0 8px rgba(255, 244, 124, 0.18));
+  overflow: visible;
 }
 
-.match-replay-combat-overlay.is-muted .match-replay-combat-path {
+.match-replay-connection-overlay.is-muted .match-replay-connection-path {
   opacity: 0.34;
 }
 
-.match-replay-combat-path {
+.match-replay-connection-path {
   fill: none;
-  stroke: currentColor;
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1880,10 +1904,27 @@ h1 {
     filter 140ms ease;
 }
 
-.match-replay-combat-path.is-highlighted {
+.match-replay-connection-path.is-combat {
+  stroke: var(--combat-connection-line);
+  filter: drop-shadow(0 0 8px var(--combat-connection-glow));
+}
+
+.match-replay-connection-path.is-spell-target {
+  stroke: var(--spell-target-connection-line);
+  filter: drop-shadow(0 0 8px var(--spell-target-connection-glow));
+}
+
+.match-replay-connection-path.is-highlighted {
   opacity: 1;
   stroke-width: 4;
-  filter: drop-shadow(0 0 6px rgba(255, 244, 124, 0.28));
+}
+
+.match-replay-connection-path.is-combat.is-highlighted {
+  filter: drop-shadow(0 0 10px var(--combat-connection-glow));
+}
+
+.match-replay-connection-path.is-spell-target.is-highlighted {
+  filter: drop-shadow(0 0 10px var(--spell-target-connection-glow));
 }
 
 .match-replay-lane.is-hand {
@@ -2028,7 +2069,8 @@ h1 {
   transform: rotate(90deg);
 }
 
-.match-replay-object.is-combat-highlighted .match-replay-card {
+.match-replay-card.is-connection-highlighted,
+.match-replay-object.is-connection-highlighted .match-replay-card {
   border-color: rgba(255, 244, 124, 0.5);
   box-shadow:
     0 0 0 1px rgba(255, 244, 124, 0.22) inset,
@@ -3201,7 +3243,7 @@ select {
     padding: 0.78rem;
   }
 
-  .match-replay-combat-overlay {
+  .match-replay-connection-overlay {
     display: none;
   }
 
