@@ -1988,9 +1988,16 @@ h1 {
 
 .match-replay-card-row.is-hand {
   flex-wrap: nowrap;
-  align-items: stretch;
+  align-items: flex-start;
+  justify-content: flex-start;
   overflow-x: auto;
   padding-bottom: 0.22rem;
+}
+
+.match-replay-card-row.is-hand > .card-preview-anchor.is-replay-card {
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
 }
 
 .match-replay-object {
