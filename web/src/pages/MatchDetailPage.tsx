@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   useEffect,
   useId,
   useMemo,
@@ -462,9 +463,13 @@ function CardPreviewName({ card }: { card: PreviewCard }) {
 
 function ReplayCardPreviewAnchor({
   preview,
+  wrapperClassName,
+  wrapperStyle,
   children,
 }: {
   preview: CardPreview | null;
+  wrapperClassName?: string;
+  wrapperStyle?: CSSProperties;
   children: ReactNode;
 }) {
   const {
@@ -483,9 +488,10 @@ function ReplayCardPreviewAnchor({
 
   return (
     <div
-      className="card-preview-anchor is-replay-card"
+      className={`card-preview-anchor is-replay-card${wrapperClassName ? ` ${wrapperClassName}` : ""}`}
       data-popover-placement={popoverPlacement}
       ref={wrapperRef}
+      style={wrapperStyle}
       onMouseEnter={openPopover}
       onMouseLeave={closePopover}
       onFocus={openPopover}
@@ -778,6 +784,27 @@ function replayAnnotationHasType(
   expectedType: string,
 ): boolean {
   return Array.isArray(annotation.type) && annotation.type.includes(expectedType);
+}
+
+function replayAnnotationDetailIntValue(
+  annotation: ReplayAnnotation,
+  key: string,
+): number | undefined {
+  if (!Array.isArray(annotation.details)) {
+    return undefined;
+  }
+
+  for (const detail of annotation.details) {
+    if (detail?.key !== key || !Array.isArray(detail.valueInt32)) {
+      continue;
+    }
+    const value = detail.valueInt32[0];
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function replayObjectStatePills(
@@ -1255,26 +1282,49 @@ function MatchReplayCard({
 function MatchReplayObjectCard({
   object,
   preview,
+  previewByCardID,
   active = false,
   size = "board",
   chipLabel,
   shellRef,
   connectionHighlighted = false,
   onConnectionFocusChange,
+  linkedExileObjects = [],
 }: {
   object: MatchReplayFrameObject;
   preview: CardPreview | null;
+  previewByCardID?: Map<number, CardPreview | null>;
   active?: boolean;
   size?: "board" | "stack" | "hand";
   chipLabel?: string;
   shellRef?: (element: HTMLDivElement | null) => void;
   connectionHighlighted?: boolean;
   onConnectionFocusChange?: (instanceId: number | null) => void;
+  linkedExileObjects?: MatchReplayFrameObject[];
 }) {
   const card = { cardId: object.cardId, cardName: object.cardName };
   const name = preview?.name ?? cardDisplayName(card);
   const href = preview?.scryfallUrl ?? cardFallbackHref(card);
-  const statusText = replayObjectStatusText(object, preview);
+  const linkedExileCards = linkedExileObjects.map((linkedObject) => {
+    const linkedPreview = previewByCardID?.get(linkedObject.cardId) ?? null;
+    return {
+      object: linkedObject,
+      preview: linkedPreview,
+      name: replayObjectName(linkedObject, linkedPreview),
+    };
+  });
+  const linkedExileSummary =
+    linkedExileCards.length === 0
+      ? null
+      : linkedExileCards.length === 1
+        ? `Exiling ${linkedExileCards[0]?.name ?? "1 card"}`
+        : `Exiling ${linkedExileCards.length} cards`;
+  const statusText = [
+    replayObjectStatusText(object, preview),
+    linkedExileSummary,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" • ");
   const statePills = replayObjectStatePills(object);
   const counterPills = replayObjectCounterSummaries(object);
   const isTappedBoardCard =
@@ -1289,6 +1339,11 @@ function MatchReplayObjectCard({
     size === "board" && boardZoneKind(object.zoneType) === "battlefield"
       ? replayObjectPTLabel(object, preview)
       : null;
+  const visibleLinkedExileCards =
+    size === "board" && boardZoneKind(object.zoneType) === "battlefield"
+      ? linkedExileCards.slice(0, 2)
+      : [];
+  const hasLinkedExileCards = visibleLinkedExileCards.length > 0;
 
   const cardNode = (
     <ReplayCardPreviewAnchor preview={preview}>
@@ -1297,7 +1352,7 @@ function MatchReplayObjectCard({
         href={href}
         target="_blank"
         rel="noreferrer"
-        aria-label={`Open ${name} on Scryfall`}
+        aria-label={`Open ${name} on Scryfall${linkedExileSummary ? `. ${linkedExileSummary}.` : ""}`}
         title={`${name} • ${statusText}`}
       >
         {preview ? (
@@ -1332,7 +1387,7 @@ function MatchReplayObjectCard({
 
   return (
     <div
-      className={`match-replay-object ${isTappedBoardCard ? "is-tapped" : ""} ${isAttackingBoardCard ? "is-attacking" : ""} ${connectionHighlighted ? "is-connection-highlighted" : ""}`}
+      className={`match-replay-object ${isTappedBoardCard ? "is-tapped" : ""} ${isAttackingBoardCard ? "is-attacking" : ""} ${connectionHighlighted ? "is-connection-highlighted" : ""} ${hasLinkedExileCards ? "has-linked-exile" : ""}`}
       onMouseEnter={
         onConnectionFocusChange
           ? () => onConnectionFocusChange(object.instanceId)
@@ -1351,6 +1406,59 @@ function MatchReplayObjectCard({
       }
     >
       <div className="match-replay-card-shell" ref={shellRef}>
+        {visibleLinkedExileCards.length > 0 ? (
+          <div
+            className="match-replay-linked-exile-stack"
+          >
+            {visibleLinkedExileCards.map((linkedCard, index) => (
+              <ReplayCardPreviewAnchor
+                key={linkedCard.object.instanceId}
+                preview={linkedCard.preview}
+                wrapperClassName="match-replay-linked-exile-card"
+                wrapperStyle={
+                  {
+                    "--linked-exile-index": index,
+                  } as CSSProperties
+                }
+              >
+                <a
+                  className="match-replay-linked-exile-anchor"
+                  href={
+                    linkedCard.preview?.scryfallUrl ??
+                    cardFallbackHref({
+                      cardId: linkedCard.object.cardId,
+                      cardName: linkedCard.object.cardName,
+                    })
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open exiled card ${linkedCard.name} on Scryfall`}
+                  title={`${linkedCard.name} • Exiled by ${name}`}
+                >
+                  {linkedCard.preview ? (
+                    <img
+                      src={linkedCard.preview.imageUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      width={244}
+                      height={340}
+                    />
+                  ) : (
+                    <div className="match-replay-linked-exile-fallback">
+                      <span>{linkedCard.name}</span>
+                    </div>
+                  )}
+                </a>
+              </ReplayCardPreviewAnchor>
+            ))}
+            {linkedExileCards.length > visibleLinkedExileCards.length ? (
+              <span className="match-replay-linked-exile-count">
+                +{linkedExileCards.length - visibleLinkedExileCards.length}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {cardNode}
       </div>
       {statePills.length > 0 || counterPills.length > 0 ? (
@@ -1863,6 +1971,7 @@ function MatchReplayFrameBattlefield({
   connectionHighlightedInstanceIDs,
   connectionInteractiveInstanceIDs,
   onConnectionFocusChange,
+  linkedExileObjectsByParentId,
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
@@ -1872,6 +1981,7 @@ function MatchReplayFrameBattlefield({
   connectionHighlightedInstanceIDs?: Set<number>;
   connectionInteractiveInstanceIDs?: Set<number>;
   onConnectionFocusChange?: (instanceId: number | null) => void;
+  linkedExileObjectsByParentId?: Map<number, MatchReplayFrameObject[]>;
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -1962,6 +2072,7 @@ function MatchReplayFrameBattlefield({
                     key={object.instanceId}
                     object={object}
                     preview={previewByCardID.get(object.cardId) ?? null}
+                    previewByCardID={previewByCardID}
                     active={highlightedInstanceIDs.has(object.instanceId)}
                     shellRef={
                       onRegisterCardShell
@@ -1977,6 +2088,9 @@ function MatchReplayFrameBattlefield({
                       connectionInteractiveInstanceIDs?.has(object.instanceId)
                         ? onConnectionFocusChange
                         : undefined
+                    }
+                    linkedExileObjects={
+                      linkedExileObjectsByParentId?.get(object.instanceId) ?? []
                     }
                   />
                 ))}
@@ -2365,6 +2479,82 @@ function MatchReplayFrameBoard({
     () => [...combatConnections, ...spellTargetConnections],
     [combatConnections, spellTargetConnections],
   );
+  const linkedExileObjectsByParentId = useMemo(() => {
+    const currentObjectsById = new Map<number, MatchReplayFrameObject>();
+    for (const object of currentObjects) {
+      currentObjectsById.set(object.instanceId, object);
+    }
+
+    const linkedIdsByParentId = new Map<number, Set<number>>();
+    for (let frameIndex = 0; frameIndex <= selectedFrameIndex; frameIndex += 1) {
+      const frame = frames[frameIndex] ?? null;
+      for (const annotation of replayFrameAnnotations(frame)) {
+        if (
+          !replayAnnotationHasType(annotation, "AnnotationType_DisplayCardUnderCard")
+        ) {
+          continue;
+        }
+        if (typeof annotation.affectorId !== "number") {
+          continue;
+        }
+        const affectedIds = Array.isArray(annotation.affectedIds)
+          ? annotation.affectedIds.filter(
+              (value): value is number => typeof value === "number",
+            )
+          : [];
+        if (affectedIds.length === 0) {
+          continue;
+        }
+
+        const isDisabled =
+          replayAnnotationDetailIntValue(annotation, "Disable") === 1;
+        if (isDisabled) {
+          const existing = linkedIdsByParentId.get(annotation.affectorId);
+          if (!existing) {
+            continue;
+          }
+          for (const affectedId of affectedIds) {
+            existing.delete(affectedId);
+          }
+          if (existing.size === 0) {
+            linkedIdsByParentId.delete(annotation.affectorId);
+          }
+          continue;
+        }
+
+        let nextLinkedIds = linkedIdsByParentId.get(annotation.affectorId);
+        if (!nextLinkedIds) {
+          nextLinkedIds = new Set<number>();
+          linkedIdsByParentId.set(annotation.affectorId, nextLinkedIds);
+        }
+        for (const affectedId of affectedIds) {
+          nextLinkedIds.add(affectedId);
+        }
+      }
+    }
+
+    const next = new Map<number, MatchReplayFrameObject[]>();
+    for (const [parentId, linkedIds] of linkedIdsByParentId) {
+      const parentObject = currentObjectsById.get(parentId);
+      if (!parentObject || boardZoneKind(parentObject.zoneType) !== "battlefield") {
+        continue;
+      }
+
+      const linkedObjects = [...linkedIds]
+        .map((linkedId) => currentObjectsById.get(linkedId) ?? null)
+        .filter(
+          (linkedObject): linkedObject is MatchReplayFrameObject =>
+            linkedObject !== null &&
+            boardZoneKind(linkedObject.zoneType) === "exile",
+        )
+        .sort(sortReplayObjects);
+      if (linkedObjects.length > 0) {
+        next.set(parentId, linkedObjects);
+      }
+    }
+
+    return next;
+  }, [currentObjects, frames, selectedFrameIndex]);
   const overlayInteractiveInstanceIDs = useMemo(() => {
     const ids = new Set<number>();
     for (const connection of overlayConnections) {
@@ -2616,6 +2806,7 @@ function MatchReplayFrameBoard({
               connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
               connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
               onConnectionFocusChange={setFocusedConnectionInstanceId}
+              linkedExileObjectsByParentId={linkedExileObjectsByParentId}
             />
 
             <MatchReplayFrameBattlefield
@@ -2627,6 +2818,7 @@ function MatchReplayFrameBoard({
               connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
               connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
               onConnectionFocusChange={setFocusedConnectionInstanceId}
+              linkedExileObjectsByParentId={linkedExileObjectsByParentId}
             />
 
             <MatchReplayHand
