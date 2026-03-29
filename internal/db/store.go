@@ -50,6 +50,53 @@ type MatchRankSnapshot struct {
 
 const sqliteInClauseBatchSize = 900
 
+const matchBestOfSQL = `
+	CASE
+		WHEN LOWER(COALESCE(m.format, '')) IN ('bo3', 'bestofthree', 'best-of-three') THEN 'bo3'
+		WHEN LOWER(COALESCE(m.format, '')) IN ('bo1', 'bestofone', 'best-of-one') THEN 'bo1'
+		WHEN LOWER(COALESCE(m.event_name, '')) LIKE '%traditional%' THEN 'bo3'
+		WHEN EXISTS (
+			SELECT 1
+			FROM match_replay_frames rf
+			WHERE rf.match_id = m.id
+			  AND rf.game_number > 1
+		) THEN 'bo3'
+		WHEN EXISTS (
+			SELECT 1
+			FROM match_card_plays cp
+			WHERE cp.match_id = m.id
+			  AND cp.game_number > 1
+		) THEN 'bo3'
+		WHEN EXISTS (
+			SELECT 1
+			FROM match_opponent_card_instances oc
+			WHERE oc.match_id = m.id
+			  AND oc.game_number > 1
+		) THEN 'bo3'
+		ELSE 'bo1'
+	END
+`
+
+const matchPlayDrawSQL = `
+	COALESCE((
+		SELECT
+			CASE
+				WHEN cp.owner_seat_id = m.player_seat_id AND cp.turn_number % 2 = 1 THEN 'play'
+				WHEN cp.owner_seat_id = m.player_seat_id AND cp.turn_number % 2 = 0 THEN 'draw'
+				WHEN cp.owner_seat_id != m.player_seat_id AND cp.turn_number % 2 = 1 THEN 'draw'
+				WHEN cp.owner_seat_id != m.player_seat_id AND cp.turn_number % 2 = 0 THEN 'play'
+				ELSE ''
+			END
+		FROM match_card_plays cp
+		WHERE cp.match_id = m.id
+		  AND cp.game_number = 1
+		  AND cp.owner_seat_id IS NOT NULL
+		  AND cp.turn_number IS NOT NULL
+		ORDER BY cp.turn_number ASC, COALESCE(cp.played_at, '') ASC, cp.id ASC
+		LIMIT 1
+	), '')
+`
+
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
@@ -904,11 +951,13 @@ func (s *Store) ListMatches(ctx context.Context, limit int64, eventName, result 
 	if limit <= 0 {
 		limit = 200
 	}
-	query := `
+	query := fmt.Sprintf(`
 		SELECT
 			m.id,
 			m.arena_match_id,
 			COALESCE(m.event_name, ''),
+			%s,
+			%s,
 			COALESCE(m.opponent_name, ''),
 			COALESCE(m.started_at, ''),
 			COALESCE(m.ended_at, ''),
@@ -943,7 +992,7 @@ func (s *Store) ListMatches(ctx context.Context, limit int64, eventName, result 
 		  AND (? = '' OR m.result = ?)
 		ORDER BY COALESCE(m.started_at, m.ended_at, m.updated_at) DESC
 		LIMIT ?
-	`
+	`, matchBestOfSQL, matchPlayDrawSQL)
 	rows, err := s.db.QueryContext(ctx, query, eventName, eventName, result, result, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list matches: %w", err)
@@ -957,6 +1006,8 @@ func (s *Store) ListMatches(ctx context.Context, limit int64, eventName, result 
 			&r.ID,
 			&r.ArenaMatchID,
 			&r.EventName,
+			&r.BestOf,
+			&r.PlayDraw,
 			&r.Opponent,
 			&r.StartedAt,
 			&r.EndedAt,
@@ -1085,11 +1136,13 @@ func (s *Store) ListMatchOpponentCardQuantities(ctx context.Context, matchIDs []
 func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchDetail, error) {
 	var out model.MatchDetail
 
-	err := s.db.QueryRowContext(ctx, `
+	query := fmt.Sprintf(`
 		SELECT
 			m.id,
 			m.arena_match_id,
 			COALESCE(m.event_name, ''),
+			%s,
+			%s,
 			COALESCE(m.opponent_name, ''),
 			COALESCE(m.started_at, ''),
 			COALESCE(m.ended_at, ''),
@@ -1122,10 +1175,14 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 		LEFT JOIN decks d ON d.id = md.deck_id
 		WHERE m.id = ?
 		LIMIT 1
-	`, matchID).Scan(
+	`, matchBestOfSQL, matchPlayDrawSQL)
+
+	err := s.db.QueryRowContext(ctx, query, matchID).Scan(
 		&out.Match.ID,
 		&out.Match.ArenaMatchID,
 		&out.Match.EventName,
+		&out.Match.BestOf,
+		&out.Match.PlayDraw,
 		&out.Match.Opponent,
 		&out.Match.StartedAt,
 		&out.Match.EndedAt,

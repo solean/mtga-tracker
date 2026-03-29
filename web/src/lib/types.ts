@@ -2,6 +2,8 @@ export type Match = {
   id: number;
   arenaMatchId: string;
   eventName: string;
+  bestOf?: "bo1" | "bo3" | "";
+  playDraw?: "play" | "draw" | "";
   opponent: string;
   startedAt: string;
   endedAt: string;

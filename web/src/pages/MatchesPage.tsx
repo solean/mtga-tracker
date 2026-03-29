@@ -12,6 +12,18 @@ import type { Match } from "../lib/types";
 
 const columnHelper = createColumnHelper<Match>();
 
+function formatBestOf(value?: Match["bestOf"]): string {
+  if (value === "bo3") return "Bo3";
+  if (value === "bo1") return "Bo1";
+  return "-";
+}
+
+function formatPlayDraw(value?: Match["playDraw"]): string {
+  if (value === "play") return "Play";
+  if (value === "draw") return "Draw";
+  return "-";
+}
+
 export function MatchesPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["matches"],
@@ -26,6 +38,14 @@ export function MatchesPage() {
       }),
       columnHelper.accessor("eventName", {
         header: "Event",
+      }),
+      columnHelper.accessor("bestOf", {
+        header: "Best Of",
+        cell: (info) => formatBestOf(info.getValue()),
+      }),
+      columnHelper.accessor("playDraw", {
+        header: "G1",
+        cell: (info) => formatPlayDraw(info.getValue()),
       }),
       columnHelper.accessor("opponent", {
         header: "Opponent",
