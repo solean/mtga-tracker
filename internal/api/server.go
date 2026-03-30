@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cschnabel/mtgdata/internal/appstate"
 	"github.com/cschnabel/mtgdata/internal/db"
 	"github.com/cschnabel/mtgdata/internal/model"
 )
@@ -23,13 +24,15 @@ import (
 type Server struct {
 	store      *db.Store
 	staticDir  string
+	appState   *appstate.Service
 	httpClient *http.Client
 }
 
-func NewServer(store *db.Store, staticDir string) *Server {
+func NewServer(store *db.Store, staticDir string, appState *appstate.Service) *Server {
 	return &Server{
 		store:     store,
 		staticDir: staticDir,
+		appState:  appState,
 		httpClient: &http.Client{
 			Timeout: 8 * time.Second,
 		},
@@ -47,6 +50,13 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/decks/", s.handleDeckDetail)
 	mux.HandleFunc("/api/drafts", s.handleDrafts)
 	mux.HandleFunc("/api/drafts/", s.handleDraftPicks)
+	if s.appState != nil {
+		mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
+		mux.HandleFunc("/api/runtime/config", s.handleRuntimeConfig)
+		mux.HandleFunc("/api/runtime/import", s.handleRuntimeImport)
+		mux.HandleFunc("/api/runtime/live/start", s.handleRuntimeLiveStart)
+		mux.HandleFunc("/api/runtime/live/stop", s.handleRuntimeLiveStop)
+	}
 
 	if s.staticDir != "" {
 		if fi, err := os.Stat(s.staticDir); err == nil && fi.IsDir() {
@@ -96,7 +106,7 @@ func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS, POST")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -122,8 +132,129 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
+func decodeJSONBody(r *http.Request, dst any) error {
+	if r.Body == nil {
+		return nil
+	}
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("read request body: %w", err)
+	}
+	if strings.TrimSpace(string(body)) == "" {
+		return nil
+	}
+	if err := json.Unmarshal(body, dst); err != nil {
+		return fmt.Errorf("decode request body: %w", err)
+	}
+	return nil
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
+	if s.appState == nil {
+		writeError(w, http.StatusNotFound, "runtime controls unavailable")
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.appState.Status())
+}
+
+func (s *Server) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	if s.appState == nil {
+		writeError(w, http.StatusNotFound, "runtime controls unavailable")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var input appstate.Config
+	if err := decodeJSONBody(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	status, err := s.appState.UpdateConfig(input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleRuntimeImport(w http.ResponseWriter, r *http.Request) {
+	if s.appState == nil {
+		writeError(w, http.StatusNotFound, "runtime controls unavailable")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	payload := struct {
+		Resume *bool `json:"resume"`
+	}{}
+	if err := decodeJSONBody(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	resume := true
+	if payload.Resume != nil {
+		resume = *payload.Resume
+	}
+
+	result, err := s.appState.ParseNow(r.Context(), resume)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleRuntimeLiveStart(w http.ResponseWriter, r *http.Request) {
+	if s.appState == nil {
+		writeError(w, http.StatusNotFound, "runtime controls unavailable")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	status, err := s.appState.StartLive()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleRuntimeLiveStop(w http.ResponseWriter, r *http.Request) {
+	if s.appState == nil {
+		writeError(w, http.StatusNotFound, "runtime controls unavailable")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	status, err := s.appState.StopLive()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {

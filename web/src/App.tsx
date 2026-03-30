@@ -8,6 +8,7 @@ import { DraftsPage } from "./pages/DraftsPage";
 import { MatchDetailPage } from "./pages/MatchDetailPage";
 import { MatchesPage } from "./pages/MatchesPage";
 import { OverviewPage } from "./pages/OverviewPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
         <Route path="decks/:deckId" element={<DeckDetailPage />} />
         <Route path="drafts" element={<DraftsPage />} />
         <Route path="drafts/:draftId" element={<DraftDetailPage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

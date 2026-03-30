@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -13,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cschnabel/mtgdata/internal/appstate"
 	"github.com/cschnabel/mtgdata/internal/api"
 	"github.com/cschnabel/mtgdata/internal/db"
 	"github.com/cschnabel/mtgdata/internal/ingest"
@@ -82,7 +82,7 @@ func runParse(ctx context.Context, args []string) error {
 
 	parser := ingest.NewParser(db.NewStore(database))
 
-	logPaths, err := resolveParseLogPaths(*logPath, *includePrev)
+	logPaths, err := appstate.ResolveParseLogPaths(*logPath, *includePrev)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func runTail(ctx context.Context, args []string) error {
 	parser := ingest.NewParser(db.NewStore(database))
 	activeLogPath := strings.TrimSpace(*logPath)
 	if activeLogPath == "" {
-		current, _, err := defaultMTGALogPaths()
+		current, _, err := appstate.DefaultMTGALogPaths()
 		if err != nil {
 			return err
 		}
@@ -242,59 +242,18 @@ func runServe(ctx context.Context, args []string) error {
 		staticDir, _ = filepath.Abs(staticDir)
 	}
 
-	server := api.NewServer(db.NewStore(database), staticDir)
+	store := db.NewStore(database)
+	currentLogPath, prevLogPath, _ := appstate.DefaultMTGALogPaths()
+	runtimeService, err := appstate.NewService(appstate.Options{
+		Store:              store,
+		DBPath:             *dbPath,
+		DefaultLogPath:     currentLogPath,
+		DefaultPrevLogPath: prevLogPath,
+	})
+	if err != nil {
+		return err
+	}
+
+	server := api.NewServer(store, staticDir, runtimeService)
 	return server.Run(ctx, *addr)
-}
-
-func defaultMTGALogPaths() (current, prev string, err error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", "", fmt.Errorf("resolve user home dir: %w", err)
-	}
-	base := filepath.Join(home, "Library", "Logs", "Wizards Of The Coast", "MTGA")
-	current = filepath.Join(base, "Player.log")
-	prev = filepath.Join(base, "Player-prev.log")
-	return current, prev, nil
-}
-
-func resolveParseLogPaths(explicitPath string, includePrev bool) ([]string, error) {
-	explicitPath = strings.TrimSpace(explicitPath)
-	if explicitPath != "" {
-		return []string{explicitPath}, nil
-	}
-
-	current, prev, err := defaultMTGALogPaths()
-	if err != nil {
-		return nil, err
-	}
-
-	candidates := make([]string, 0, 2)
-	if includePrev {
-		candidates = append(candidates, prev)
-	}
-	candidates = append(candidates, current)
-
-	found := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		info, err := os.Stat(candidate)
-		if err == nil && !info.IsDir() {
-			found = append(found, candidate)
-			continue
-		}
-		if err != nil && errors.Is(err, os.ErrNotExist) {
-			log.Printf("default log not found, skipping: %s", candidate)
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", candidate, err)
-		}
-	}
-
-	if len(found) == 0 {
-		return nil, fmt.Errorf(
-			"no default MTGA logs found in ~/Library/Logs/Wizards Of The Coast/MTGA (use -log to specify a path)",
-		)
-	}
-
-	return found, nil
 }

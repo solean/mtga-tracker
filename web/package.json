@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "VITE_API_BASE=http://127.0.0.1:39123 vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
+    "build:desktop": "VITE_API_BASE=http://127.0.0.1:39123 tsc -b && VITE_API_BASE=http://127.0.0.1:39123 vite build",
     "preview": "vite preview"
   },
   "dependencies": {

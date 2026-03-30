@@ -186,3 +186,44 @@ export type DraftPickCard = {
   cardId: number;
   cardName?: string;
 };
+
+export type RuntimeConfig = {
+  logPath: string;
+  pollIntervalSeconds: number;
+  includePrev: boolean;
+};
+
+export type RuntimeOperation = {
+  kind: "import" | "live";
+  files: string[];
+  linesRead: number;
+  bytesRead: number;
+  rawEventsStored: number;
+  matchesUpserted: number;
+  rankSnapshots: number;
+  decksUpserted: number;
+  draftPicksAdded: number;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  hasActivity: boolean;
+};
+
+export type RuntimeStatus = {
+  dbPath: string;
+  supportDir: string;
+  configPath: string;
+  defaultLogPath: string;
+  defaultPrevLogPath: string;
+  config: RuntimeConfig;
+  activeLogPath: string;
+  previousLogPath?: string;
+  activeLogPathExists: boolean;
+  previousLogPathExists: boolean;
+  liveRunning: boolean;
+  liveStartedAt?: string;
+  liveLastTickAt?: string;
+  lastImport?: RuntimeOperation;
+  lastLiveActivity?: RuntimeOperation;
+  lastError?: string;
+};

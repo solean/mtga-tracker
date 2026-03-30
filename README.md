@@ -131,6 +131,24 @@ bun run build
 
 When `web/dist` exists, backend `serve` will also host built assets from `/`.
 
+## macOS App Scaffold
+
+This repo now includes an initial Wails desktop scaffold at the repo root:
+
+```bash
+cd /Users/cschnabel/dev/mtgdata
+go run github.com/wailsapp/wails/v2/cmd/wails@latest dev
+```
+
+Desktop-specific frontend builds target the in-process local API server on `http://127.0.0.1:39123`:
+
+```bash
+cd /Users/cschnabel/dev/mtgdata/web
+bun run build:desktop
+```
+
+The desktop app stores its SQLite database and runtime config under `~/Library/Application Support/mtgdata/`.
+
 ## Notes
 
 - Event aliasing is implemented for common Arena naming differences (e.g. `FIN_Quick_Draft` to `QuickDraft_FIN_...`).
