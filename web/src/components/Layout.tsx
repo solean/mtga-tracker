@@ -13,6 +13,8 @@ const tabs = [
 ];
 
 const THEME_STORAGE_KEY = "mtgdata.theme";
+// Temporary kill switch while investigating frontend jank from the fixed WebGL background.
+const ENABLE_BACKGROUND_ANIMATION = false;
 const scrollPositions = new Map<string, number>();
 
 function pageTitle(pathname: string): string {
@@ -88,16 +90,18 @@ export function Layout() {
   return (
     <ThemeContext.Provider value={theme}>
       <>
-        <div className="plasma-bg" aria-hidden="true">
-          <Plasma
-            color="#00d4ff"
-            speed={0.35}
-            direction="forward"
-            scale={1.4}
-            opacity={0.18}
-            mouseInteractive={false}
-          />
-        </div>
+        {ENABLE_BACKGROUND_ANIMATION ? (
+          <div className="plasma-bg" aria-hidden="true">
+            <Plasma
+              color="#00d4ff"
+              speed={0.35}
+              direction="forward"
+              scale={1.4}
+              opacity={0.18}
+              mouseInteractive={false}
+            />
+          </div>
+        ) : null}
         <div className="app-shell">
           <header className="topbar">
           <div className="title-block">
