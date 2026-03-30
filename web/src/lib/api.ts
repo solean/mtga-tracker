@@ -9,12 +9,30 @@ import type {
   MatchReplayFrame,
   Overview,
   RankHistoryPoint,
+  RuntimeConfig,
+  RuntimeOperation,
+  RuntimeStatus,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Request failed (${res.status}): ${text}`);
+  }
+  return (await res.json()) as T;
+}
+
+async function postJSON<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body == null ? undefined : JSON.stringify(body),
+  });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Request failed (${res.status}): ${text}`);
@@ -34,4 +52,9 @@ export const api = {
   deckDetail: (deckId: number) => getJSON<DeckDetail>(`/api/decks/${deckId}`),
   drafts: () => getJSON<DraftSession[]>("/api/drafts"),
   draftPicks: (draftId: number) => getJSON<DraftPick[]>(`/api/drafts/${draftId}/picks`),
+  runtimeStatus: () => getJSON<RuntimeStatus>("/api/runtime/status"),
+  saveRuntimeConfig: (config: RuntimeConfig) => postJSON<RuntimeStatus>("/api/runtime/config", config),
+  runImport: (resume = true) => postJSON<RuntimeOperation>("/api/runtime/import", { resume }),
+  startLive: () => postJSON<RuntimeStatus>("/api/runtime/live/start"),
+  stopLive: () => postJSON<RuntimeStatus>("/api/runtime/live/stop"),
 };

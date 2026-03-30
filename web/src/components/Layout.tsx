@@ -9,6 +9,7 @@ const tabs = [
   { to: "/matches", label: "Matches" },
   { to: "/decks", label: "Decks" },
   { to: "/drafts", label: "Drafts" },
+  { to: "/settings", label: "Settings" },
 ];
 
 const THEME_STORAGE_KEY = "mtgdata.theme";
@@ -22,6 +23,7 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith("/decks/")) return "Deck Detail";
   if (pathname === "/drafts") return "Drafts";
   if (pathname.startsWith("/drafts/")) return "Draft Detail";
+  if (pathname === "/settings") return "Settings";
   return "MTGData Control Room";
 }
 

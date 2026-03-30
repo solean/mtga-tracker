@@ -1,0 +1,14 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "mtgdata",
+  "outputfilename": "MTGData",
+  "frontend:dir": "web",
+  "frontend:install": "bun install",
+  "frontend:build": "bun run build:desktop",
+  "frontend:dev:watcher": "bun run dev:desktop",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Ixian Labs LLC",
+    "email": "contact@ixianlabs.dev"
+  }
+}
