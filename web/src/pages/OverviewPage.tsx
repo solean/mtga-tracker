@@ -6,7 +6,7 @@ import { RankProgressPanel } from "../components/RankProgressPanel";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
-import { formatDateTime, formatDuration, pct } from "../lib/format";
+import { formatCompactDateTime, formatDuration, pct } from "../lib/format";
 
 export function OverviewPage() {
   const { data, isLoading, error } = useQuery({
@@ -81,7 +81,7 @@ export function OverviewPage() {
                   </div>
                   <div className="list-meta-item">
                     <dt>Started</dt>
-                    <dd>{formatDateTime(match.startedAt)}</dd>
+                    <dd>{formatCompactDateTime(match.startedAt)}</dd>
                   </div>
                   <div className="list-meta-item list-meta-item--colors">
                     <dt>Colors</dt>

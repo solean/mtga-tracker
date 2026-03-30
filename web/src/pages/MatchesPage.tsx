@@ -7,7 +7,7 @@ import { MatchDeckColors } from "../components/MatchDeckColors";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
-import { formatDateTime, formatDuration } from "../lib/format";
+import { formatCompactDateTime, formatDuration } from "../lib/format";
 import type { Match } from "../lib/types";
 
 const columnHelper = createColumnHelper<Match>();
@@ -34,7 +34,7 @@ export function MatchesPage() {
     () => [
       columnHelper.accessor("startedAt", {
         header: "Started",
-        cell: (info) => formatDateTime(info.getValue()),
+        cell: (info) => formatCompactDateTime(info.getValue()),
       }),
       columnHelper.accessor("eventName", {
         header: "Event",
