@@ -40,7 +40,7 @@ function applyThemeColorMeta(theme: Theme) {
     head.appendChild(metaThemeColor);
   }
 
-  metaThemeColor.setAttribute("content", theme === "dark" ? "#080c15" : "#e2e8ee");
+  metaThemeColor.setAttribute("content", theme === "dark" ? "#050302" : "#f4ece1");
 }
 
 function readStoredTheme(): Theme {
@@ -93,7 +93,7 @@ export function Layout() {
         {ENABLE_BACKGROUND_ANIMATION ? (
           <div className="plasma-bg" aria-hidden="true">
             <Plasma
-              color="#00d4ff"
+              color="#ff8a24"
               speed={0.35}
               direction="forward"
               scale={1.4}

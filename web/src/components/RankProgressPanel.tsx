@@ -15,6 +15,7 @@ import { useTheme, type Theme } from "../lib/theme";
 
 type ChartThemeTokens = {
   accent: string;
+  accentFaint: string;
   accentGlow: string;
   accentSoft: string;
   axisLine: string;
@@ -29,32 +30,34 @@ type ChartThemeTokens = {
 
 const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
   dark: {
-    accent: "#00d4ff",
-    accentGlow: "rgba(0, 212, 255, 0.22)",
-    accentSoft: "rgba(0, 212, 255, 0.1)",
-    axisLine: "rgba(0, 180, 216, 0.14)",
-    axisText: "#8a9eb4",
-    hoverBorder: "#dce4ec",
-    pointBorder: "rgba(14, 24, 42, 0.94)",
-    splitLine: "rgba(0, 212, 255, 0.025)",
-    tooltipBackground: "rgba(6, 12, 22, 0.97)",
-    tooltipBorder: "rgba(0, 200, 235, 0.3)",
-    tooltipText: "#dce4ec",
+    accent: "#ff8a24",
+    accentFaint: "rgba(255, 138, 36, 0.02)",
+    accentGlow: "rgba(255, 138, 36, 0.24)",
+    accentSoft: "rgba(255, 138, 36, 0.12)",
+    axisLine: "rgba(255, 145, 64, 0.16)",
+    axisText: "#c5a086",
+    hoverBorder: "#f2e6db",
+    pointBorder: "rgba(24, 16, 10, 0.94)",
+    splitLine: "rgba(255, 138, 36, 0.03)",
+    tooltipBackground: "rgba(12, 8, 6, 0.97)",
+    tooltipBorder: "rgba(255, 168, 90, 0.3)",
+    tooltipText: "#f2e6db",
   },
   light: {
-    accent: "#0277bd",
-    accentGlow: "rgba(2, 119, 189, 0.15)",
-    accentSoft: "rgba(2, 119, 189, 0.1)",
-    axisLine: "rgba(0, 80, 140, 0.14)",
-    axisText: "#354858",
-    hoverBorder: "#f7fbff",
-    pointBorder: "rgba(236, 242, 248, 0.96)",
-    splitLine: "rgba(0, 100, 160, 0.02)",
-    tooltipBackground: "rgba(238, 244, 250, 0.98)",
-    tooltipBorder: "rgba(0, 80, 140, 0.28)",
-    tooltipText: "#0d1b2a",
+    accent: "#c55a11",
+    accentFaint: "rgba(197, 90, 17, 0.02)",
+    accentGlow: "rgba(197, 90, 17, 0.15)",
+    accentSoft: "rgba(197, 90, 17, 0.1)",
+    axisLine: "rgba(140, 62, 8, 0.14)",
+    axisText: "#5c402d",
+    hoverBorder: "#fffaf4",
+    pointBorder: "rgba(247, 239, 230, 0.96)",
+    splitLine: "rgba(197, 90, 17, 0.02)",
+    tooltipBackground: "rgba(250, 243, 236, 0.98)",
+    tooltipBorder: "rgba(140, 62, 8, 0.28)",
+    tooltipText: "#24150b",
   },
-}
+};
 
 export function RankProgressPanel() {
   const tabBaseId = useId();
@@ -189,7 +192,7 @@ export function RankProgressPanel() {
                   y2: 1,
                   colorStops: [
                     { offset: 0, color: chartTheme.accentSoft },
-                    { offset: 1, color: "rgba(0, 212, 255, 0.02)" },
+                    { offset: 1, color: chartTheme.accentFaint },
                   ],
                 },
               },
