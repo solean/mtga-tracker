@@ -3401,7 +3401,7 @@ function MatchTimelineBoard({
           />
         </aside>
 
-        <div className="match-replay-board">
+        <div className="match-replay-board is-observed-board">
           <MatchReplayBattlefield
             side="opponent"
             plays={opponentVisiblePlays}

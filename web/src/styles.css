@@ -2018,6 +2018,10 @@ h1 {
   grid-template-rows: minmax(11rem, auto) minmax(11rem, auto) auto;
 }
 
+.match-replay-board.is-observed-board {
+  grid-template-rows: minmax(11rem, auto) auto minmax(11rem, auto);
+}
+
 .match-replay-lane {
   display: grid;
   gap: 0.72rem;
@@ -3037,14 +3041,22 @@ h1 {
 }
 
 .card-preview-anchor.is-replay-card {
-  width: 100%;
-  max-width: none;
-  height: 100%;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  flex: 0 0 auto;
 }
 
 .card-preview-anchor.is-replay-card:hover,
 .card-preview-anchor.is-replay-card:focus-within {
   z-index: 60;
+}
+
+.match-replay-card-shell > .card-preview-anchor.is-replay-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
 }
 
 .card-preview-trigger {
