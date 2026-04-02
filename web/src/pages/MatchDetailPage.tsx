@@ -2387,9 +2387,13 @@ function MatchReplayFrameBoard({
     return () => window.clearTimeout(timeoutID);
   }, [frames.length, isPlaying, selectedFrameIndex]);
 
-  const currentFrame = frames[selectedFrameIndex] ?? null;
+  const maxFrameIndex = Math.max(frames.length - 1, 0);
+  const safeSelectedFrameIndex = Math.min(selectedFrameIndex, maxFrameIndex);
+  const currentFrame = frames[safeSelectedFrameIndex] ?? null;
   const previousFrame =
-    selectedFrameIndex > 0 ? frames[selectedFrameIndex - 1] ?? null : null;
+    safeSelectedFrameIndex > 0
+      ? frames[safeSelectedFrameIndex - 1] ?? null
+      : null;
   const turnBoundaries = useMemo(() => buildReplayTurnBoundaries(frames), [frames]);
 
   const currentTurnBoundaryIndex = currentFrame
@@ -2486,7 +2490,11 @@ function MatchReplayFrameBoard({
     }
 
     const linkedIdsByParentId = new Map<number, Set<number>>();
-    for (let frameIndex = 0; frameIndex <= selectedFrameIndex; frameIndex += 1) {
+    for (
+      let frameIndex = 0;
+      frameIndex <= safeSelectedFrameIndex;
+      frameIndex += 1
+    ) {
       const frame = frames[frameIndex] ?? null;
       for (const annotation of replayFrameAnnotations(frame)) {
         if (
@@ -2554,7 +2562,7 @@ function MatchReplayFrameBoard({
     }
 
     return next;
-  }, [currentObjects, frames, selectedFrameIndex]);
+  }, [currentObjects, frames, safeSelectedFrameIndex]);
   const overlayInteractiveInstanceIDs = useMemo(() => {
     const ids = new Set<number>();
     for (const connection of overlayConnections) {
@@ -2581,7 +2589,7 @@ function MatchReplayFrameBoard({
     return ids;
   }, [overlayConnections, focusedConnectionInstanceId]);
   const changedInstanceIDs = new Set(
-    (currentFrame.changes ?? []).map((change) => change.instanceId),
+    (currentFrame?.changes ?? []).map((change) => change.instanceId),
   );
   const unknownObjectsCount = currentObjects.filter(
     (object) => object.playerSide === "unknown",
@@ -2590,14 +2598,14 @@ function MatchReplayFrameBoard({
     (object) => boardZoneKind(object.zoneType) === "stack",
   ).length;
   const primarySummary = replayFramePrimarySummary(currentFrame, previousFrame);
-  const notableChanges = [...(currentFrame.changes ?? [])]
+  const notableChanges = [...(currentFrame?.changes ?? [])]
     .sort(
       (a, b) =>
         replayChangePriority(b.action) - replayChangePriority(a.action),
     )
     .slice(0, 4);
-  const canStepBackward = selectedFrameIndex > 0;
-  const canStepForward = selectedFrameIndex < frames.length - 1;
+  const canStepBackward = safeSelectedFrameIndex > 0;
+  const canStepForward = safeSelectedFrameIndex < frames.length - 1;
   const canJumpPrevTurn = currentTurnBoundaryIndex > 0;
   const canJumpNextTurn =
     currentTurnBoundaryIndex >= 0 &&
@@ -2644,7 +2652,7 @@ function MatchReplayFrameBoard({
           <h4>Game {gameNumber}</h4>
           <p className="match-replay-caption">
             {replayFrameMomentLabel(currentFrame)} • Step{" "}
-            {selectedFrameIndex + 1} of {frames.length}
+            {safeSelectedFrameIndex + 1} of {frames.length}
           </p>
         </div>
         <p className="match-replay-kicker">Replay</p>
@@ -2682,9 +2690,7 @@ function MatchReplayFrameBoard({
             className="match-replay-button"
             onClick={() => {
               setIsPlaying(false);
-              setSelectedFrameIndex((currentIndex) =>
-                Math.max(currentIndex - 1, 0),
-              );
+              setSelectedFrameIndex(Math.max(safeSelectedFrameIndex - 1, 0));
             }}
             disabled={!canStepBackward}
           >
@@ -2695,8 +2701,8 @@ function MatchReplayFrameBoard({
             className="match-replay-button"
             onClick={() => {
               setIsPlaying(false);
-              setSelectedFrameIndex((currentIndex) =>
-                Math.min(currentIndex + 1, frames.length - 1),
+              setSelectedFrameIndex(
+                Math.min(safeSelectedFrameIndex + 1, frames.length - 1),
               );
             }}
             disabled={!canStepForward}
@@ -2722,7 +2728,7 @@ function MatchReplayFrameBoard({
         <div className="match-replay-track-panel">
           <MatchReplayTurnSelector
             turns={turnBoundaries}
-            selectedItemIndex={selectedFrameIndex}
+            selectedItemIndex={safeSelectedFrameIndex}
             selectedTurnIndex={currentTurnBoundaryIndex}
             onSelectTurn={setSelectedFrameIndex}
             itemLabel="step"
@@ -3700,6 +3706,7 @@ export function MatchDetailPage() {
                   }
                 >
                   <MatchReplayFrameBoard
+                    key={activeReplayGroup[0]}
                     gameNumber={activeReplayGroup[0]}
                     frames={activeReplayGroup[1]}
                     previewByCardID={boardPreviewByCardID}
