@@ -87,10 +87,13 @@ export type MatchReplayFrame = {
   gameStateId?: number;
   prevGameStateId?: number;
   gameStateType?: string;
+  gameStage?: string;
   turnNumber?: number;
   phase?: string;
   selfLifeTotal?: number;
   opponentLifeTotal?: number;
+  winningPlayerSide?: "self" | "opponent" | "unknown";
+  winReason?: string;
   recordedAt?: string;
   actionsJson?: string;
   annotationsJson?: string;

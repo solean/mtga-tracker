@@ -766,6 +766,64 @@ func TestReplayFramesClearSummoningSicknessOnControllersNextTurn(t *testing.T) {
 	}
 }
 
+func TestReplayFramesCaptureGameResultMetadata(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test-replay-game-result.db")
+	logPath := filepath.Join(tmpDir, "Player.log")
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+
+	parser := NewParser(db.NewStore(database))
+	lines := []string{
+		`{"clientId":"self-user","screenName":"Self"}`,
+		`{"timestamp":"1772330782400","matchGameRoomStateChangedEvent":{"gameRoomInfo":{"gameRoomConfig":{"reservedPlayers":[{"userId":"self-user","playerName":"Self","systemSeatId":1,"teamId":1,"eventId":"Traditional_Ladder"},{"userId":"opp-user","playerName":"Opp","systemSeatId":2,"teamId":2,"eventId":"Traditional_Ladder"}],"matchId":"match-replay-game-result"},"stateType":"MatchGameRoomStateType_Playing"}}}`,
+		`{"timestamp":"1772330782401","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Full","gameStateId":1,"gameInfo":{"matchID":"match-replay-game-result","gameNumber":1,"stage":"GameStage_Play"},"turnInfo":{"phase":"Phase_Main1","turnNumber":3,"activePlayer":1},"players":[{"lifeTotal":20,"systemSeatNumber":1,"teamId":1},{"lifeTotal":20,"systemSeatNumber":2,"teamId":2}],"zones":[{"zoneId":28,"type":"ZoneType_Battlefield","visibility":"Visibility_Public","objectInstanceIds":[]}],"gameObjects":[]}}]}}`,
+		`{"timestamp":"1772330782402","greToClientEvent":{"greToClientMessages":[{"type":"GREMessageType_GameStateMessage","systemSeatIds":[1],"gameStateMessage":{"type":"GameStateType_Diff","gameStateId":2,"prevGameStateId":1,"gameInfo":{"matchID":"match-replay-game-result","gameNumber":1,"stage":"GameStage_GameOver","results":[{"scope":"MatchScope_Game","result":"ResultType_WinLoss","winningTeamId":2,"reason":"ResultReason_Concede"}]},"turnInfo":{"phase":"Phase_Ending","step":"Step_End","turnNumber":8,"activePlayer":2},"players":[{"lifeTotal":0,"systemSeatNumber":1,"teamId":1},{"lifeTotal":7,"systemSeatNumber":2,"teamId":2}]}}]}}`,
+	}
+
+	if err := writeLogLines(logPath, lines, false); err != nil {
+		t.Fatalf("write log lines: %v", err)
+	}
+	if _, err := parser.ParseFile(ctx, logPath, false); err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+
+	store := db.NewStore(database)
+	frames, err := store.ListMatchReplayFrames(ctx, 1)
+	if err != nil {
+		t.Fatalf("list replay frames: %v", err)
+	}
+	if len(frames) != 2 {
+		t.Fatalf("expected 2 replay frames, got %d", len(frames))
+	}
+
+	lastFrame := frames[len(frames)-1]
+	if lastFrame.GameStage != "gameover" {
+		t.Fatalf("expected game stage gameover, got %q", lastFrame.GameStage)
+	}
+	if lastFrame.WinningPlayerSide != "opponent" {
+		t.Fatalf("expected winning player side opponent, got %q", lastFrame.WinningPlayerSide)
+	}
+	if lastFrame.WinReason != "Concede" {
+		t.Fatalf("expected win reason Concede, got %q", lastFrame.WinReason)
+	}
+	if lastFrame.SelfLifeTotal == nil || *lastFrame.SelfLifeTotal != 0 {
+		t.Fatalf("expected self life total 0, got %#v", lastFrame.SelfLifeTotal)
+	}
+	if lastFrame.OpponentLifeTotal == nil || *lastFrame.OpponentLifeTotal != 7 {
+		t.Fatalf("expected opponent life total 7, got %#v", lastFrame.OpponentLifeTotal)
+	}
+}
+
 func TestReplayFramesTrackSelfHandOnly(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()

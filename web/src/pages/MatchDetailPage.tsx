@@ -87,6 +87,15 @@ type ReplayAnnotationPayload = {
   annotations?: ReplayAnnotation[];
   persistentAnnotations?: ReplayAnnotation[];
 };
+type ReplayGameSummary = {
+  result: "win" | "loss" | "unknown";
+  detail: string;
+};
+type ReplayGameGroup = {
+  gameNumber: number;
+  frames: MatchReplayFrame[];
+  summary: ReplayGameSummary | null;
+};
 type MatchReplayZoneDialogState =
   | {
       source: "replay";
@@ -1064,6 +1073,123 @@ function replayFramePrimarySummary(
     return summary ? `Life totals changed. ${summary}.` : "Life totals changed.";
   }
   return "Initial replay snapshot for this game state.";
+}
+
+function replayFrameWinningPlayerSide(
+  frame: MatchReplayFrame | null | undefined,
+): "self" | "opponent" | "unknown" {
+  const side = frame?.winningPlayerSide;
+  return side === "self" || side === "opponent" ? side : "unknown";
+}
+
+function normalizeReplayWinReason(reason?: string | null): string {
+  return (reason ?? "")
+    .trim()
+    .replace(/^ResultReason_/, "")
+    .replace(/^WinningReason_/, "");
+}
+
+function formatReplayWinReason(reason: string): string {
+  const normalized = normalizeReplayWinReason(reason);
+  if (!normalized) {
+    return "";
+  }
+  return normalized
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .toLowerCase();
+}
+
+function summarizeReplayGame(frames: MatchReplayFrame[]): ReplayGameSummary | null {
+  if (frames.length === 0) {
+    return null;
+  }
+
+  const terminalFrame =
+    [...frames]
+      .reverse()
+      .find((frame) => {
+        const gameStage = (frame.gameStage ?? "").trim().toLowerCase();
+        return (
+          gameStage === "gameover" ||
+          replayFrameWinningPlayerSide(frame) !== "unknown" ||
+          normalizeReplayWinReason(frame.winReason) !== ""
+        );
+      }) ?? frames[frames.length - 1] ?? null;
+  if (!terminalFrame) {
+    return null;
+  }
+
+  let winningPlayerSide = replayFrameWinningPlayerSide(terminalFrame);
+  if (
+    winningPlayerSide === "unknown" &&
+    typeof terminalFrame.selfLifeTotal === "number" &&
+    terminalFrame.selfLifeTotal <= 0
+  ) {
+    winningPlayerSide = "opponent";
+  } else if (
+    winningPlayerSide === "unknown" &&
+    typeof terminalFrame.opponentLifeTotal === "number" &&
+    terminalFrame.opponentLifeTotal <= 0
+  ) {
+    winningPlayerSide = "self";
+  }
+
+  const result =
+    winningPlayerSide === "self"
+      ? "win"
+      : winningPlayerSide === "opponent"
+        ? "loss"
+        : "unknown";
+  const normalizedReason = normalizeReplayWinReason(terminalFrame.winReason);
+
+  let detail = "";
+  if (normalizedReason === "Concede") {
+    const concedingPlayerSide =
+      winningPlayerSide === "self"
+        ? "opponent"
+        : winningPlayerSide === "opponent"
+          ? "self"
+          : "unknown";
+    detail =
+      concedingPlayerSide === "unknown"
+        ? "A player conceded."
+        : `${timelinePlayerLabel(concedingPlayerSide)} conceded.`;
+  } else if (
+    typeof terminalFrame.selfLifeTotal === "number" &&
+    terminalFrame.selfLifeTotal <= 0
+  ) {
+    detail = "You went to 0 life.";
+  } else if (
+    typeof terminalFrame.opponentLifeTotal === "number" &&
+    terminalFrame.opponentLifeTotal <= 0
+  ) {
+    detail = "Opponent went to 0 life.";
+  } else if (normalizedReason) {
+    detail = `Ended by ${formatReplayWinReason(normalizedReason)}.`;
+  } else if (result === "win") {
+    detail = "You won this game.";
+  } else if (result === "loss") {
+    detail = "You lost this game.";
+  } else {
+    detail = "Game result recorded.";
+  }
+
+  return { result, detail };
+}
+
+function preferredReplayFrameIndex(frames: MatchReplayFrame[]): number {
+  if (frames.length === 0) {
+    return 0;
+  }
+
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    if ((frames[index]?.objects?.length ?? 0) > 0) {
+      return index;
+    }
+  }
+
+  return frames.length - 1;
 }
 
 function describeReplayChange(change: MatchReplayChange): string {
@@ -2339,14 +2465,17 @@ function MatchReplayTurnSelector({
 function MatchReplayFrameBoard({
   gameNumber,
   frames,
+  gameSummary,
   previewByCardID,
 }: {
   gameNumber: number;
   frames: MatchReplayFrame[];
+  gameSummary: ReplayGameSummary | null;
   previewByCardID: Map<number, CardPreview | null>;
 }) {
+  const initialFrameIndex = preferredReplayFrameIndex(frames);
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(
-    frames.length > 0 ? frames.length - 1 : 0,
+    initialFrameIndex,
   );
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoneDialogState, setZoneDialogState] =
@@ -2356,6 +2485,8 @@ function MatchReplayFrameBoard({
   >(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const replayCardShellsRef = useRef(new Map<number, HTMLDivElement>());
+  const lastFrameIndex = frames.length > 0 ? frames.length - 1 : 0;
+  const safeSelectedFrameIndex = Math.min(selectedFrameIndex, lastFrameIndex);
 
   useEffect(() => {
     if (frames.length === 0) {
@@ -2373,23 +2504,23 @@ function MatchReplayFrameBoard({
     if (!isPlaying) {
       return;
     }
-    if (selectedFrameIndex >= frames.length - 1) {
+    if (safeSelectedFrameIndex >= lastFrameIndex) {
       setIsPlaying(false);
       return;
     }
 
     const timeoutID = window.setTimeout(() => {
-      setSelectedFrameIndex((currentIndex) =>
-        Math.min(currentIndex + 1, frames.length - 1),
-      );
+      setSelectedFrameIndex(Math.min(safeSelectedFrameIndex + 1, lastFrameIndex));
     }, 1200);
 
     return () => window.clearTimeout(timeoutID);
-  }, [frames.length, isPlaying, selectedFrameIndex]);
+  }, [isPlaying, lastFrameIndex, safeSelectedFrameIndex]);
 
-  const currentFrame = frames[selectedFrameIndex] ?? null;
+  const currentFrame = frames[safeSelectedFrameIndex] ?? null;
   const previousFrame =
-    selectedFrameIndex > 0 ? frames[selectedFrameIndex - 1] ?? null : null;
+    safeSelectedFrameIndex > 0
+      ? frames[safeSelectedFrameIndex - 1] ?? null
+      : null;
   const turnBoundaries = useMemo(() => buildReplayTurnBoundaries(frames), [frames]);
 
   const currentTurnBoundaryIndex = currentFrame
@@ -2486,7 +2617,11 @@ function MatchReplayFrameBoard({
     }
 
     const linkedIdsByParentId = new Map<number, Set<number>>();
-    for (let frameIndex = 0; frameIndex <= selectedFrameIndex; frameIndex += 1) {
+    for (
+      let frameIndex = 0;
+      frameIndex <= safeSelectedFrameIndex;
+      frameIndex += 1
+    ) {
       const frame = frames[frameIndex] ?? null;
       for (const annotation of replayFrameAnnotations(frame)) {
         if (
@@ -2554,7 +2689,7 @@ function MatchReplayFrameBoard({
     }
 
     return next;
-  }, [currentObjects, frames, selectedFrameIndex]);
+  }, [currentObjects, frames, safeSelectedFrameIndex]);
   const overlayInteractiveInstanceIDs = useMemo(() => {
     const ids = new Set<number>();
     for (const connection of overlayConnections) {
@@ -2580,8 +2715,9 @@ function MatchReplayFrameBoard({
     }
     return ids;
   }, [overlayConnections, focusedConnectionInstanceId]);
+  const currentFrameChanges = currentFrame?.changes ?? [];
   const changedInstanceIDs = new Set(
-    (currentFrame.changes ?? []).map((change) => change.instanceId),
+    currentFrameChanges.map((change) => change.instanceId),
   );
   const unknownObjectsCount = currentObjects.filter(
     (object) => object.playerSide === "unknown",
@@ -2590,14 +2726,14 @@ function MatchReplayFrameBoard({
     (object) => boardZoneKind(object.zoneType) === "stack",
   ).length;
   const primarySummary = replayFramePrimarySummary(currentFrame, previousFrame);
-  const notableChanges = [...(currentFrame.changes ?? [])]
+  const notableChanges = [...currentFrameChanges]
     .sort(
       (a, b) =>
         replayChangePriority(b.action) - replayChangePriority(a.action),
     )
     .slice(0, 4);
-  const canStepBackward = selectedFrameIndex > 0;
-  const canStepForward = selectedFrameIndex < frames.length - 1;
+  const canStepBackward = safeSelectedFrameIndex > 0;
+  const canStepForward = safeSelectedFrameIndex < lastFrameIndex;
   const canJumpPrevTurn = currentTurnBoundaryIndex > 0;
   const canJumpNextTurn =
     currentTurnBoundaryIndex >= 0 &&
@@ -2631,7 +2767,18 @@ function MatchReplayFrameBoard({
   if (!currentFrame) {
     return (
       <article className="panel inner match-replay-game">
-        <h4>Game {gameNumber}</h4>
+        <div className="match-replay-head">
+          <div className="match-replay-head-copy">
+            <h4>Game {gameNumber}</h4>
+            {gameSummary ? (
+              <div className="match-replay-result">
+                <ResultPill result={gameSummary.result} />
+                <p className="match-replay-result-copy">{gameSummary.detail}</p>
+              </div>
+            ) : null}
+          </div>
+          <p className="match-replay-kicker">Replay</p>
+        </div>
         <StatusMessage>No replay steps for this game.</StatusMessage>
       </article>
     );
@@ -2644,8 +2791,14 @@ function MatchReplayFrameBoard({
           <h4>Game {gameNumber}</h4>
           <p className="match-replay-caption">
             {replayFrameMomentLabel(currentFrame)} • Step{" "}
-            {selectedFrameIndex + 1} of {frames.length}
+            {safeSelectedFrameIndex + 1} of {frames.length}
           </p>
+          {gameSummary ? (
+            <div className="match-replay-result">
+              <ResultPill result={gameSummary.result} />
+              <p className="match-replay-result-copy">{gameSummary.detail}</p>
+            </div>
+          ) : null}
         </div>
         <p className="match-replay-kicker">Replay</p>
       </div>
@@ -2682,9 +2835,7 @@ function MatchReplayFrameBoard({
             className="match-replay-button"
             onClick={() => {
               setIsPlaying(false);
-              setSelectedFrameIndex((currentIndex) =>
-                Math.max(currentIndex - 1, 0),
-              );
+              setSelectedFrameIndex(Math.max(safeSelectedFrameIndex - 1, 0));
             }}
             disabled={!canStepBackward}
           >
@@ -2695,8 +2846,8 @@ function MatchReplayFrameBoard({
             className="match-replay-button"
             onClick={() => {
               setIsPlaying(false);
-              setSelectedFrameIndex((currentIndex) =>
-                Math.min(currentIndex + 1, frames.length - 1),
+              setSelectedFrameIndex(
+                Math.min(safeSelectedFrameIndex + 1, lastFrameIndex),
               );
             }}
             disabled={!canStepForward}
@@ -2722,7 +2873,7 @@ function MatchReplayFrameBoard({
         <div className="match-replay-track-panel">
           <MatchReplayTurnSelector
             turns={turnBoundaries}
-            selectedItemIndex={selectedFrameIndex}
+            selectedItemIndex={safeSelectedFrameIndex}
             selectedTurnIndex={currentTurnBoundaryIndex}
             onSelectTurn={setSelectedFrameIndex}
             itemLabel="step"
@@ -3358,7 +3509,7 @@ export function MatchDetailPage() {
   );
   const timelineRows = timelineQuery.data ?? query.data?.cardPlays ?? [];
   const replayFrames = replayQuery.data ?? [];
-  const replayGroups = useMemo(() => {
+  const replayGroups = useMemo<ReplayGameGroup[]>(() => {
     const byGame = new Map<number, MatchReplayFrame[]>();
     for (const frame of replayFrames) {
       const gameNumber =
@@ -3372,15 +3523,16 @@ export function MatchDetailPage() {
     }
 
     return Array.from(byGame.entries())
-      .map(([gameNumber, frames]) => [
+      .map(([gameNumber, frames]) => ({
         gameNumber,
-        filterMeaningfulReplayFrames(frames),
-      ] as const)
-      .filter(([, frames]) => frames.length > 0)
-      .sort((a, b) => a[0] - b[0]);
+        frames: filterMeaningfulReplayFrames(frames),
+        summary: summarizeReplayGame(frames),
+      }))
+      .filter((group) => group.frames.length > 0)
+      .sort((a, b) => a.gameNumber - b.gameNumber);
   }, [replayFrames]);
   const visibleReplayFrames = useMemo(
-    () => replayGroups.flatMap(([, frames]) => frames),
+    () => replayGroups.flatMap((group) => group.frames),
     [replayGroups],
   );
   const hasReplayFrames = visibleReplayFrames.length > 0;
@@ -3458,21 +3610,20 @@ export function MatchDetailPage() {
   const timelineSummary = hasReplayFrames
     ? `${visibleReplayFrames.length} public replay step${visibleReplayFrames.length === 1 ? "" : "s"} across ${replayGroups.length} game${replayGroups.length === 1 ? "" : "s"}`
     : `${timelineRows.length} observed play${timelineRows.length === 1 ? "" : "s"}${timelineRows.length > 0 ? ` across ${timelineGroups.length} game${timelineGroups.length === 1 ? "" : "s"}` : ""}`;
-  const timelineGameNumbers = useMemo(
-    () =>
-      (timelineDisplayMode === "board" && hasReplayFrames
-        ? replayGroups
-        : timelineGroups
-      ).map(([gameNumber]) => gameNumber),
-    [hasReplayFrames, replayGroups, timelineDisplayMode, timelineGroups],
-  );
+  const timelineGameNumbers = useMemo(() => {
+    if (timelineDisplayMode === "board" && hasReplayFrames) {
+      return replayGroups.map((group) => group.gameNumber);
+    }
+    return timelineGroups.map(([gameNumber]) => gameNumber);
+  }, [hasReplayFrames, replayGroups, timelineDisplayMode, timelineGroups]);
   const activeTimelineGameNumber =
     selectedTimelineGameNumber ?? timelineGameNumbers[0] ?? null;
   const activeReplayGroup =
     activeTimelineGameNumber === null
       ? null
-      : replayGroups.find(([gameNumber]) => gameNumber === activeTimelineGameNumber) ??
-        null;
+      : replayGroups.find(
+          (group) => group.gameNumber === activeTimelineGameNumber,
+        ) ?? null;
   const activeTimelineGroup =
     activeTimelineGameNumber === null
       ? null
@@ -3700,8 +3851,10 @@ export function MatchDetailPage() {
                   }
                 >
                   <MatchReplayFrameBoard
-                    gameNumber={activeReplayGroup[0]}
-                    frames={activeReplayGroup[1]}
+                    key={activeReplayGroup.gameNumber}
+                    gameNumber={activeReplayGroup.gameNumber}
+                    frames={activeReplayGroup.frames}
+                    gameSummary={activeReplayGroup.summary}
                     previewByCardID={boardPreviewByCardID}
                   />
                 </div>

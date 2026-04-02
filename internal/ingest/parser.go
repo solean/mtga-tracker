@@ -562,8 +562,10 @@ type greGameStateMsg struct {
 	GameStateID     int64  `json:"gameStateId"`
 	PrevGameStateID int64  `json:"prevGameStateId"`
 	GameInfo        *struct {
-		MatchID    string `json:"matchID"`
-		GameNumber int64  `json:"gameNumber"`
+		MatchID    string            `json:"matchID"`
+		GameNumber int64             `json:"gameNumber"`
+		Stage      string            `json:"stage"`
+		Results    []roomResultEntry `json:"results"`
 	} `json:"gameInfo"`
 	TurnInfo               *greTurnInfo    `json:"turnInfo"`
 	Players                []grePlayer     `json:"players"`
@@ -585,6 +587,7 @@ type greTurnInfo struct {
 type grePlayer struct {
 	LifeTotal        int64 `json:"lifeTotal"`
 	SystemSeatNumber int64 `json:"systemSeatNumber"`
+	TeamID           int64 `json:"teamId"`
 }
 
 type greZone struct {
@@ -1078,14 +1081,23 @@ func normalizeWinningReason(reason string) string {
 }
 
 func chooseMatchResult(results []roomResultEntry) (int64, string) {
+	return chooseResultForScope(results, "MatchScope_Match")
+}
+
+func chooseGameResult(results []roomResultEntry) (int64, string) {
+	return chooseResultForScope(results, "MatchScope_Game")
+}
+
+func chooseResultForScope(results []roomResultEntry, preferredScope string) (int64, string) {
 	var fallbackTeamID int64
 	var fallbackReason string
+	preferredScope = strings.TrimSpace(preferredScope)
 	for _, r := range results {
 		if r.WinningTeamID <= 0 {
 			continue
 		}
 		reason := normalizeWinningReason(r.Reason)
-		if strings.EqualFold(strings.TrimSpace(r.Scope), "MatchScope_Match") {
+		if preferredScope != "" && strings.EqualFold(strings.TrimSpace(r.Scope), preferredScope) {
 			return r.WinningTeamID, reason
 		}
 		if fallbackTeamID == 0 {
@@ -1115,6 +1127,37 @@ func normalizeGREGameStateType(raw string) string {
 		return ""
 	}
 	return strings.ToLower(raw)
+}
+
+func normalizeGREGameStage(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "GameStage_")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	return strings.ToLower(raw)
+}
+
+func replayWinningPlayerSide(players []grePlayer, selfSeat, winningTeamID int64) string {
+	if selfSeat <= 0 || winningTeamID <= 0 {
+		return "unknown"
+	}
+
+	var selfTeamID int64
+	for _, player := range players {
+		if player.SystemSeatNumber == selfSeat && player.TeamID > 0 {
+			selfTeamID = player.TeamID
+			break
+		}
+	}
+	if selfTeamID <= 0 {
+		return "unknown"
+	}
+	if selfTeamID == winningTeamID {
+		return "self"
+	}
+	return "opponent"
 }
 
 func normalizeGREZoneType(raw string) string {
@@ -1432,6 +1475,14 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 
 		replayState.LastGameStateID = msg.GameStateMessage.GameStateID
 		snapshotObjects, currentPublicByInstance := buildReplayPublicSnapshot(matchID, replayState, state, selfSeat)
+		gameStage := ""
+		var winningTeamID int64
+		gameWinReason := ""
+		if msg.GameStateMessage.GameInfo != nil {
+			gameStage = normalizeGREGameStage(msg.GameStateMessage.GameInfo.Stage)
+			winningTeamID, gameWinReason = chooseGameResult(msg.GameStateMessage.GameInfo.Results)
+		}
+		winningPlayerSide := replayWinningPlayerSide(msg.GameStateMessage.Players, selfSeat, winningTeamID)
 		if _, err := p.store.ReplaceMatchReplayFrame(
 			ctx,
 			tx,
@@ -1441,7 +1492,10 @@ func (p *Parser) handleGREJSON(ctx context.Context, tx *sql.Tx, line string, sta
 			msg.GameStateMessage.PrevGameStateID,
 			turnNumber,
 			normalizeGREGameStateType(msg.GameStateMessage.Type),
+			gameStage,
 			phase,
+			winningPlayerSide,
+			gameWinReason,
 			eventTS,
 			"gre_public_replay",
 			encodeReplayPlayerLifeTotals(replayState.PlayerLifeTotals),
