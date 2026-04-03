@@ -548,6 +548,18 @@ h1 {
     inset 0 1px 0 var(--tab-active-shine);
 }
 
+.tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  box-shadow: none;
+}
+
+.tab:disabled:hover {
+  color: var(--muted);
+  border-color: transparent;
+  background: transparent;
+}
+
 /* ══════════════════════════════════════════
    THEME TOGGLE
    ══════════════════════════════════════════ */
@@ -860,6 +872,26 @@ h1 {
   color: var(--muted-strong);
   font-size: 0.8rem;
   letter-spacing: 0.04em;
+}
+
+.rank-control-stack {
+  display: grid;
+  gap: 0.52rem;
+  justify-items: end;
+}
+
+.rank-control-group {
+  display: grid;
+  gap: 0.28rem;
+  justify-items: end;
+}
+
+.rank-control-label {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .rank-toggle {
@@ -1561,6 +1593,20 @@ h1 {
   max-width: 64ch;
 }
 
+.match-replay-result {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.match-replay-result-copy {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .match-replay-kicker {
   margin: 0;
   color: var(--muted-strong);
@@ -2002,6 +2048,10 @@ h1 {
 
 .match-replay-board.is-combat-board {
   grid-template-rows: minmax(11rem, auto) minmax(11rem, auto) auto;
+}
+
+.match-replay-board.is-observed-board {
+  grid-template-rows: minmax(11rem, auto) auto minmax(11rem, auto);
 }
 
 .match-replay-lane {
@@ -3023,14 +3073,22 @@ h1 {
 }
 
 .card-preview-anchor.is-replay-card {
-  width: 100%;
-  max-width: none;
-  height: 100%;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  flex: 0 0 auto;
 }
 
 .card-preview-anchor.is-replay-card:hover,
 .card-preview-anchor.is-replay-card:focus-within {
   z-index: 60;
+}
+
+.match-replay-card-shell > .card-preview-anchor.is-replay-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
 }
 
 .card-preview-trigger {
@@ -3608,6 +3666,12 @@ select {
 
   .rank-toolbar {
     align-items: start;
+  }
+
+  .rank-control-stack,
+  .rank-control-group {
+    width: 100%;
+    justify-items: stretch;
   }
 
   .rank-toggle {

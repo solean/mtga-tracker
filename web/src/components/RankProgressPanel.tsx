@@ -1,15 +1,17 @@
 import ReactECharts from "echarts-for-react";
 import { useQuery } from "@tanstack/react-query";
-import { useId, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 
 import { api } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import {
   buildGraphPoints,
   LADDER_CONFIG,
-  rankStateFor,
+  seasonOrdinalsFor,
   tierLabelAt,
   type Ladder,
+  type RankProgressSeries,
+  type SeasonView,
 } from "../lib/rankProgress";
 import { useTheme, type Theme } from "../lib/theme";
 
@@ -59,22 +61,110 @@ const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
   },
 };
 
+const SEASON_VIEW_LABELS: Record<SeasonView, string> = {
+  current: "Current",
+  previous: "Previous",
+  all: "All",
+};
+
+function handleSegmentedKeyDown<T extends string>(
+  event: KeyboardEvent<HTMLButtonElement>,
+  value: T,
+  options: readonly T[],
+  onChange: (next: T) => void,
+) {
+  const currentIndex = options.indexOf(value);
+  if (currentIndex === -1) return;
+
+  switch (event.key) {
+    case "ArrowLeft":
+    case "ArrowUp":
+      event.preventDefault();
+      onChange(options[(currentIndex + options.length - 1) % options.length]);
+      break;
+    case "ArrowRight":
+    case "ArrowDown":
+      event.preventDefault();
+      onChange(options[(currentIndex + 1) % options.length]);
+      break;
+    case "Home":
+      event.preventDefault();
+      onChange(options[0]);
+      break;
+    case "End":
+      event.preventDefault();
+      onChange(options[options.length - 1]);
+      break;
+    default:
+      break;
+  }
+}
+
+function formatSnapshotLabel(count: number): string {
+  return `${count} ranked snapshot${count === 1 ? "" : "s"}`;
+}
+
+function describeSeries(series: RankProgressSeries): string {
+  if (series.seasonView === "all") {
+    return `All seasons • ${formatSnapshotLabel(series.points.length)} across ${series.seasonOrdinals.length} season${series.seasonOrdinals.length === 1 ? "" : "s"}`;
+  }
+
+  return `Season ${series.seasonOrdinal} • ${formatSnapshotLabel(series.points.length)}`;
+}
+
+function describeSelection(seasonView: SeasonView): string {
+  switch (seasonView) {
+    case "previous":
+      return "Review the most recent completed season for this ladder";
+    case "all":
+      return "View every recorded season on one timeline";
+    default:
+      return "Track how your ladder standing moves over time";
+  }
+}
+
+function emptyStateMessage(seasonView: SeasonView): string {
+  switch (seasonView) {
+    case "previous":
+      return "No previous season snapshots available for this ladder yet.";
+    case "all":
+      return "No rank snapshots available for this ladder yet.";
+    default:
+      return "No rank snapshots available for the current season yet.";
+  }
+}
+
 export function RankProgressPanel() {
   const tabBaseId = useId();
   const theme = useTheme();
   const [ladder, setLadder] = useState<Ladder>("constructed");
+  const [seasonView, setSeasonView] = useState<SeasonView>("current");
   const { data, isLoading, error } = useQuery({
     queryKey: ["rank-history"],
     queryFn: api.rankHistory,
   });
   const panelId = `${tabBaseId}-panel`;
-  const ladderOptions = ["constructed", "limited"] as Ladder[];
+  const headingId = `${tabBaseId}-heading`;
+  const ladderOptions = ["constructed", "limited"] as const satisfies readonly Ladder[];
+  const seasonOptions = ["current", "previous", "all"] as const satisfies readonly SeasonView[];
 
-  const series = data ? buildGraphPoints(data, ladder) : null;
-  const currentPoint = series ? series.points[series.points.length - 1] : null;
+  const availableSeasons = useMemo(() => (data ? seasonOrdinalsFor(data, ladder) : []), [data, ladder]);
+  const hasPreviousSeason = availableSeasons.length > 1;
+
+  useEffect(() => {
+    if (seasonView === "previous" && !hasPreviousSeason) {
+      setSeasonView("current");
+    }
+  }, [hasPreviousSeason, seasonView]);
+
+  const series = useMemo(
+    () => (data ? buildGraphPoints(data, ladder, seasonView) : null),
+    [data, ladder, seasonView],
+  );
+  const latestPoint = series ? series.points[series.points.length - 1] : null;
   const firstPoint = series?.points[0];
-  const currentRank = currentPoint ? currentPoint.rankLabel : "Unranked";
-  const currentState = data && currentPoint ? rankStateFor(data[data.length - 1], ladder) : null;
+  const currentRank = latestPoint ? latestPoint.rankLabel : "Unranked";
+  const currentState = series?.latestState ?? null;
   const currentRecord =
     currentState && currentState.matchesWon != null && currentState.matchesLost != null
       ? `${currentState.matchesWon}W-${currentState.matchesLost}L`
@@ -83,7 +173,7 @@ export function RankProgressPanel() {
 
   const chartOption = useMemo(
     () =>
-      series && currentPoint
+      series && latestPoint
         ? {
           backgroundColor: "transparent",
           animationDuration: 320,
@@ -110,7 +200,7 @@ export function RankProgressPanel() {
               return [
                 `<div style="display:grid;gap:4px;">`,
                 `<strong>${point.rankLabel}</strong>`,
-                `<span>Match ${point.matchNumber} • ${resultLabel}</span>`,
+                `<span>Season ${point.seasonOrdinal} • Match ${point.matchNumber} • ${resultLabel}</span>`,
                 `<span>${point.eventName || "Unknown event"} vs ${point.opponent || "Unknown"}</span>`,
                 `<span>${formatDateTime(timestamp)}</span>`,
                 `</div>`,
@@ -201,8 +291,8 @@ export function RankProgressPanel() {
               type: "scatter",
               data: [
                 {
-                  ...currentPoint,
-                  value: [currentPoint.matchNumber, currentPoint.score],
+                  ...latestPoint,
+                  value: [latestPoint.matchNumber, latestPoint.score],
                 },
               ],
               symbolSize: 12,
@@ -218,42 +308,14 @@ export function RankProgressPanel() {
           ],
         }
         : null,
-    [chartTheme, currentPoint, ladder, series],
+    [chartTheme, ladder, latestPoint, series],
   );
 
-  function handleToggleKeyDown(event: KeyboardEvent<HTMLButtonElement>, value: Ladder) {
-    const currentIndex = ladderOptions.indexOf(value);
-    if (currentIndex === -1) return;
-
-    switch (event.key) {
-      case "ArrowLeft":
-      case "ArrowUp":
-        event.preventDefault();
-        setLadder(ladderOptions[(currentIndex + ladderOptions.length - 1) % ladderOptions.length]);
-        break;
-      case "ArrowRight":
-      case "ArrowDown":
-        event.preventDefault();
-        setLadder(ladderOptions[(currentIndex + 1) % ladderOptions.length]);
-        break;
-      case "Home":
-        event.preventDefault();
-        setLadder(ladderOptions[0]);
-        break;
-      case "End":
-        event.preventDefault();
-        setLadder(ladderOptions[ladderOptions.length - 1]);
-        break;
-      default:
-        break;
-    }
-  }
-
   const readyState =
-    series && currentPoint && chartOption
+    series && latestPoint && chartOption
       ? {
           chartOption,
-          currentPoint,
+          latestPoint,
           firstPoint,
           series,
         }
@@ -263,50 +325,69 @@ export function RankProgressPanel() {
     <section className="panel rank-panel">
       <div className="panel-head rank-toolbar">
         <div>
-          <h3>Rank Progress</h3>
-          <p>
-            {series
-              ? `Season ${series.seasonOrdinal} • ${series.points.length} ranked snapshots`
-              : "Track how your ladder standing moves over time"}
-          </p>
+          <h3 id={headingId}>Rank Progress</h3>
+          <p>{series ? describeSeries(series) : describeSelection(seasonView)}</p>
         </div>
-        <div className="tabs rank-toggle" role="tablist" aria-label="Ladder selector">
-          {ladderOptions.map((value) => (
-            <button
-              key={value}
-              type="button"
-              id={`${tabBaseId}-${value}`}
-              role="tab"
-              aria-selected={ladder === value}
-              aria-controls={panelId}
-              tabIndex={ladder === value ? 0 : -1}
-              className={`tab rank-toggle-button ${ladder === value ? "is-active" : ""}`}
-              onClick={() => setLadder(value)}
-              onKeyDown={(event) => handleToggleKeyDown(event, value)}
-            >
-              {LADDER_CONFIG[value].label}
-            </button>
-          ))}
+        <div className="rank-control-stack">
+          <div className="rank-control-group">
+            <span className="rank-control-label">Ladder</span>
+            <div className="tabs rank-toggle" role="group" aria-label="Ladder selector">
+              {ladderOptions.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={ladder === value}
+                  className={`tab rank-toggle-button ${ladder === value ? "is-active" : ""}`}
+                  onClick={() => setLadder(value)}
+                  onKeyDown={(event) =>
+                    handleSegmentedKeyDown(event, value, ladderOptions, setLadder)
+                  }
+                >
+                  {LADDER_CONFIG[value].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rank-control-group">
+            <span className="rank-control-label">Season</span>
+            <div className="tabs rank-toggle" role="group" aria-label="Season selector">
+              {seasonOptions.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={seasonView === value}
+                  disabled={value === "previous" && !hasPreviousSeason}
+                  className={`tab rank-toggle-button ${seasonView === value ? "is-active" : ""}`}
+                  onClick={() => setSeasonView(value)}
+                  onKeyDown={(event) =>
+                    handleSegmentedKeyDown(event, value, seasonOptions, setSeasonView)
+                  }
+                >
+                  {SEASON_VIEW_LABELS[value]}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
       {readyState ? (
         <div className="rank-summary">
           <div className="rank-chip">
-            <span>Current</span>
+            <span>Rank</span>
             <strong>{currentRank}</strong>
           </div>
           <div className="rank-chip">
-            <span>Path</span>
+            <span>{seasonView === "all" ? "Span" : "Path"}</span>
             <strong>
               {readyState.firstPoint
-                ? `${readyState.firstPoint.rankLabel} to ${readyState.currentPoint.rankLabel}`
+                ? `${readyState.firstPoint.rankLabel} to ${readyState.latestPoint.rankLabel}`
                 : currentRank}
             </strong>
           </div>
           {currentRecord ? (
             <div className="rank-chip">
-              <span>Season Record</span>
+              <span>{seasonView === "all" ? "Latest Season Record" : "Season Record"}</span>
               <strong>{currentRecord}</strong>
             </div>
           ) : null}
@@ -316,16 +397,20 @@ export function RankProgressPanel() {
       <div
         className="rank-chart-frame"
         id={panelId}
-        role="tabpanel"
-        aria-labelledby={`${tabBaseId}-${ladder}`}
+        role="region"
+        aria-labelledby={headingId}
       >
         {isLoading ? <p className="state">Loading ladder data…</p> : null}
         {error ? <p className="state error">{(error as Error).message}</p> : null}
         {!isLoading && !error && !readyState ? (
-          <p className="state">No rank snapshots available for this ladder yet.</p>
+          <p className="state">{emptyStateMessage(seasonView)}</p>
         ) : null}
         {readyState ? (
-          <ReactECharts key={`${ladder}-${theme}`} option={readyState.chartOption} style={{ height: 320 }} />
+          <ReactECharts
+            key={`${ladder}-${seasonView}-${theme}`}
+            option={readyState.chartOption}
+            style={{ height: 320 }}
+          />
         ) : null}
       </div>
     </section>

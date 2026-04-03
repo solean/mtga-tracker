@@ -1,6 +1,7 @@
 import type { RankHistoryPoint, RankState } from "./types";
 
 export type Ladder = "constructed" | "limited";
+export type SeasonView = "current" | "previous" | "all";
 
 type LadderConfig = {
   label: string;
@@ -10,12 +11,21 @@ type LadderConfig = {
 export type GraphPoint = {
   matchNumber: number;
   score: number;
+  seasonOrdinal: number;
   rankLabel: string;
   result: RankHistoryPoint["result"];
   eventName: string;
   opponent: string;
   observedAt: string;
   endedAt: string;
+};
+
+export type RankProgressSeries = {
+  seasonView: SeasonView;
+  seasonOrdinal: number | null;
+  seasonOrdinals: number[];
+  latestState: RankState;
+  points: GraphPoint[];
 };
 
 export const LADDER_CONFIG: Record<Ladder, LadderConfig> = {
@@ -100,27 +110,61 @@ function ladderStateChanged(
   return !sameRankState(rankStateFor(previousPoint, ladder), current);
 }
 
-export function buildGraphPoints(history: RankHistoryPoint[], ladder: Ladder): {
-  seasonOrdinal: number;
-  points: GraphPoint[];
-} | null {
-  const changedPoints = history.filter((point, index) =>
+function changedPointsFor(history: RankHistoryPoint[], ladder: Ladder): RankHistoryPoint[] {
+  return history.filter((point, index) =>
     ladderStateChanged(index > 0 ? history[index - 1] : null, point, ladder),
   );
+}
+
+export function seasonOrdinalsFor(history: RankHistoryPoint[], ladder: Ladder): number[] {
+  const ordinals: number[] = [];
+
+  for (const point of changedPointsFor(history, ladder)) {
+    const seasonOrdinal = rankStateFor(point, ladder).seasonOrdinal;
+    if (seasonOrdinal == null) continue;
+    if (ordinals[ordinals.length - 1] !== seasonOrdinal) {
+      ordinals.push(seasonOrdinal);
+    }
+  }
+
+  return ordinals;
+}
+
+export function buildGraphPoints(
+  history: RankHistoryPoint[],
+  ladder: Ladder,
+  seasonView: SeasonView = "current",
+): RankProgressSeries | null {
+  const changedPoints = changedPointsFor(history, ladder);
   if (changedPoints.length === 0) return null;
 
-  const seasonOrdinal = rankStateFor(changedPoints[changedPoints.length - 1], ladder).seasonOrdinal;
-  if (seasonOrdinal == null) return null;
+  const seasonOrdinals = seasonOrdinalsFor(history, ladder);
+  if (seasonOrdinals.length === 0) return null;
 
-  const points = changedPoints
-    .filter((point) => rankStateFor(point, ladder).seasonOrdinal === seasonOrdinal)
+  const seasonOrdinal =
+    seasonView === "all"
+      ? null
+      : seasonView === "previous"
+        ? seasonOrdinals[seasonOrdinals.length - 2] ?? null
+        : seasonOrdinals[seasonOrdinals.length - 1] ?? null;
+  if (seasonView !== "all" && seasonOrdinal == null) return null;
+
+  const filteredPoints = changedPoints.filter((point) =>
+    seasonOrdinal == null ? true : rankStateFor(point, ladder).seasonOrdinal === seasonOrdinal,
+  );
+  if (filteredPoints.length === 0) return null;
+
+  const points = filteredPoints
     .map((point, index) => {
       const rank = rankStateFor(point, ladder);
       const score = rankScore(rank, ladder);
+      const pointSeasonOrdinal = rank.seasonOrdinal;
+      if (pointSeasonOrdinal == null) return null;
       if (score == null) return null;
       return {
         matchNumber: index + 1,
         score,
+        seasonOrdinal: pointSeasonOrdinal,
         rankLabel: formatRankLabel(rank),
         result: point.result,
         eventName: point.eventName,
@@ -132,7 +176,13 @@ export function buildGraphPoints(history: RankHistoryPoint[], ladder: Ladder): {
     .filter((point): point is GraphPoint => point !== null);
 
   if (points.length === 0) return null;
-  return { seasonOrdinal, points };
+  return {
+    seasonView,
+    seasonOrdinal,
+    seasonOrdinals,
+    latestState: rankStateFor(filteredPoints[filteredPoints.length - 1], ladder),
+    points,
+  };
 }
 
 export function tierLabelAt(value: number, ladder: Ladder): string {

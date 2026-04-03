@@ -104,10 +104,13 @@ type MatchReplayFrameRow struct {
 	GameStateID       *int64                      `json:"gameStateId,omitempty"`
 	PrevGameStateID   *int64                      `json:"prevGameStateId,omitempty"`
 	GameStateType     string                      `json:"gameStateType,omitempty"`
+	GameStage         string                      `json:"gameStage,omitempty"`
 	TurnNumber        *int64                      `json:"turnNumber,omitempty"`
 	Phase             string                      `json:"phase,omitempty"`
 	SelfLifeTotal     *int64                      `json:"selfLifeTotal,omitempty"`
 	OpponentLifeTotal *int64                      `json:"opponentLifeTotal,omitempty"`
+	WinningPlayerSide string                      `json:"winningPlayerSide,omitempty"`
+	WinReason         string                      `json:"winReason,omitempty"`
 	RecordedAt        string                      `json:"recordedAt,omitempty"`
 	ActionsJSON       string                      `json:"actionsJson,omitempty"`
 	AnnotationsJSON   string                      `json:"annotationsJson,omitempty"`
