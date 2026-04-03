@@ -13,6 +13,23 @@ import (
 	"github.com/cschnabel/mtgdata/internal/model"
 )
 
+func TestChooseGameResultUsesLastMatchingScope(t *testing.T) {
+	results := []roomResultEntry{
+		{Scope: "MatchScope_Game", WinningTeamID: 1, Reason: "ResultReason_Concede"},
+		{Scope: "MatchScope_Game", WinningTeamID: 2, Reason: "ResultReason_Game"},
+		{Scope: "MatchScope_Game", WinningTeamID: 2, Reason: "ResultReason_Concede"},
+		{Scope: "MatchScope_Match", WinningTeamID: 2, Reason: "ResultReason_Concede"},
+	}
+
+	winningTeamID, reason := chooseGameResult(results)
+	if winningTeamID != 2 {
+		t.Fatalf("winningTeamID = %d, want 2", winningTeamID)
+	}
+	if reason != "Concede" {
+		t.Fatalf("reason = %q, want Concede", reason)
+	}
+}
+
 func TestTailParsePersistsStateAcrossResumeCalls(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()

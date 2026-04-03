@@ -1089,6 +1089,8 @@ func chooseGameResult(results []roomResultEntry) (int64, string) {
 }
 
 func chooseResultForScope(results []roomResultEntry, preferredScope string) (int64, string) {
+	var preferredTeamID int64
+	var preferredReason string
 	var fallbackTeamID int64
 	var fallbackReason string
 	preferredScope = strings.TrimSpace(preferredScope)
@@ -1098,12 +1100,14 @@ func chooseResultForScope(results []roomResultEntry, preferredScope string) (int
 		}
 		reason := normalizeWinningReason(r.Reason)
 		if preferredScope != "" && strings.EqualFold(strings.TrimSpace(r.Scope), preferredScope) {
-			return r.WinningTeamID, reason
+			preferredTeamID = r.WinningTeamID
+			preferredReason = reason
 		}
-		if fallbackTeamID == 0 {
-			fallbackTeamID = r.WinningTeamID
-			fallbackReason = reason
-		}
+		fallbackTeamID = r.WinningTeamID
+		fallbackReason = reason
+	}
+	if preferredTeamID > 0 {
+		return preferredTeamID, preferredReason
 	}
 	return fallbackTeamID, fallbackReason
 }

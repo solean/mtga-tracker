@@ -91,6 +91,10 @@ type ReplayGameSummary = {
   result: "win" | "loss" | "unknown";
   detail: string;
 };
+type ReplayGameSummaryOptions = {
+  isFinalGame?: boolean;
+  matchResult?: "win" | "loss" | "unknown";
+};
 type ReplayGameGroup = {
   gameNumber: number;
   frames: MatchReplayFrame[];
@@ -1100,42 +1104,79 @@ function formatReplayWinReason(reason: string): string {
     .toLowerCase();
 }
 
-function summarizeReplayGame(frames: MatchReplayFrame[]): ReplayGameSummary | null {
+function replayFrameLifeTotalWinner(
+  frame: MatchReplayFrame,
+): "self" | "opponent" | "unknown" {
+  const selfLifeTotal = frame.selfLifeTotal;
+  const opponentLifeTotal = frame.opponentLifeTotal;
+  const selfIsDead =
+    typeof selfLifeTotal === "number" && Number.isFinite(selfLifeTotal) && selfLifeTotal <= 0;
+  const opponentIsDead =
+    typeof opponentLifeTotal === "number" &&
+    Number.isFinite(opponentLifeTotal) &&
+    opponentLifeTotal <= 0;
+
+  if (selfIsDead === opponentIsDead) {
+    return "unknown";
+  }
+  return selfIsDead ? "opponent" : "self";
+}
+
+function terminalReplayFrameConfidence(frame: MatchReplayFrame): number {
+  const explicitWinner = replayFrameWinningPlayerSide(frame);
+  if (explicitWinner !== "unknown") {
+    return 4;
+  }
+  if (replayFrameLifeTotalWinner(frame) !== "unknown") {
+    return 3;
+  }
+  if (normalizeReplayWinReason(frame.winReason) !== "") {
+    return 2;
+  }
+  if ((frame.gameStage ?? "").trim().toLowerCase() === "gameover") {
+    return 1;
+  }
+  return 0;
+}
+
+function summarizeReplayGame(
+  frames: MatchReplayFrame[],
+  options: ReplayGameSummaryOptions = {},
+): ReplayGameSummary | null {
   if (frames.length === 0) {
     return null;
   }
 
-  const terminalFrame =
-    [...frames]
-      .reverse()
-      .find((frame) => {
-        const gameStage = (frame.gameStage ?? "").trim().toLowerCase();
-        return (
-          gameStage === "gameover" ||
-          replayFrameWinningPlayerSide(frame) !== "unknown" ||
-          normalizeReplayWinReason(frame.winReason) !== ""
-        );
-      }) ?? frames[frames.length - 1] ?? null;
+  let terminalFrame: MatchReplayFrame | null = null;
+  let bestConfidence = 0;
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index];
+    const confidence = terminalReplayFrameConfidence(frame);
+    if (confidence === 0) {
+      continue;
+    }
+    if (!terminalFrame || confidence > bestConfidence) {
+      terminalFrame = frame;
+      bestConfidence = confidence;
+      if (confidence >= 4) {
+        break;
+      }
+    }
+  }
+  terminalFrame ??= frames[frames.length - 1] ?? null;
   if (!terminalFrame) {
     return null;
   }
 
-  let winningPlayerSide = replayFrameWinningPlayerSide(terminalFrame);
-  if (
-    winningPlayerSide === "unknown" &&
-    typeof terminalFrame.selfLifeTotal === "number" &&
-    terminalFrame.selfLifeTotal <= 0
-  ) {
-    winningPlayerSide = "opponent";
-  } else if (
-    winningPlayerSide === "unknown" &&
-    typeof terminalFrame.opponentLifeTotal === "number" &&
-    terminalFrame.opponentLifeTotal <= 0
-  ) {
-    winningPlayerSide = "self";
-  }
+  const lifeTotalWinner = replayFrameLifeTotalWinner(terminalFrame);
+  // Prefer terminal life totals when they clearly identify a winner. Arena can
+  // occasionally report a concede reason on the final frame after lethal damage.
+  const winningPlayerSide =
+    lifeTotalWinner !== "unknown"
+      ? lifeTotalWinner
+      : replayFrameWinningPlayerSide(terminalFrame);
 
-  const result =
+  let result: "win" | "loss" | "unknown" =
     winningPlayerSide === "self"
       ? "win"
       : winningPlayerSide === "opponent"
@@ -1144,7 +1185,11 @@ function summarizeReplayGame(frames: MatchReplayFrame[]): ReplayGameSummary | nu
   const normalizedReason = normalizeReplayWinReason(terminalFrame.winReason);
 
   let detail = "";
-  if (normalizedReason === "Concede") {
+  if (lifeTotalWinner === "opponent") {
+    detail = "You went to 0 life.";
+  } else if (lifeTotalWinner === "self") {
+    detail = "Opponent went to 0 life.";
+  } else if (normalizedReason === "Concede") {
     const concedingPlayerSide =
       winningPlayerSide === "self"
         ? "opponent"
@@ -1155,16 +1200,6 @@ function summarizeReplayGame(frames: MatchReplayFrame[]): ReplayGameSummary | nu
       concedingPlayerSide === "unknown"
         ? "A player conceded."
         : `${timelinePlayerLabel(concedingPlayerSide)} conceded.`;
-  } else if (
-    typeof terminalFrame.selfLifeTotal === "number" &&
-    terminalFrame.selfLifeTotal <= 0
-  ) {
-    detail = "You went to 0 life.";
-  } else if (
-    typeof terminalFrame.opponentLifeTotal === "number" &&
-    terminalFrame.opponentLifeTotal <= 0
-  ) {
-    detail = "Opponent went to 0 life.";
   } else if (normalizedReason) {
     detail = `Ended by ${formatReplayWinReason(normalizedReason)}.`;
   } else if (result === "win") {
@@ -1173,6 +1208,29 @@ function summarizeReplayGame(frames: MatchReplayFrame[]): ReplayGameSummary | nu
     detail = "You lost this game.";
   } else {
     detail = "Game result recorded.";
+  }
+
+  if (
+    options.isFinalGame &&
+    (options.matchResult === "win" || options.matchResult === "loss") &&
+    options.matchResult !== result
+  ) {
+    result = options.matchResult;
+    if (normalizedReason === "Concede") {
+      detail = result === "win" ? "Opponent conceded." : "You conceded.";
+    } else if (result === "win") {
+      detail =
+        typeof terminalFrame.opponentLifeTotal === "number" &&
+        terminalFrame.opponentLifeTotal <= 0
+          ? "Opponent went to 0 life."
+          : "You won this game.";
+    } else {
+      detail =
+        typeof terminalFrame.selfLifeTotal === "number" &&
+        terminalFrame.selfLifeTotal <= 0
+          ? "You went to 0 life."
+          : "You lost this game.";
+    }
   }
 
   return { result, detail };
@@ -3522,15 +3580,23 @@ export function MatchDetailPage() {
       }
     }
 
-    return Array.from(byGame.entries())
+    const groups = Array.from(byGame.entries())
       .map(([gameNumber, frames]) => ({
         gameNumber,
         frames: filterMeaningfulReplayFrames(frames),
-        summary: summarizeReplayGame(frames),
       }))
       .filter((group) => group.frames.length > 0)
       .sort((a, b) => a.gameNumber - b.gameNumber);
-  }, [replayFrames]);
+    const finalGameNumber = groups[groups.length - 1]?.gameNumber ?? null;
+
+    return groups.map((group) => ({
+      ...group,
+      summary: summarizeReplayGame(group.frames, {
+        isFinalGame: group.gameNumber === finalGameNumber,
+        matchResult: query.data?.match.result ?? "unknown",
+      }),
+    }));
+  }, [query.data?.match.result, replayFrames]);
   const visibleReplayFrames = useMemo(
     () => replayGroups.flatMap((group) => group.frames),
     [replayGroups],
