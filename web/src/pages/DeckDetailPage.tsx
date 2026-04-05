@@ -64,6 +64,11 @@ type DeckCurveCardEntry = {
 
 const MAINBOARD_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "artifacts", "enchantments", "lands"];
 const MAINBOARD_SKELETON_CATEGORY_ORDER: MainboardCategory[] = ["creatures", "spells", "lands"];
+const DEFAULT_APP_SHELL_WIDTH = 1280;
+const MAX_CURVE_APP_SHELL_WIDTH = 1520;
+const CURVE_COLUMN_TARGET_WIDTH = 176;
+const CURVE_COLUMN_TARGET_GAP = 14;
+const CURVE_PANEL_CHROME_WIDTH = 120;
 const BASIC_LAND_ORDER: Record<string, number> = {
   island: 0,
   swamp: 1,
@@ -264,6 +269,19 @@ function buildCurveColumns(cards: MainboardDeckListCard[]): DeckCurveColumn[] {
         cards: sortedCards,
       };
     });
+}
+
+function estimateCurveShellWidth(columnCount: number): number {
+  if (!Number.isFinite(columnCount) || columnCount <= 0) {
+    return DEFAULT_APP_SHELL_WIDTH;
+  }
+
+  const desiredWidth =
+    columnCount * CURVE_COLUMN_TARGET_WIDTH +
+    Math.max(0, columnCount - 1) * CURVE_COLUMN_TARGET_GAP +
+    CURVE_PANEL_CHROME_WIDTH;
+
+  return Math.min(MAX_CURVE_APP_SHELL_WIDTH, Math.max(DEFAULT_APP_SHELL_WIDTH, Math.ceil(desiredWidth)));
 }
 
 function buildCurveCardEntries(columnKey: string, cards: MainboardDeckListCard[]): DeckCurveCardEntry[] {
@@ -930,6 +948,34 @@ export function DeckDetailPage() {
     });
   }, [sideboardCards, sideboardMetadataByCardID]);
 
+  const curveShellWidth = useMemo(() => {
+    const maxColumnCount = Math.max(
+      buildCurveColumns(enrichedMainboardCards).length,
+      buildCurveColumns(enrichedSideboardCards).length,
+    );
+    return estimateCurveShellWidth(maxColumnCount);
+  }, [enrichedMainboardCards, enrichedSideboardCards]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const shouldUseWideCurveShell = deckDisplayMode === "curve" && curveShellWidth > DEFAULT_APP_SHELL_WIDTH;
+    document.body.classList.toggle("has-wide-deck-curve", shouldUseWideCurveShell);
+
+    if (shouldUseWideCurveShell) {
+      document.body.style.setProperty("--deck-curve-shell-width", `${curveShellWidth}px`);
+    } else {
+      document.body.style.removeProperty("--deck-curve-shell-width");
+    }
+
+    return () => {
+      document.body.classList.remove("has-wide-deck-curve");
+      document.body.style.removeProperty("--deck-curve-shell-width");
+    };
+  }, [curveShellWidth, deckDisplayMode]);
+
   const isMainboardMetadataLoading = mainCardPreviewQueries.some((query) => query.isPending);
   const isSideboardMetadataLoading = sideboardPreviewQueries.some((query) => query.isPending);
   const isCardMetadataLoading = isMainboardMetadataLoading || isSideboardMetadataLoading;
@@ -958,7 +1004,7 @@ export function DeckDetailPage() {
   };
 
   return (
-    <div className="stack-lg deck-detail-stack">
+    <div className={`stack-lg deck-detail-stack ${deckDisplayMode === "curve" ? "is-curve-layout" : ""}`}>
       <section className="panel decklist-panel">
         <div className="panel-head">
           <div>

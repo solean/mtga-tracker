@@ -357,6 +357,10 @@ h1 {
   z-index: 1;
 }
 
+body.has-wide-deck-curve .app-shell {
+  width: min(var(--deck-curve-shell-width, 1520px), calc(100vw - 1rem));
+}
+
 .app-shell::before {
   content: "";
   position: absolute;
@@ -642,6 +646,10 @@ h1 {
 .deck-detail-stack {
   width: 100%;
   grid-template-columns: minmax(0, 1fr);
+}
+
+.deck-detail-stack.is-curve-layout {
+  gap: 1.14rem;
 }
 
 .stack-md {
@@ -2904,13 +2912,14 @@ h1 {
 }
 
 .deck-curve-grid {
-  --deck-curve-card-width: 200px;
+  --deck-curve-card-width: clamp(132px, 11vw, 176px);
   --deck-curve-card-height: calc(var(--deck-curve-card-width) * 88 / 63);
-  --deck-curve-card-peek: 1.9rem;
+  --deck-curve-card-peek: clamp(1.4rem, 1.55vw, 1.8rem);
   display: flex;
+  justify-content: flex-start;
   align-items: flex-start;
-  gap: 0.9rem;
-  min-width: max-content;
+  gap: clamp(0.62rem, 0.75vw, 0.88rem);
+  width: max(100%, max-content);
 }
 
 .deck-curve-column {
@@ -3465,6 +3474,10 @@ select {
    ══════════════════════════════════════════ */
 
 @media (max-width: 1120px) {
+  body.has-wide-deck-curve .app-shell {
+    width: min(1280px, 96vw);
+  }
+
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3518,6 +3531,10 @@ select {
 
 @media (max-width: 720px) {
   .app-shell {
+    width: min(1280px, 95.5vw);
+  }
+
+  body.has-wide-deck-curve .app-shell {
     width: min(1280px, 95.5vw);
   }
 
