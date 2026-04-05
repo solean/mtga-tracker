@@ -164,11 +164,7 @@ export function RankProgressPanel() {
   const latestPoint = series ? series.points[series.points.length - 1] : null;
   const firstPoint = series?.points[0];
   const currentRank = latestPoint ? latestPoint.rankLabel : "Unranked";
-  const currentState = series?.latestState ?? null;
-  const currentRecord =
-    currentState && currentState.matchesWon != null && currentState.matchesLost != null
-      ? `${currentState.matchesWon}W-${currentState.matchesLost}L`
-      : null;
+  const currentRecord = series?.record ? `${series.record.wins}W-${series.record.losses}L` : null;
   const chartTheme = CHART_THEME_TOKENS[theme];
 
   const chartOption = useMemo(
@@ -387,7 +383,7 @@ export function RankProgressPanel() {
           </div>
           {currentRecord ? (
             <div className="rank-chip">
-              <span>{seasonView === "all" ? "Latest Season Record" : "Season Record"}</span>
+              <span>{seasonView === "all" ? "Total Record" : "Season Record"}</span>
               <strong>{currentRecord}</strong>
             </div>
           ) : null}

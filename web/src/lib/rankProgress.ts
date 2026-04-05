@@ -25,6 +25,10 @@ export type RankProgressSeries = {
   seasonOrdinal: number | null;
   seasonOrdinals: number[];
   latestState: RankState;
+  record: {
+    wins: number;
+    losses: number;
+  } | null;
   points: GraphPoint[];
 };
 
@@ -130,6 +134,41 @@ export function seasonOrdinalsFor(history: RankHistoryPoint[], ladder: Ladder): 
   return ordinals;
 }
 
+function recordForSeries(
+  history: RankHistoryPoint[],
+  ladder: Ladder,
+  seasonView: SeasonView,
+): RankProgressSeries["record"] {
+  if (history.length === 0) return null;
+
+  if (seasonView !== "all") {
+    const latestState = rankStateFor(history[history.length - 1], ladder);
+    if (latestState.matchesWon == null || latestState.matchesLost == null) return null;
+    return {
+      wins: latestState.matchesWon,
+      losses: latestState.matchesLost,
+    };
+  }
+
+  const finalSeasonStates = new Map<number, RankState>();
+  for (const point of history) {
+    const rank = rankStateFor(point, ladder);
+    if (rank.seasonOrdinal == null) continue;
+    finalSeasonStates.set(rank.seasonOrdinal, rank);
+  }
+  if (finalSeasonStates.size === 0) return null;
+
+  let wins = 0;
+  let losses = 0;
+  for (const rank of finalSeasonStates.values()) {
+    if (rank.matchesWon == null || rank.matchesLost == null) return null;
+    wins += rank.matchesWon;
+    losses += rank.matchesLost;
+  }
+
+  return { wins, losses };
+}
+
 export function buildGraphPoints(
   history: RankHistoryPoint[],
   ladder: Ladder,
@@ -181,6 +220,7 @@ export function buildGraphPoints(
     seasonOrdinal,
     seasonOrdinals,
     latestState: rankStateFor(filteredPoints[filteredPoints.length - 1], ladder),
+    record: recordForSeries(filteredPoints, ladder, seasonView),
     points,
   };
 }

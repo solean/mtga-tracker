@@ -183,6 +183,7 @@ describe("buildGraphPoints", () => {
 
     expect(series?.seasonOrdinal).toBe(11);
     expect(series?.latestState.matchesWon).toBe(2);
+    expect(series?.record).toEqual({ wins: 2, losses: 0 });
     expect(resultsFor(history, "constructed", "previous")).toEqual([
       "Traditional_Ladder:win",
       "Traditional_Ladder:win",
@@ -225,6 +226,7 @@ describe("buildGraphPoints", () => {
 
     expect(series?.seasonOrdinal).toBeNull();
     expect(series?.seasonOrdinals).toEqual([11, 12]);
+    expect(series?.record).toEqual({ wins: 3, losses: 1 });
     expect(series?.points.map((entry) => entry.seasonOrdinal)).toEqual([11, 11, 12, 12]);
     expect(resultsFor(history, "constructed", "all")).toEqual([
       "Traditional_Ladder:win",
