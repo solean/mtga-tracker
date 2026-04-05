@@ -41,10 +41,18 @@ type Parser struct {
 }
 
 func NewParser(store *db.Store) *Parser {
-	return &Parser{
+	parser := &Parser{
 		store:      store,
 		stateByLog: make(map[string]*parseState),
 	}
+
+	if store != nil {
+		if playerName, err := store.PlayerName(context.Background()); err == nil {
+			parser.playerName = playerName
+		}
+	}
+
+	return parser
 }
 
 func (p *Parser) stateForLog(logPath string, reset bool) *parseState {
@@ -392,14 +400,18 @@ func (p *Parser) rememberPersonaID(personaID string) {
 	p.personaID = personaID
 }
 
-func (p *Parser) rememberPlayerName(playerName string) {
+func (p *Parser) rememberPlayerName(playerName string) bool {
 	playerName = strings.TrimSpace(playerName)
 	if playerName == "" {
-		return
+		return false
 	}
 	p.stateMu.Lock()
 	defer p.stateMu.Unlock()
+	if p.playerName == playerName {
+		return false
+	}
 	p.playerName = playerName
+	return true
 }
 
 func (p *Parser) enqueueCompletedMatch(arenaMatchID string) {
@@ -841,13 +853,18 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 	if state.personaID != "" {
 		p.rememberPersonaID(state.personaID)
 	}
-	if state.playerName == "" {
-		if m := reScreenName.FindStringSubmatch(line); len(m) == 2 {
-			state.playerName = strings.TrimSpace(m[1])
+	if m := reScreenName.FindStringSubmatch(line); len(m) == 2 {
+		playerName := strings.TrimSpace(m[1])
+		if playerName != "" && playerName != state.playerName {
+			state.playerName = playerName
 		}
 	}
 	if state.playerName != "" {
-		p.rememberPlayerName(state.playerName)
+		if p.rememberPlayerName(state.playerName) {
+			if err := p.store.SavePlayerName(ctx, tx, state.playerName); err != nil {
+				return err
+			}
+		}
 	}
 
 	if state.pendingResponseMethod != "" && strings.HasPrefix(line, "{") {
@@ -2356,9 +2373,13 @@ func (p *Parser) handleRoomStateJSON(ctx context.Context, tx *sql.Tx, stats *mod
 			if pl.TeamID > 0 {
 				selfTeamID = pl.TeamID
 			}
-			if state.playerName == "" && playerName != "" {
+			if playerName != "" && playerName != state.playerName {
 				state.playerName = playerName
-				p.rememberPlayerName(playerName)
+				if p.rememberPlayerName(playerName) {
+					if err := p.store.SavePlayerName(ctx, tx, playerName); err != nil {
+						return err
+					}
+				}
 			}
 			continue
 		}

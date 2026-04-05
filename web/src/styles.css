@@ -657,6 +657,32 @@ body.has-wide-deck-curve .app-shell {
   gap: 0.8rem;
 }
 
+.overview-identity {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.overview-identity p {
+  margin: 0;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.overview-identity h2 {
+  margin: 0;
+  color: var(--text-soft);
+  font-family: "Rajdhani", "Arial", sans-serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

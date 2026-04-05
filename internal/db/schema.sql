@@ -8,6 +8,12 @@ CREATE TABLE IF NOT EXISTS ingest_state (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events_raw (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   log_path TEXT NOT NULL,

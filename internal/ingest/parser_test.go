@@ -30,6 +30,48 @@ func TestChooseGameResultUsesLastMatchingScope(t *testing.T) {
 	}
 }
 
+func TestParserPersistsLatestPlayerName(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	logPath := filepath.Join(tmpDir, "Player.log")
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+
+	store := db.NewStore(database)
+	parser := NewParser(store)
+
+	lines := []string{
+		`{"clientId":"self-user","screenName":"Self"}`,
+		`{"clientId":"self-user","screenName":"SelfRenamed"}`,
+	}
+	if err := writeLogLines(logPath, lines, false); err != nil {
+		t.Fatalf("write log lines: %v", err)
+	}
+
+	if _, err := parser.ParseFile(ctx, logPath, true); err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+
+	playerName, err := store.PlayerName(ctx)
+	if err != nil {
+		t.Fatalf("PlayerName: %v", err)
+	}
+	if playerName != "SelfRenamed" {
+		t.Fatalf("PlayerName = %q, want SelfRenamed", playerName)
+	}
+}
+
 func TestTailParsePersistsStateAcrossResumeCalls(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()

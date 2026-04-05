@@ -108,6 +108,7 @@ export type MatchDetail = {
 };
 
 export type Overview = {
+  playerName?: string;
   totalMatches: number;
   wins: number;
   losses: number;

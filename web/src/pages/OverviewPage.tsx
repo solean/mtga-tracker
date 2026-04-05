@@ -24,6 +24,13 @@ export function OverviewPage() {
 
   return (
     <div className="stack-lg">
+      {data.playerName ? (
+        <section className="overview-identity" aria-label="Tracked username">
+          <p>Username</p>
+          <h2>{data.playerName}</h2>
+        </section>
+      ) : null}
+
       <section className="metrics-grid">
         <article className="metric-card">
           <p>Total Matches</p>

@@ -49,6 +49,7 @@ type MatchRankSnapshot struct {
 }
 
 const sqliteInClauseBatchSize = 900
+const appMetadataPlayerNameKey = "player_name"
 
 const matchBestOfSQL = `
 	CASE
@@ -188,6 +189,41 @@ func (s *Store) SaveIngestState(ctx context.Context, tx *sql.Tx, logPath string,
 		return fmt.Errorf("save ingest_state: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) SavePlayerName(ctx context.Context, tx *sql.Tx, playerName string) error {
+	playerName = strings.TrimSpace(playerName)
+	if playerName == "" {
+		return nil
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO app_metadata (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value,
+			updated_at = excluded.updated_at
+	`, appMetadataPlayerNameKey, playerName, nowUTC())
+	if err != nil {
+		return fmt.Errorf("save player name: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) PlayerName(ctx context.Context) (string, error) {
+	var playerName string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT value
+		FROM app_metadata
+		WHERE key = ?
+	`, appMetadataPlayerNameKey).Scan(&playerName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get player name: %w", err)
+	}
+	return strings.TrimSpace(playerName), nil
 }
 
 func (s *Store) InsertRawEvent(ctx context.Context, tx *sql.Tx, logPath string, lineNo, byteOffset int64, kind, method, requestID string, payload []byte, rawText string) error {
@@ -1220,7 +1256,13 @@ func (s *Store) Overview(ctx context.Context, recentLimit int64) (model.Overview
 		recentLimit = 20
 	}
 
-	err := s.db.QueryRowContext(ctx, `
+	playerName, err := s.PlayerName(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.PlayerName = playerName
+
+	err = s.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(*) AS total,
 			COALESCE(SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END), 0) AS wins,

@@ -183,6 +183,7 @@ type DraftPickCard struct {
 }
 
 type Overview struct {
+	PlayerName   string     `json:"playerName,omitempty"`
 	TotalMatches int64      `json:"totalMatches"`
 	Wins         int64      `json:"wins"`
 	Losses       int64      `json:"losses"`
