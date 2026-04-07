@@ -3165,6 +3165,47 @@ body.has-wide-deck-curve .app-shell {
   min-width: 0;
 }
 
+.draft-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.draft-pack-panel {
+  min-width: 0;
+}
+
+.draft-pack-panel h4 {
+  margin-bottom: 0.72rem;
+}
+
+.draft-pack-table-wrap {
+  overflow: visible;
+}
+
+.draft-pack-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.draft-pack-table th,
+.draft-pack-table td {
+  vertical-align: top;
+}
+
+.draft-pack-table th:first-child,
+.draft-pack-table td:first-child {
+  width: 3.8rem;
+  white-space: nowrap;
+}
+
+.draft-pack-table .card-preview-trigger {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .draft-card-list .card-preview-anchor {
   max-width: 100%;
 }
@@ -3504,6 +3545,10 @@ select {
     width: min(1280px, 96vw);
   }
 
+  .draft-pack-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3562,6 +3607,10 @@ select {
 
   body.has-wide-deck-curve .app-shell {
     width: min(1280px, 95.5vw);
+  }
+
+  .draft-pack-grid {
+    grid-template-columns: 1fr;
   }
 
   .topbar {

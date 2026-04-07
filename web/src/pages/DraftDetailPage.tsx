@@ -11,7 +11,6 @@ import type { DraftPickCard } from "../lib/types";
 type DraftPickDisplay = {
   pickNumber: number;
   pickedCards: DraftPickCard[];
-  packCards: DraftPickCard[];
 };
 
 type PopoverPlacement = "left" | "right";
@@ -237,7 +236,6 @@ export function DraftDetailPage() {
       existing.push({
         pickNumber: pick.pickNumber,
         pickedCards: normalizedDraftCards(pick.pickedCardIds, pick.pickedCards),
-        packCards: normalizedDraftCards(pick.packCardIds, pick.packCards),
       });
       map.set(pick.packNumber, existing);
     }
@@ -258,38 +256,36 @@ export function DraftDetailPage() {
           </Link>
         </div>
 
-        <div className="stack-md">
-          {[...picksByPack.entries()].map(([pack, picks]) => (
-            <article className="panel inner decklist-panel" key={pack}>
-              <h4>Pack {pack}</h4>
-              <div className="table-wrap">
-                <table className="data-table compact">
-                  <thead>
-                    <tr>
-                      <th>Pick</th>
-                      <th>Selected Cards</th>
-                      <th>Pack Cards (when available)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {picks
-                      .sort((a, b) => a.pickNumber - b.pickNumber)
-                      .map((pick) => (
-                        <tr key={`${pack}-${pick.pickNumber}`}>
-                          <td>{pick.pickNumber}</td>
-                          <td>
-                            <DraftCardList cards={pick.pickedCards} />
-                          </td>
-                          <td>
-                            <DraftCardList cards={pick.packCards} />
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-          ))}
+        <div className="draft-pack-grid">
+          {[...picksByPack.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([pack, picks]) => (
+              <article className="panel inner decklist-panel draft-pack-panel" key={pack}>
+                <h4>Pack {pack}</h4>
+                <div className="table-wrap draft-pack-table-wrap">
+                  <table className="data-table compact draft-pack-table">
+                    <thead>
+                      <tr>
+                        <th>Pick</th>
+                        <th>Selected Cards</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {picks
+                        .sort((a, b) => a.pickNumber - b.pickNumber)
+                        .map((pick) => (
+                          <tr key={`${pack}-${pick.pickNumber}`}>
+                            <td>{pick.pickNumber}</td>
+                            <td>
+                              <DraftCardList cards={pick.pickedCards} />
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            ))}
         </div>
       </section>
     </div>
