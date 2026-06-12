@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/appstate"
 	"github.com/cschnabel/mtgdata/internal/api"
+	"github.com/cschnabel/mtgdata/internal/appstate"
 	"github.com/cschnabel/mtgdata/internal/db"
 	"github.com/cschnabel/mtgdata/internal/ingest"
 )

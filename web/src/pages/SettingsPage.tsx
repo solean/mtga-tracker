@@ -4,9 +4,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime } from "../lib/format";
-import type { RuntimeConfig, RuntimeOperation, RuntimeStatus } from "../lib/types";
+import type { RuntimeConfig, RuntimeOperation, RuntimeStatus, UpdateCheck } from "../lib/types";
 
 const runtimeStatusKey = ["runtime-status"] as const;
+const autostartKey = ["autostart-status"] as const;
+
+function summarizeUpdateCheck(result: UpdateCheck): string {
+  if (result.note) {
+    return result.note;
+  }
+  if (result.updateAvailable && result.latestVersion) {
+    return `Update available: ${result.latestVersion} (current ${result.currentVersion})`;
+  }
+  return `Up to date (${result.currentVersion})`;
+}
 
 function formatRuntimeDuration(durationMs: number): string {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
@@ -107,6 +118,23 @@ export function SettingsPage() {
     onSuccess: (status) => {
       queryClient.setQueryData(runtimeStatusKey, status);
     },
+  });
+
+  const autostartQuery = useQuery({
+    queryKey: autostartKey,
+    queryFn: api.autostartStatus,
+    staleTime: 60_000,
+  });
+
+  const autostartMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.setAutostart(enabled),
+    onSuccess: (status) => {
+      queryClient.setQueryData(autostartKey, status);
+    },
+  });
+
+  const updateCheckMutation = useMutation({
+    mutationFn: api.checkForUpdate,
   });
 
   const currentError = useMemo(() => {
@@ -291,6 +319,65 @@ export function SettingsPage() {
             <small>{data.previousLogPathExists ? "Found" : "Missing"}</small>
           </article>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Desktop</h3>
+          <p>App version {data.version || "unknown"}</p>
+        </div>
+
+        {autostartMutation.error ? (
+          <StatusMessage tone="error">{(autostartMutation.error as Error).message}</StatusMessage>
+        ) : null}
+
+        {autostartQuery.data?.supported ? (
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={autostartQuery.data.enabled}
+              onChange={(event) => autostartMutation.mutate(event.target.checked)}
+              disabled={autostartMutation.isPending}
+            />
+            <span>Launch MTGData at login.</span>
+          </label>
+        ) : (
+          <p className="settings-note">{autostartQuery.data?.note || "Launch at login is unavailable."}</p>
+        )}
+        {autostartQuery.data?.supported && autostartQuery.data.note ? (
+          <p className="settings-note">{autostartQuery.data.note}</p>
+        ) : null}
+
+        <div className="settings-action-row">
+          <button
+            type="button"
+            className="control-button"
+            onClick={() => updateCheckMutation.mutate()}
+            disabled={updateCheckMutation.isPending}
+          >
+            {updateCheckMutation.isPending ? "Checking…" : "Check for Updates"}
+          </button>
+        </div>
+        {updateCheckMutation.error ? (
+          <StatusMessage tone="error">{(updateCheckMutation.error as Error).message}</StatusMessage>
+        ) : null}
+        {updateCheckMutation.data ? (
+          <p className="settings-note">
+            {summarizeUpdateCheck(updateCheckMutation.data)}
+            {updateCheckMutation.data.updateAvailable && updateCheckMutation.data.releaseUrl ? (
+              <>
+                {" "}
+                <a href={updateCheckMutation.data.releaseUrl} target="_blank" rel="noreferrer">
+                  View release
+                </a>
+              </>
+            ) : null}
+          </p>
+        ) : null}
+        <p className="settings-note">
+          Closing the window keeps MTGData running in the background so live tracking continues; quit fully with
+          Cmd+Q.
+        </p>
       </section>
     </div>
   );

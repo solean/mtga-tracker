@@ -3,25 +3,98 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
-	"github.com/cschnabel/mtgdata/internal/appstate"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"github.com/cschnabel/mtgdata/internal/api"
+	"github.com/cschnabel/mtgdata/internal/appstate"
 	"github.com/cschnabel/mtgdata/internal/db"
 )
 
-const desktopAPIAddress = "127.0.0.1:39123"
+// devAPIEnvVar optionally exposes the API on a localhost port for browser
+// development (`bun run dev:desktop`). Set to an address ("127.0.0.1:39123")
+// or "1" for that default. The desktop webview itself never needs it: the API
+// is mounted on the Wails asset server, same-origin.
+const devAPIEnvVar = "MTGDATA_DEV_API"
 
 type App struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	database *sql.DB
+
+	mu         sync.RWMutex
+	apiHandler http.Handler
+	startupErr string
 }
 
 func NewApp() *App {
 	return &App{}
+}
+
+// APIMiddleware mounts the backend API on the Wails asset server so the
+// frontend reaches it same-origin: no listening port, no CORS exposure, no
+// port collisions. Until startup finishes (or if it failed), API calls get a
+// 503 carrying the startup error so the UI can render it.
+func (a *App) APIMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		a.mu.RLock()
+		handler := a.apiHandler
+		startupErr := a.startupErr
+		a.mu.RUnlock()
+
+		if handler == nil {
+			message := startupErr
+			if message == "" {
+				message = "backend is starting"
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) onSecondInstanceLaunch(_ options.SecondInstanceData) {
+	if a.ctx == nil {
+		return
+	}
+	wailsruntime.WindowUnminimise(a.ctx)
+	wailsruntime.WindowShow(a.ctx)
+}
+
+// failStartup records a startup error for the API middleware and surfaces it
+// in a native dialog instead of leaving the UI loading forever.
+func (a *App) failStartup(stage string, err error) {
+	message := fmt.Sprintf("%s: %v", stage, err)
+	log.Printf("desktop startup failed: %s", message)
+
+	a.mu.Lock()
+	a.startupErr = message
+	a.mu.Unlock()
+
+	if a.ctx != nil {
+		_, _ = wailsruntime.MessageDialog(a.ctx, wailsruntime.MessageDialogOptions{
+			Type:    wailsruntime.ErrorDialog,
+			Title:   "MTGData failed to start",
+			Message: message + "\n\nThe app will stay open but cannot load data. Fix the issue and restart.",
+		})
+	}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -29,25 +102,25 @@ func (a *App) startup(ctx context.Context) {
 
 	supportBase, err := os.UserConfigDir()
 	if err != nil {
-		log.Printf("resolve user config dir: %v", err)
+		a.failStartup("resolve user config dir", err)
 		return
 	}
 
 	supportDir := filepath.Join(supportBase, "mtgdata")
 	if err := os.MkdirAll(supportDir, 0o755); err != nil {
-		log.Printf("create support dir: %v", err)
+		a.failStartup("create support dir", err)
 		return
 	}
 
 	dbPath := filepath.Join(supportDir, "mtgdata.db")
 	database, err := db.Open(dbPath)
 	if err != nil {
-		log.Printf("open desktop sqlite db: %v", err)
+		a.failStartup("open database", err)
 		return
 	}
 	if err := db.Init(context.Background(), database); err != nil {
 		_ = database.Close()
-		log.Printf("init desktop sqlite db: %v", err)
+		a.failStartup("initialize database", err)
 		return
 	}
 
@@ -62,24 +135,39 @@ func (a *App) startup(ctx context.Context) {
 	})
 	if err != nil {
 		_ = database.Close()
-		log.Printf("init desktop runtime state: %v", err)
+		a.failStartup("initialize runtime state", err)
 		return
 	}
 
 	server := api.NewServer(store, "", runtimeService)
-	serverCtx, cancel := context.WithCancel(context.Background())
+	bgCtx, cancel := context.WithCancel(context.Background())
 
 	a.database = database
 	a.cancel = cancel
+	a.mu.Lock()
+	a.apiHandler = server.Handler()
+	a.mu.Unlock()
 
-	go func() {
-		if err := server.Run(serverCtx, desktopAPIAddress); err != nil {
-			log.Printf("desktop API server exited: %v", err)
+	devAddr := strings.TrimSpace(os.Getenv(devAPIEnvVar))
+	if devAddr == "" && wailsruntime.Environment(ctx).BuildType == "dev" {
+		// `wails dev` always exposes the API locally so a regular browser at
+		// the Vite dev server can reach it too. Production builds never listen.
+		devAddr = "1"
+	}
+	if devAddr != "" {
+		if devAddr == "1" || strings.EqualFold(devAddr, "true") {
+			devAddr = "127.0.0.1:39123"
 		}
-	}()
+		go func() {
+			log.Printf("dev API listener enabled on %s", devAddr)
+			if err := server.Run(bgCtx, devAddr); err != nil {
+				log.Printf("dev API listener exited: %v", err)
+			}
+		}()
+	}
 
 	go func() {
-		archived, err := store.CompactAndVacuumMatchReplays(serverCtx)
+		archived, err := store.CompactAndVacuumMatchReplays(bgCtx)
 		if err != nil {
 			log.Printf("replay compaction failed (archived=%d): %v", archived, err)
 			return

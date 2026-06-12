@@ -1,4 +1,5 @@
 import type {
+  AutostartStatus,
   DeckDetail,
   DeckSummary,
   DraftPick,
@@ -12,6 +13,7 @@ import type {
   RuntimeConfig,
   RuntimeOperation,
   RuntimeStatus,
+  UpdateCheck,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -57,4 +59,7 @@ export const api = {
   runImport: (resume = true) => postJSON<RuntimeOperation>("/api/runtime/import", { resume }),
   startLive: () => postJSON<RuntimeStatus>("/api/runtime/live/start"),
   stopLive: () => postJSON<RuntimeStatus>("/api/runtime/live/stop"),
+  autostartStatus: () => getJSON<AutostartStatus>("/api/runtime/autostart"),
+  setAutostart: (enabled: boolean) => postJSON<AutostartStatus>("/api/runtime/autostart", { enabled }),
+  checkForUpdate: () => getJSON<UpdateCheck>("/api/runtime/update-check"),
 };

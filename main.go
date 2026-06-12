@@ -29,7 +29,16 @@ func main() {
 		MinHeight:        760,
 		BackgroundColour: &options.RGBA{R: 8, G: 12, B: 21, A: 1},
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets:     assets,
+			Middleware: app.APIMiddleware,
+		},
+		// Closing the window keeps the app (and the live log tailer) running;
+		// reopen it from the Dock. Quit fully with Cmd+Q. This is the Wails v2
+		// stand-in for a tray icon, which needs Wails v3.
+		HideWindowOnClose: true,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "dev.ixianlabs.mtgdata",
+			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
 		},
 		OnStartup: app.startup,
 		OnShutdown: func(_ context.Context) {

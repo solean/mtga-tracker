@@ -155,12 +155,25 @@ cd /Users/cschnabel/dev/mtgdata
 go run github.com/wailsapp/wails/v2/cmd/wails@latest dev
 ```
 
-Desktop-specific frontend builds target the in-process local API server on `http://127.0.0.1:39123`:
+In the desktop app the API is mounted on the Wails asset server, so the
+frontend reaches it same-origin — no listening port and no CORS exposure.
+`bun run build:desktop` therefore produces the same relative-URL build as
+`bun run build`.
 
-```bash
-cd /Users/cschnabel/dev/mtgdata/web
-bun run build:desktop
-```
+For browser-based frontend development against the desktop backend, launch the
+app with `MTGDATA_DEV_API=1` (or set it to a specific address) to also expose
+the API on `http://127.0.0.1:39123`, then run `bun run dev:desktop`.
+
+Desktop behaviors:
+- Closing the window hides it and keeps the app (and live log tailing)
+  running; reopen from the Dock, quit with Cmd+Q.
+- A second launch focuses the existing window instead of starting another
+  instance.
+- Startup failures surface in a native error dialog and as a 503 from the API.
+- Settings has a "Launch MTGData at login" toggle (macOS LaunchAgent) and a
+  "Check for Updates" button against GitHub releases. The app version comes
+  from `internal/version` (override with
+  `-ldflags "-X github.com/cschnabel/mtgdata/internal/version.Version=x.y.z"`).
 
 The desktop app stores its SQLite database and runtime config under `~/Library/Application Support/mtgdata/`.
 

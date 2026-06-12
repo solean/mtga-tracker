@@ -218,6 +218,7 @@ export type RuntimeOperation = {
 };
 
 export type RuntimeStatus = {
+  version: string;
   dbPath: string;
   supportDir: string;
   configPath: string;
@@ -234,4 +235,20 @@ export type RuntimeStatus = {
   lastImport?: RuntimeOperation;
   lastLiveActivity?: RuntimeOperation;
   lastError?: string;
+};
+
+export type AutostartStatus = {
+  supported: boolean;
+  enabled: boolean;
+  agentPath?: string;
+  executable?: string;
+  note?: string;
+};
+
+export type UpdateCheck = {
+  currentVersion: string;
+  latestVersion?: string;
+  updateAvailable: boolean;
+  releaseUrl?: string;
+  note?: string;
 };

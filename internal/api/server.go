@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/cschnabel/mtgdata/internal/appstate"
 	"github.com/cschnabel/mtgdata/internal/db"
 	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/cschnabel/mtgdata/internal/version"
 )
 
 type Server struct {
@@ -57,6 +59,8 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("/api/runtime/import", s.handleRuntimeImport)
 		mux.HandleFunc("/api/runtime/live/start", s.handleRuntimeLiveStart)
 		mux.HandleFunc("/api/runtime/live/stop", s.handleRuntimeLiveStop)
+		mux.HandleFunc("/api/runtime/autostart", s.handleRuntimeAutostart)
+		mux.HandleFunc("/api/runtime/update-check", s.handleRuntimeUpdateCheck)
 	}
 
 	if s.staticDir != "" {
@@ -72,6 +76,12 @@ func (s *Server) routes() http.Handler {
 	}
 
 	return withCORS(withGzip(mux))
+}
+
+// Handler exposes the full route handler so the desktop shell can mount the
+// API on the Wails asset server (same-origin, no listening port).
+func (s *Server) Handler() http.Handler {
+	return s.routes()
 }
 
 type gzipResponseWriter struct {
@@ -104,7 +114,7 @@ func withGzip(next http.Handler) http.Handler {
 func (s *Server) Run(ctx context.Context, addr string) error {
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           s.routes(),
+		Handler:           withHostCheck(s.routes()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -130,16 +140,49 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	}
 }
 
+// isLocalDevOrigin reports whether a browser Origin belongs to a local dev
+// server (e.g. Vite on http://localhost:5173). Cross-origin access is only
+// granted to those; arbitrary websites must not be able to read the API.
+func isLocalDevOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	host := parsed.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS, POST")
+		if origin := r.Header.Get("Origin"); origin != "" && isLocalDevOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS, POST")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// withHostCheck rejects requests whose Host header is a non-local hostname.
+// DNS rebinding attacks reach a localhost server through a hostname the
+// attacker controls; direct IP and localhost access are unaffected.
+func withHostCheck(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if split, _, err := net.SplitHostPort(host); err == nil {
+			host = split
+		}
+		host = strings.ToLower(strings.Trim(host, "[]"))
+		if host == "localhost" || host == "wails.localhost" || host == "wails" || net.ParseIP(host) != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "forbidden host", http.StatusForbidden)
 	})
 }
 
@@ -281,6 +324,129 @@ func (s *Server) handleRuntimeLiveStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleRuntimeAutostart(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, appstate.GetAutostartStatus())
+	case http.MethodPost:
+		payload := struct {
+			Enabled bool `json:"enabled"`
+		}{}
+		if err := decodeJSONBody(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		status, err := appstate.SetAutostart(payload.Enabled)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+const updateCheckRepo = "solean/mtga-tracker"
+
+type updateCheckResponse struct {
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReleaseURL      string `json:"releaseUrl,omitempty"`
+	Note            string `json:"note,omitempty"`
+}
+
+func (s *Server) handleRuntimeUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	out := updateCheckResponse{CurrentVersion: version.Version}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
+		"https://api.github.com/repos/"+updateCheckRepo+"/releases/latest", nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		out.Note = fmt.Sprintf("update check failed: %v", err)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		out.Note = "no releases published yet"
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		out.Note = fmt.Sprintf("update check failed: GitHub returned %d", resp.StatusCode)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+
+	release := struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}{}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
+		out.Note = fmt.Sprintf("update check failed: %v", err)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+
+	out.LatestVersion = strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
+	out.ReleaseURL = release.HTMLURL
+	out.UpdateAvailable = isNewerVersion(out.LatestVersion, strings.TrimPrefix(out.CurrentVersion, "v"))
+	writeJSON(w, http.StatusOK, out)
+}
+
+// isNewerVersion compares dotted numeric versions; non-numeric segments fall
+// back to string comparison.
+func isNewerVersion(latest, current string) bool {
+	if latest == "" || current == "" || latest == current {
+		return false
+	}
+	latestParts := strings.Split(latest, ".")
+	currentParts := strings.Split(currentBaseVersion(current), ".")
+	for i := 0; i < len(latestParts) || i < len(currentParts); i++ {
+		var l, c string
+		if i < len(latestParts) {
+			l = latestParts[i]
+		}
+		if i < len(currentParts) {
+			c = currentParts[i]
+		}
+		ln, lerr := strconv.ParseInt(l, 10, 64)
+		cn, cerr := strconv.ParseInt(c, 10, 64)
+		if lerr != nil || cerr != nil {
+			if l != c {
+				return l > c
+			}
+			continue
+		}
+		if ln != cn {
+			return ln > cn
+		}
+	}
+	return false
+}
+
+// currentBaseVersion strips pre-release/build suffixes ("0.1.0-dev" -> "0.1.0").
+func currentBaseVersion(v string) string {
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		return v[:i]
+	}
+	return v
 }
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {

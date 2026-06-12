@@ -13,6 +13,7 @@ import (
 	"github.com/cschnabel/mtgdata/internal/db"
 	"github.com/cschnabel/mtgdata/internal/ingest"
 	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/cschnabel/mtgdata/internal/version"
 )
 
 const defaultPollInterval = 2 * time.Second
@@ -34,38 +35,39 @@ type Config struct {
 }
 
 type OperationResult struct {
-	Kind             string   `json:"kind"`
-	Files            []string `json:"files"`
-	LinesRead        int64    `json:"linesRead"`
-	BytesRead        int64    `json:"bytesRead"`
-	RawEventsStored  int64    `json:"rawEventsStored"`
-	MatchesUpserted  int64    `json:"matchesUpserted"`
-	RankSnapshots    int64    `json:"rankSnapshots"`
-	DecksUpserted    int64    `json:"decksUpserted"`
-	DraftPicksAdded  int64    `json:"draftPicksAdded"`
-	StartedAt        string   `json:"startedAt"`
-	CompletedAt      string   `json:"completedAt"`
-	DurationMs       int64    `json:"durationMs"`
-	HasActivity      bool     `json:"hasActivity"`
+	Kind            string   `json:"kind"`
+	Files           []string `json:"files"`
+	LinesRead       int64    `json:"linesRead"`
+	BytesRead       int64    `json:"bytesRead"`
+	RawEventsStored int64    `json:"rawEventsStored"`
+	MatchesUpserted int64    `json:"matchesUpserted"`
+	RankSnapshots   int64    `json:"rankSnapshots"`
+	DecksUpserted   int64    `json:"decksUpserted"`
+	DraftPicksAdded int64    `json:"draftPicksAdded"`
+	StartedAt       string   `json:"startedAt"`
+	CompletedAt     string   `json:"completedAt"`
+	DurationMs      int64    `json:"durationMs"`
+	HasActivity     bool     `json:"hasActivity"`
 }
 
 type Status struct {
-	DBPath              string           `json:"dbPath"`
-	SupportDir          string           `json:"supportDir"`
-	ConfigPath          string           `json:"configPath"`
-	DefaultLogPath      string           `json:"defaultLogPath"`
-	DefaultPrevLogPath  string           `json:"defaultPrevLogPath"`
-	Config              Config           `json:"config"`
-	ActiveLogPath       string           `json:"activeLogPath"`
-	PreviousLogPath     string           `json:"previousLogPath"`
-	ActiveLogPathExists bool             `json:"activeLogPathExists"`
-	PreviousLogPathExists bool           `json:"previousLogPathExists"`
-	LiveRunning         bool             `json:"liveRunning"`
-	LiveStartedAt       string           `json:"liveStartedAt,omitempty"`
-	LiveLastTickAt      string           `json:"liveLastTickAt,omitempty"`
-	LastImport          *OperationResult `json:"lastImport,omitempty"`
-	LastLiveActivity    *OperationResult `json:"lastLiveActivity,omitempty"`
-	LastError           string           `json:"lastError,omitempty"`
+	Version               string           `json:"version"`
+	DBPath                string           `json:"dbPath"`
+	SupportDir            string           `json:"supportDir"`
+	ConfigPath            string           `json:"configPath"`
+	DefaultLogPath        string           `json:"defaultLogPath"`
+	DefaultPrevLogPath    string           `json:"defaultPrevLogPath"`
+	Config                Config           `json:"config"`
+	ActiveLogPath         string           `json:"activeLogPath"`
+	PreviousLogPath       string           `json:"previousLogPath"`
+	ActiveLogPathExists   bool             `json:"activeLogPathExists"`
+	PreviousLogPathExists bool             `json:"previousLogPathExists"`
+	LiveRunning           bool             `json:"liveRunning"`
+	LiveStartedAt         string           `json:"liveStartedAt,omitempty"`
+	LiveLastTickAt        string           `json:"liveLastTickAt,omitempty"`
+	LastImport            *OperationResult `json:"lastImport,omitempty"`
+	LastLiveActivity      *OperationResult `json:"lastLiveActivity,omitempty"`
+	LastError             string           `json:"lastError,omitempty"`
 }
 
 type Service struct {
@@ -175,6 +177,7 @@ func (s *Service) Status() Status {
 	}
 
 	return Status{
+		Version:               version.Version,
 		DBPath:                s.dbPath,
 		SupportDir:            s.supportDir,
 		ConfigPath:            s.configPath,
