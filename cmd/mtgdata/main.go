@@ -43,6 +43,10 @@ func main() {
 		if err := runServe(ctx, os.Args[2:]); err != nil {
 			log.Fatalf("serve failed: %v", err)
 		}
+	case "compact":
+		if err := runCompact(ctx, os.Args[2:]); err != nil {
+			log.Fatalf("compact failed: %v", err)
+		}
 	default:
 		printUsage()
 		os.Exit(1)
@@ -54,6 +58,7 @@ func printUsage() {
 	fmt.Println("  parse -db <path> [-log <path>] [-include-prev=true] [-resume=true]")
 	fmt.Println("  tail  -db <path> [-log <path>] [-interval=2s] [-verbose=false]")
 	fmt.Println("  serve -db <path> [-addr=:8080] [-web-dist=<path>]")
+	fmt.Println("  compact -db <path>")
 	fmt.Println("")
 	fmt.Println("If -log is omitted, parse/tail default to:")
 	fmt.Println("  ~/Library/Logs/Wizards Of The Coast/MTGA/Player.log")
@@ -136,6 +141,40 @@ func runParse(ctx context.Context, args []string) error {
 		time.Since(startedAt),
 	)
 
+	compactReplays(ctx, db.NewStore(database))
+	return nil
+}
+
+func compactReplays(ctx context.Context, store *db.Store) {
+	started := time.Now()
+	archived, err := store.CompactAndVacuumMatchReplays(ctx)
+	if err != nil {
+		log.Printf("replay compaction failed (archived=%d): %v", archived, err)
+		return
+	}
+	if archived > 0 {
+		log.Printf("replay compaction: archived %d matches in %s", archived, time.Since(started).Round(time.Millisecond))
+	}
+}
+
+func runCompact(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("compact", flag.ContinueOnError)
+	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	database, err := db.Open(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+
+	if err := db.Init(ctx, database); err != nil {
+		return err
+	}
+
+	compactReplays(ctx, db.NewStore(database))
 	return nil
 }
 
@@ -173,6 +212,8 @@ func runTail(ctx context.Context, args []string) error {
 	}
 
 	log.Printf("tailing %s every %s", activeLogPath, interval.String())
+
+	go compactReplays(ctx, db.NewStore(database))
 
 	ticker := time.NewTicker(*interval)
 	defer ticker.Stop()
@@ -253,6 +294,8 @@ func runServe(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	go compactReplays(ctx, store)
 
 	server := api.NewServer(store, staticDir, runtimeService)
 	return server.Run(ctx, *addr)

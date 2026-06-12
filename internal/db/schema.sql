@@ -207,6 +207,17 @@ CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_card_id
 CREATE INDEX IF NOT EXISTS idx_match_replay_frame_objects_zone
   ON match_replay_frame_objects(frame_id, zone_type, zone_position, instance_id);
 
+CREATE TABLE IF NOT EXISTS match_replay_archives (
+  match_id INTEGER PRIMARY KEY,
+  schema_version INTEGER NOT NULL DEFAULT 1,
+  frame_count INTEGER NOT NULL DEFAULT 0,
+  object_count INTEGER NOT NULL DEFAULT 0,
+  payload_zstd BLOB NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS match_rank_snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   match_id INTEGER NOT NULL UNIQUE,

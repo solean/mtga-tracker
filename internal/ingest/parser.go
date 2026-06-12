@@ -951,6 +951,16 @@ func (p *Parser) queueCompletedMatchIfRankPending(ctx context.Context, tx *sql.T
 	return nil
 }
 
+// archiveCompletedMatchReplay compacts a finished match's replay frame rows
+// into the compressed archive so the row tables only ever hold live matches.
+func (p *Parser) archiveCompletedMatchReplay(ctx context.Context, tx *sql.Tx, arenaMatchID, result string) error {
+	if result != "win" && result != "loss" && result != "draw" {
+		return nil
+	}
+	_, err := p.store.ArchiveMatchReplay(ctx, tx, arenaMatchID)
+	return err
+}
+
 func (p *Parser) handleMethodResponse(ctx context.Context, tx *sql.Tx, stats *model.ParseStats, state *parseState, logPath string, lineNo, byteOffset int64, line string) error {
 	method := state.pendingResponseMethod
 	requestID := state.pendingResponseRequestID
@@ -2322,6 +2332,9 @@ func (p *Parser) handleOutgoing(ctx context.Context, tx *sql.Tx, stats *model.Pa
 			if err := p.queueCompletedMatchIfRankPending(ctx, tx, evt.MatchID, result, changed); err != nil {
 				return err
 			}
+			if err := p.archiveCompletedMatchReplay(ctx, tx, evt.MatchID, result); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -2414,6 +2427,8 @@ func (p *Parser) handleRoomStateJSON(ctx context.Context, tx *sql.Tx, stats *mod
 			if _, result, changed, err := p.store.UpdateMatchEnd(ctx, tx, config.MatchID, selfTeamID, winningTeamID, 0, 0, reason, matchTS); err != nil {
 				return err
 			} else if err := p.queueCompletedMatchIfRankPending(ctx, tx, config.MatchID, result, changed); err != nil {
+				return err
+			} else if err := p.archiveCompletedMatchReplay(ctx, tx, config.MatchID, result); err != nil {
 				return err
 			}
 		}

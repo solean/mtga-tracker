@@ -77,6 +77,17 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("desktop API server exited: %v", err)
 		}
 	}()
+
+	go func() {
+		archived, err := store.CompactAndVacuumMatchReplays(serverCtx)
+		if err != nil {
+			log.Printf("replay compaction failed (archived=%d): %v", archived, err)
+			return
+		}
+		if archived > 0 {
+			log.Printf("replay compaction: archived %d matches", archived)
+		}
+	}()
 }
 
 func (a *App) shutdown() {
