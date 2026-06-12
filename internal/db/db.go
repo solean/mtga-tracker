@@ -6,9 +6,9 @@ import (
 	"embed"
 	"fmt"
 	"strings"
-)
 
-import _ "modernc.org/sqlite"
+	_ "modernc.org/sqlite"
+)
 
 //go:embed schema.sql
 var schemaFS embed.FS
