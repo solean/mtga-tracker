@@ -2523,6 +2523,70 @@ func (s *Store) LoadLatestMatchReplayFrameState(
 }
 
 func (s *Store) ListMatchReplayFrames(ctx context.Context, matchID int64) ([]model.MatchReplayFrameRow, error) {
+	live, err := s.listLiveMatchReplayFrames(ctx, matchID)
+	if err != nil {
+		return nil, err
+	}
+	archived, err := s.loadArchivedMatchReplayFrames(ctx, matchID)
+	if err != nil {
+		return nil, err
+	}
+
+	frames := mergeReplayFrameRows(archived, live)
+	populateReplayFrameChanges(frames)
+	return frames, nil
+}
+
+// mergeReplayFrameRows combines archived frames with live rows for the same
+// match. Live rows win on conflict because they reflect the most recent parse.
+func mergeReplayFrameRows(archived, live []model.MatchReplayFrameRow) []model.MatchReplayFrameRow {
+	if len(archived) == 0 {
+		return live
+	}
+	if len(live) == 0 {
+		return archived
+	}
+
+	liveKeys := make(map[string]bool, len(live))
+	for i := range live {
+		liveKeys[replayArchiveFrameKey(live[i].GameNumber, live[i].GameStateID)] = true
+	}
+
+	merged := make([]model.MatchReplayFrameRow, 0, len(archived)+len(live))
+	for i := range archived {
+		if liveKeys[replayArchiveFrameKey(archived[i].GameNumber, archived[i].GameStateID)] {
+			continue
+		}
+		merged = append(merged, archived[i])
+	}
+	merged = append(merged, live...)
+	sort.SliceStable(merged, func(i, j int) bool {
+		gi, gj := int64(1), int64(1)
+		if merged[i].GameNumber != nil && *merged[i].GameNumber > 0 {
+			gi = *merged[i].GameNumber
+		}
+		if merged[j].GameNumber != nil && *merged[j].GameNumber > 0 {
+			gj = *merged[j].GameNumber
+		}
+		if gi != gj {
+			return gi < gj
+		}
+		si, sj := int64(0), int64(0)
+		if merged[i].GameStateID != nil {
+			si = *merged[i].GameStateID
+		}
+		if merged[j].GameStateID != nil {
+			sj = *merged[j].GameStateID
+		}
+		if si != sj {
+			return si < sj
+		}
+		return merged[i].ID < merged[j].ID
+	})
+	return merged
+}
+
+func (s *Store) listLiveMatchReplayFrames(ctx context.Context, matchID int64) ([]model.MatchReplayFrameRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			f.id,
@@ -2708,7 +2772,6 @@ func (s *Store) ListMatchReplayFrames(ctx context.Context, matchID int64) ([]mod
 		return nil, fmt.Errorf("iterate match replay frame objects: %w", err)
 	}
 
-	populateReplayFrameChanges(frames)
 	return frames, nil
 }
 
@@ -2892,10 +2955,15 @@ func populateReplayFrameChanges(frames []model.MatchReplayFrameRow) {
 					frames[i].Changes = append(frames[i].Changes, replayStateChangeRow(obj, "counters_change"))
 				}
 			}
-			for _, obj := range prevObjects {
-				if _, ok := currentObjects[obj.InstanceID]; ok {
-					continue
+			departedIDs := make([]int64, 0, len(prevObjects))
+			for instanceID := range prevObjects {
+				if _, ok := currentObjects[instanceID]; !ok {
+					departedIDs = append(departedIDs, instanceID)
 				}
+			}
+			sort.Slice(departedIDs, func(a, b int) bool { return departedIDs[a] < departedIDs[b] })
+			for _, instanceID := range departedIDs {
+				obj := prevObjects[instanceID]
 				frames[i].Changes = append(frames[i].Changes, model.MatchReplayChangeRow{
 					InstanceID:       obj.InstanceID,
 					CardID:           obj.CardID,

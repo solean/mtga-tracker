@@ -107,6 +107,21 @@ API endpoints:
 - `GET /api/drafts`
 - `GET /api/drafts/:id/picks`
 
+## Replay Storage Compaction
+
+Replay frames are stored as relational rows while a match is live, then
+automatically compacted into a zstd-compressed archive blob
+(`match_replay_archives`) when the match completes. This reduces replay
+storage by roughly 50x. Compaction for older matches also runs in the
+background when `parse`, `tail`, `serve`, or the desktop app starts, followed
+by a `VACUUM` to shrink the database file.
+
+To compact an existing database manually:
+
+```bash
+go run ./cmd/mtgdata compact -db data/mtgdata.db
+```
+
 ## Frontend Setup
 
 Requirements:

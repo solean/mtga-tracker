@@ -3,6 +3,7 @@ module github.com/cschnabel/mtgdata
 go 1.24.0
 
 require (
+	github.com/klauspost/compress v1.18.6
 	github.com/wailsapp/wails/v2 v2.12.0
 	modernc.org/sqlite v1.39.1
 )
