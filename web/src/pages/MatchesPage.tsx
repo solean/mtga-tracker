@@ -1,7 +1,8 @@
-import { Fragment, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable, type Row } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { MatchDeckColors } from "../components/MatchDeckColors";
 import { ManaSymbol } from "../components/ManaSymbol";
@@ -171,6 +172,39 @@ function groupRowsByEvent(rows: Row<Match>[]): { eventName: string; rows: Row<Ma
   return groups;
 }
 
+type VirtualRow =
+  | { kind: "group"; key: string; eventName: string; record: MatchRecord; count: number }
+  | { kind: "match"; key: string; row: Row<Match> };
+
+/**
+ * Flattens the (optionally grouped) table rows into a single list so the whole
+ * thing — group headers included — can be driven by one virtualizer.
+ */
+function buildVirtualRows(rows: Row<Match>[], groupByEvent: boolean): VirtualRow[] {
+  if (!groupByEvent) {
+    return rows.map((row) => ({ kind: "match", key: row.id, row }));
+  }
+
+  const out: VirtualRow[] = [];
+  for (const group of groupRowsByEvent(rows)) {
+    out.push({
+      kind: "group",
+      key: `group:${group.eventName}:${group.rows[0]?.id ?? ""}`,
+      eventName: group.eventName,
+      record: tallyRecord(group.rows.map((row) => row.original)),
+      count: group.rows.length,
+    });
+    for (const row of group.rows) {
+      out.push({ kind: "match", key: row.id, row });
+    }
+  }
+  return out;
+}
+
+// Estimated heights drive the virtualizer's initial scrollbar; exact heights
+// are measured per-row once rendered, so wrapping rows stay correct.
+const ESTIMATED_MATCH_ROW_HEIGHT = 42;
+
 export function MatchesPage() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
@@ -212,37 +246,46 @@ export function MatchesPage() {
     () => [
       columnHelper.accessor("startedAt", {
         header: "Started",
+        size: 130,
         cell: (info) => formatCompactDateTime(info.getValue()),
       }),
       columnHelper.accessor("eventName", {
         header: "Event",
+        size: 200,
       }),
       columnHelper.accessor("bestOf", {
         header: "Best Of",
+        size: 80,
         cell: (info) => formatBestOf(info.getValue()),
       }),
       columnHelper.accessor("playDraw", {
         header: "G1",
+        size: 64,
         cell: (info) => formatPlayDraw(info.getValue()),
       }),
       columnHelper.accessor("opponent", {
         header: "Opponent",
+        size: 170,
         cell: (info) => info.getValue() || "Unknown",
       }),
       columnHelper.accessor("result", {
         header: "Result",
+        size: 90,
         cell: (info) => <ResultPill result={info.getValue()} />,
       }),
       columnHelper.accessor("turnCount", {
         header: "Turns",
+        size: 70,
         cell: (info) => info.getValue() ?? "-",
       }),
       columnHelper.accessor("secondsCount", {
         header: "Duration",
+        size: 100,
         cell: (info) => formatDuration(info.getValue()),
       }),
       columnHelper.accessor("deckName", {
         header: "Deck",
+        size: 150,
         cell: (info) => {
           const deckId = info.row.original.deckId;
           const deckName = info.getValue();
@@ -258,6 +301,7 @@ export function MatchesPage() {
       columnHelper.display({
         id: "deckColors",
         header: "Colors",
+        size: 160,
         cell: (info) => (
           <MatchDeckColors
             className="match-deck-colors-table"
@@ -270,6 +314,7 @@ export function MatchesPage() {
       }),
       columnHelper.accessor("winReason", {
         header: "Reason",
+        size: 110,
         cell: (info) => info.getValue() || "-",
       }),
     ],
@@ -280,6 +325,18 @@ export function MatchesPage() {
     data: filtered,
     columns,
     getCoreRowModel: getCoreRowModel(),
+  });
+
+  const rows = table.getRowModel().rows;
+  const virtualRows = useMemo(() => buildVirtualRows(rows, groupByEvent), [rows, groupByEvent]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: virtualRows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ESTIMATED_MATCH_ROW_HEIGHT,
+    overscan: 12,
+    getItemKey: (index) => virtualRows[index].key,
   });
 
   function openMatchDetails(matchId: Match["id"], newTab = false) {
@@ -318,16 +375,27 @@ export function MatchesPage() {
   if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
 
   const filtersActive = hasActiveFilters(filters);
-  const rows = table.getRowModel().rows;
   const summary = filtersActive
     ? `${filtered.length} of ${matches.length} matches • ${formatRecord(filteredRecord)} (${formatWinRate(filteredRecord)})`
     : `${matches.length} matches • ${formatRecord(filteredRecord)} (${formatWinRate(filteredRecord)})`;
 
-  function renderRow(row: Row<Match>) {
+  const virtualItems = rowVirtualizer.getVirtualItems();
+
+  function cellWidthStyle(size: number): CSSProperties {
+    // flex-grow proportional to the column's size, flex-basis 0 → columns fill
+    // the container while staying aligned between header and body.
+    return { flexGrow: size, flexBasis: 0 };
+  }
+
+  function renderMatchRow(virtualRow: VirtualRow & { kind: "match" }, virtualIndex: number, start: number) {
+    const row = virtualRow.row;
     return (
       <tr
-        key={row.id}
-        className="data-table-row-link"
+        key={virtualRow.key}
+        data-index={virtualIndex}
+        ref={rowVirtualizer.measureElement}
+        className="data-table-row-link match-virtual-row"
+        style={{ transform: `translateY(${start}px)` }}
         onClick={(event) => handleRowClick(event, row.original.id)}
         onAuxClick={(event) => handleRowAuxClick(event, row.original.id)}
         onKeyDown={(event) => handleRowKeyDown(event, row.original.id)}
@@ -335,8 +403,33 @@ export function MatchesPage() {
         tabIndex={0}
       >
         {row.getVisibleCells().map((cell) => (
-          <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+          <td key={cell.id} style={cellWidthStyle(cell.column.getSize())}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </td>
         ))}
+      </tr>
+    );
+  }
+
+  function renderGroupRow(virtualRow: VirtualRow & { kind: "group" }, virtualIndex: number, start: number) {
+    return (
+      <tr
+        key={virtualRow.key}
+        data-index={virtualIndex}
+        ref={rowVirtualizer.measureElement}
+        className="match-group-row match-virtual-row"
+        style={{ transform: `translateY(${start}px)` }}
+      >
+        <td className="match-group-cell">
+          <span className="match-group-name">{virtualRow.eventName}</span>
+          <span className="match-group-record">
+            {formatRecord(virtualRow.record)}
+            {virtualRow.record.unknown > 0 ? ` (+${virtualRow.record.unknown}?)` : ""}
+          </span>
+          <span className="match-group-count">
+            {virtualRow.count} {virtualRow.count === 1 ? "match" : "matches"}
+          </span>
+        </td>
       </tr>
     );
   }
@@ -464,53 +557,35 @@ export function MatchesPage() {
         </div>
       </div>
 
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id}>
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length}>
-                  <span className="match-filter-empty">No matches found for the current filters.</span>
-                </td>
-              </tr>
-            ) : groupByEvent ? (
-              groupRowsByEvent(rows).map((group, index) => {
-                const record = tallyRecord(group.rows.map((row) => row.original));
-                return (
-                  <Fragment key={`${group.eventName}-${index}`}>
-                    <tr className="match-group-row">
-                      <td colSpan={columns.length}>
-                        <span className="match-group-name">{group.eventName}</span>
-                        <span className="match-group-record">
-                          {formatRecord(record)}
-                          {record.unknown > 0 ? ` (+${record.unknown}?)` : ""}
-                        </span>
-                        <span className="match-group-count">
-                          {group.rows.length} {group.rows.length === 1 ? "match" : "matches"}
-                        </span>
-                      </td>
-                    </tr>
-                    {group.rows.map(renderRow)}
-                  </Fragment>
-                );
-              })
-            ) : (
-              rows.map(renderRow)
-            )}
-          </tbody>
-        </table>
-      </div>
+      {virtualRows.length === 0 ? (
+        <div className="table-wrap match-table-empty">
+          <span className="match-filter-empty">No matches found for the current filters.</span>
+        </div>
+      ) : (
+        <div className="table-wrap match-table-scroll" ref={scrollRef}>
+          <table className="data-table is-virtual">
+            <thead>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <th key={header.id} style={cellWidthStyle(header.getSize())}>
+                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody style={{ height: rowVirtualizer.getTotalSize() }}>
+              {virtualItems.map((virtualItem) => {
+                const virtualRow = virtualRows[virtualItem.index];
+                return virtualRow.kind === "group"
+                  ? renderGroupRow(virtualRow, virtualItem.index, virtualItem.start)
+                  : renderMatchRow(virtualRow, virtualItem.index, virtualItem.start);
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }

@@ -95,6 +95,7 @@
   --table-head-text: #ba9478;
   --table-head-bg-a: rgba(20, 13, 9, 0.97);
   --table-head-bg-b: rgba(15, 10, 7, 0.97);
+  --table-head-solid: #0c0805;
   --table-row-hover: rgba(255, 138, 36, 0.06);
 
   --deck-card-bg-a: rgba(20, 13, 9, 0.76);
@@ -206,6 +207,7 @@
   --table-head-text: #6d4d38;
   --table-head-bg-a: rgba(242, 233, 224, 0.98);
   --table-head-bg-b: rgba(236, 226, 216, 0.98);
+  --table-head-solid: #efe6dc;
   --table-row-hover: rgba(197, 90, 17, 0.05);
 
   --deck-card-bg-a: rgba(242, 232, 222, 0.82);
@@ -4045,4 +4047,84 @@ select {
   font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
+}
+
+/* Virtualized match table.
+ * Scoped to `.is-virtual` so the shared `.data-table` used by other pages keeps
+ * its native table layout. Rows are flex so column widths come from the
+ * virtualizer/column sizes and stay aligned between header and body. */
+
+.match-table-empty {
+  padding: 1rem;
+}
+
+.match-table-scroll {
+  position: relative;
+  min-height: 360px;
+  max-height: calc(100vh - 340px);
+  overflow: auto;
+}
+
+.data-table.is-virtual {
+  display: block;
+  width: 100%;
+  min-width: 980px;
+}
+
+.data-table.is-virtual thead {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.data-table.is-virtual thead tr {
+  display: flex;
+  width: 100%;
+}
+
+.data-table.is-virtual th {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  /* Opaque backing so scrolled rows never bleed through the sticky header. */
+  background:
+    linear-gradient(180deg, var(--table-head-bg-a) 0%, var(--table-head-bg-b) 100%),
+    var(--table-head-solid);
+}
+
+.data-table.is-virtual tbody {
+  display: block;
+  position: relative;
+  width: 100%;
+}
+
+.data-table.is-virtual tbody tr.match-virtual-row {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  border-bottom: 1px solid var(--table-row-border);
+}
+
+.data-table.is-virtual tbody td {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 0;
+  overflow: hidden;
+}
+
+.data-table.is-virtual tbody td > * {
+  min-width: 0;
+}
+
+.data-table.is-virtual tbody tr.match-group-row {
+  border-bottom: 0;
+}
+
+.data-table.is-virtual .match-group-cell {
+  flex: 1 1 100%;
+  align-items: center;
 }
