@@ -4,12 +4,14 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { DeckColorIdentity } from "../components/MatchDeckColors";
+import { EventLabel } from "../components/EventLabel";
 import { ManaSymbol } from "../components/ManaSymbol";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import { fetchCardPreview, type CardPreview } from "../lib/scryfall";
+import { useEventSets } from "../lib/useEventSets";
 
 type DeckListCard = {
   section: string;
@@ -807,6 +809,10 @@ export function DeckDetailPage() {
     queryFn: () => api.deckDetail(deckId),
     enabled: Number.isFinite(deckId),
   });
+  const { lookup: setLookup } = useEventSets([
+    data?.eventName,
+    ...(data?.matches ?? []).map((match) => match.eventName),
+  ]);
 
   const cards = useMemo(() => {
     return (data?.cards ?? []).map((card) => ({
@@ -1010,7 +1016,8 @@ export function DeckDetailPage() {
           <div>
             <h3>{data.name || "Unnamed Deck"}</h3>
             <p>
-              {data.format || "Unknown format"} • {data.eventName || "No event"}
+              {data.format || "Unknown format"} •{" "}
+              <EventLabel eventName={data.eventName} lookup={setLookup} fallback="No event" />
             </p>
           </div>
           <div className="deck-detail-actions">
@@ -1156,7 +1163,9 @@ export function DeckDetailPage() {
               {matches.map((match) => (
                 <tr key={match.id}>
                   <td>{formatDateTime(match.startedAt)}</td>
-                  <td>{match.eventName || "-"}</td>
+                  <td>
+                    <EventLabel eventName={match.eventName} lookup={setLookup} />
+                  </td>
                   <td>
                     <div className="deck-match-opponent-cell">
                       <span>{match.opponent || "-"}</span>

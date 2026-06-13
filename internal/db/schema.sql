@@ -77,6 +77,17 @@ CREATE TABLE IF NOT EXISTS card_catalog (
 
 CREATE INDEX IF NOT EXISTS idx_card_catalog_name ON card_catalog(name);
 
+-- Friendly metadata for MTG sets, keyed by the lowercase set code embedded in
+-- Arena event names (e.g. "tmt" in "QuickDraft_TMT_20260313"). Resolved on
+-- demand from Scryfall and cached here so set names/symbols work offline.
+CREATE TABLE IF NOT EXISTS set_catalog (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  icon_svg_uri TEXT,
+  released_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS matches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   arena_match_id TEXT NOT NULL UNIQUE,

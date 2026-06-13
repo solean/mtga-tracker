@@ -1,18 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { EventLabel } from "../components/EventLabel";
 import { MatchDeckColors } from "../components/MatchDeckColors";
 import { RankProgressPanel } from "../components/RankProgressPanel";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
+import { eventDisplayName, parseEventName } from "../lib/events";
 import { formatCompactDateTime, formatDuration, pct } from "../lib/format";
+import { useEventSets } from "../lib/useEventSets";
 
 export function OverviewPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["overview"],
     queryFn: api.overview,
   });
+  const { lookup: setLookup } = useEventSets((data?.recent ?? []).map((match) => match.eventName));
 
   if (isLoading) return <StatusMessage>Loading overview…</StatusMessage>;
   if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
@@ -61,9 +65,10 @@ export function OverviewPage() {
         </div>
         <div className="list">
           {data.recent.slice(0, 8).map((match) => {
-            const queueLabel = match.eventName || "Unknown event";
+            const parsedEvent = parseEventName(match.eventName);
+            const eventSet = setLookup(parsedEvent.setCode);
+            const queueLabel = eventDisplayName(parsedEvent, eventSet);
             const title = match.deckName || queueLabel;
-            const subtitle = match.deckName ? `Queue • ${queueLabel}` : null;
             const timingParts: string[] = [];
             const duration = formatDuration(match.secondsCount ?? undefined);
 
@@ -78,7 +83,11 @@ export function OverviewPage() {
               <Link className="list-row" key={match.id} to={`/matches/${match.id}`}>
                 <div className="list-main">
                   <p className="list-title">{title}</p>
-                  {subtitle ? <p className="list-subtitle">{subtitle}</p> : null}
+                  {match.deckName ? (
+                    <p className="list-subtitle">
+                      Queue • <EventLabel eventName={match.eventName} lookup={setLookup} />
+                    </p>
+                  ) : null}
                 </div>
 
                 <dl className="list-meta" aria-label="Recent match summary">

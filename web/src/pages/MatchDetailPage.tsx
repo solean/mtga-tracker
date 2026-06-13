@@ -15,12 +15,14 @@ import { Link, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 
+import { EventLabel } from "../components/EventLabel";
 import { MatchDeckColors } from "../components/MatchDeckColors";
 import { ManaSymbol } from "../components/ManaSymbol";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
+import { useEventSets } from "../lib/useEventSets";
 import { fetchCardPreview } from "../lib/scryfall";
 import type { CardPreview } from "../lib/scryfall";
 import type {
@@ -3531,6 +3533,7 @@ export function MatchDetailPage() {
     queryFn: () => api.matchReplay(matchId),
     enabled: isValidMatchID && timelineDisplayMode === "board",
   });
+  const { lookup: setLookup } = useEventSets([query.data?.match.eventName]);
 
   const opponentObservedCards = query.data?.opponentObservedCards ?? [];
   const opponentCards = useMemo<OpponentDeckCard[]>(() => {
@@ -3788,7 +3791,9 @@ export function MatchDetailPage() {
         <dl className="match-detail-summary" aria-label="Match overview">
           <div className="match-detail-summary-item">
             <dt>Event</dt>
-            <dd>{match.eventName || "-"}</dd>
+            <dd>
+              <EventLabel eventName={match.eventName} lookup={setLookup} />
+            </dd>
           </div>
           <div className="match-detail-summary-item">
             <dt>Deck</dt>

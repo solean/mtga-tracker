@@ -4,13 +4,16 @@ import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable, type Row } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { EventLabel } from "../components/EventLabel";
 import { MatchDeckColors } from "../components/MatchDeckColors";
 import { ManaSymbol } from "../components/ManaSymbol";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
+import { eventCategory } from "../lib/events";
 import { formatCompactDateTime, formatDuration } from "../lib/format";
 import type { Match } from "../lib/types";
+import { useEventSets } from "../lib/useEventSets";
 
 const columnHelper = createColumnHelper<Match>();
 const ROW_INTERACTIVE_SELECTOR =
@@ -60,30 +63,6 @@ function targetIsInteractive(target: EventTarget | null, currentTarget: EventTar
 
 function matchDeckLabel(match: Match): string {
   return match.deckName || (match.deckId ? `Deck ${match.deckId}` : NO_DECK_LABEL);
-}
-
-/**
- * Collapses Arena's per-run event names (QuickDraft_TMT_20260313,
- * FIN_Quick_Draft, ...) into stable categories so the Event filter stays
- * short no matter how many runs exist. Unrecognized names fall back to the
- * (prettified) raw name so they remain selectable.
- */
-function eventCategory(eventName: string): string {
-  const name = eventName.trim().toLowerCase().replace(/_/g, "");
-  if (!name) return "Unknown";
-  if (name.includes("quickdraft")) return "Quick Draft";
-  if (name.includes("premierdraft")) return "Premier Draft";
-  if (name.includes("traddraft") || name.includes("traditionaldraft")) return "Traditional Draft";
-  if (name.includes("draft")) return "Other Draft";
-  if (name.includes("tradsealed") || name.includes("traditionalsealed")) return "Traditional Sealed";
-  if (name.includes("sealed")) return "Sealed";
-  if (name.includes("jumpin")) return "Jump In";
-  if (name.includes("tradladder") || name.includes("traditionalladder")) return "Traditional Ladder";
-  if (name.includes("ladder")) return "Ranked Ladder";
-  if (name.includes("midweek") || name.startsWith("mwm")) return "Midweek Magic";
-  if (name.includes("brawl")) return "Brawl";
-  if (name === "play") return "Play";
-  return eventName.trim().replace(/_/g, " ");
 }
 
 function normalizedDeckColors(match: Match): string[] {
@@ -216,6 +195,7 @@ export function MatchesPage() {
   const [groupByEvent, setGroupByEvent] = useState(true);
 
   const matches = useMemo(() => data ?? [], [data]);
+  const { lookup: setLookup } = useEventSets(matches.map((match) => match.eventName));
 
   const eventOptions = useMemo(
     () => [...new Set(matches.map((match) => eventCategory(match.eventName)))].sort(),
@@ -252,6 +232,7 @@ export function MatchesPage() {
       columnHelper.accessor("eventName", {
         header: "Event",
         size: 200,
+        cell: (info) => <EventLabel eventName={info.getValue()} lookup={setLookup} />,
       }),
       columnHelper.accessor("bestOf", {
         header: "Best Of",
@@ -318,7 +299,7 @@ export function MatchesPage() {
         cell: (info) => info.getValue() || "-",
       }),
     ],
-    [],
+    [setLookup],
   );
 
   const table = useReactTable({
@@ -421,7 +402,9 @@ export function MatchesPage() {
         style={{ transform: `translateY(${start}px)` }}
       >
         <td className="match-group-cell">
-          <span className="match-group-name">{virtualRow.eventName}</span>
+          <span className="match-group-name">
+            <EventLabel eventName={virtualRow.eventName} lookup={setLookup} />
+          </span>
           <span className="match-group-record">
             {formatRecord(virtualRow.record)}
             {virtualRow.record.unknown > 0 ? ` (+${virtualRow.record.unknown}?)` : ""}

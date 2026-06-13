@@ -1,3 +1,10 @@
+export type SetInfo = {
+  code: string;
+  name: string;
+  iconSvgUri?: string;
+  releasedAt?: string;
+};
+
 export type Match = {
   id: number;
   arenaMatchId: string;

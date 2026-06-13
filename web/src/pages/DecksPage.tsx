@@ -1,15 +1,18 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { EventLabel } from "../components/EventLabel";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { pct } from "../lib/format";
+import { useEventSets } from "../lib/useEventSets";
 
 export function DecksPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["decks"],
     queryFn: () => api.decks(),
   });
+  const { lookup: setLookup } = useEventSets((data ?? []).map((deck) => deck.eventName));
 
   if (isLoading) return <StatusMessage>Loading decks…</StatusMessage>;
   if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
@@ -43,7 +46,9 @@ export function DecksPage() {
                   </Link>
                 </td>
                 <td>{deck.format || "-"}</td>
-                <td>{deck.eventName || "-"}</td>
+                <td>
+                  <EventLabel eventName={deck.eventName} lookup={setLookup} />
+                </td>
                 <td>{deck.matches}</td>
                 <td>{deck.wins}</td>
                 <td>{deck.losses}</td>

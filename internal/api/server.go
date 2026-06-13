@@ -53,6 +53,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/decks/", s.handleDeckDetail)
 	mux.HandleFunc("/api/drafts", s.handleDrafts)
 	mux.HandleFunc("/api/drafts/", s.handleDraftPicks)
+	mux.HandleFunc("/api/sets", s.handleSets)
 	if s.appState != nil {
 		mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
 		mux.HandleFunc("/api/runtime/config", s.handleRuntimeConfig)

@@ -182,6 +182,13 @@ type DraftPickCard struct {
 	CardName string `json:"cardName,omitempty"`
 }
 
+type SetInfo struct {
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	IconSvgURI string `json:"iconSvgUri,omitempty"`
+	ReleasedAt string `json:"releasedAt,omitempty"`
+}
+
 type Overview struct {
 	PlayerName   string     `json:"playerName,omitempty"`
 	TotalMatches int64      `json:"totalMatches"`

@@ -13,6 +13,7 @@ import type {
   RuntimeConfig,
   RuntimeOperation,
   RuntimeStatus,
+  SetInfo,
   UpdateCheck,
 } from "./types";
 
@@ -54,6 +55,8 @@ export const api = {
   deckDetail: (deckId: number) => getJSON<DeckDetail>(`/api/decks/${deckId}`),
   drafts: () => getJSON<DraftSession[]>("/api/drafts"),
   draftPicks: (draftId: number) => getJSON<DraftPick[]>(`/api/drafts/${draftId}/picks`),
+  sets: (codes: string[]) =>
+    getJSON<Record<string, SetInfo>>(`/api/sets?codes=${encodeURIComponent(codes.join(","))}`),
   runtimeStatus: () => getJSON<RuntimeStatus>("/api/runtime/status"),
   saveRuntimeConfig: (config: RuntimeConfig) => postJSON<RuntimeStatus>("/api/runtime/config", config),
   runImport: (resume = true) => postJSON<RuntimeOperation>("/api/runtime/import", { resume }),

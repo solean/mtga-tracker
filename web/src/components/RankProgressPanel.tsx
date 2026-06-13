@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 
 import { api } from "../lib/api";
+import { eventDisplayName, parseEventName } from "../lib/events";
 import { formatDateTime } from "../lib/format";
+import { useEventSets } from "../lib/useEventSets";
 import {
   buildGraphPoints,
   LADDER_CONFIG,
@@ -143,6 +145,7 @@ export function RankProgressPanel() {
     queryKey: ["rank-history"],
     queryFn: api.rankHistory,
   });
+  const { lookup: setLookup } = useEventSets((data ?? []).map((point) => point.eventName));
   const panelId = `${tabBaseId}-panel`;
   const headingId = `${tabBaseId}-heading`;
   const ladderOptions = ["constructed", "limited"] as const satisfies readonly Ladder[];
@@ -193,11 +196,13 @@ export function RankProgressPanel() {
               const resultLabel =
                 point.result === "win" ? "Win" : point.result === "loss" ? "Loss" : "Unknown";
               const timestamp = point.observedAt || point.endedAt;
+              const parsedEvent = parseEventName(point.eventName);
+              const eventLabel = eventDisplayName(parsedEvent, setLookup(parsedEvent.setCode));
               return [
                 `<div style="display:grid;gap:4px;">`,
                 `<strong>${point.rankLabel}</strong>`,
                 `<span>Season ${point.seasonOrdinal} • Match ${point.matchNumber} • ${resultLabel}</span>`,
-                `<span>${point.eventName || "Unknown event"} vs ${point.opponent || "Unknown"}</span>`,
+                `<span>${eventLabel} vs ${point.opponent || "Unknown"}</span>`,
                 `<span>${formatDateTime(timestamp)}</span>`,
                 `</div>`,
               ].join("");
@@ -304,7 +309,7 @@ export function RankProgressPanel() {
           ],
         }
         : null,
-    [chartTheme, ladder, latestPoint, series],
+    [chartTheme, ladder, latestPoint, series, setLookup],
   );
 
   const readyState =

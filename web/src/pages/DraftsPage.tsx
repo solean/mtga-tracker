@@ -1,13 +1,14 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { EventLabel } from "../components/EventLabel";
+import { SetSymbol } from "../components/SetSymbol";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
+import { parseEventName } from "../lib/events";
 import { pct } from "../lib/format";
 import type { DeckSummary, DraftSession } from "../lib/types";
-
-const DRAFT_EVENT_DATE_PATTERN = /_(\d{4})(\d{2})(\d{2})$/;
-const DRAFT_EVENT_PATTERN = /^(QuickDraft|PremierDraft|TraditionalDraft|BotDraft|Sealed|PremierSealed|TraditionalSealed|PlayerDraft)_([A-Z0-9]+)(?:_(\d{8}))?$/;
+import { useEventSets, type SetLookup } from "../lib/useEventSets";
 
 function parseDateValue(timestamp?: string | null): number | null {
   if (!timestamp) {
@@ -22,43 +23,12 @@ function parseDateValue(timestamp?: string | null): number | null {
   return date.getTime();
 }
 
-function parseEventDateValue(eventName?: string | null): number | null {
-  const match = eventName?.match(DRAFT_EVENT_DATE_PATTERN);
-  if (!match) {
-    return null;
-  }
-
-  const [, year, month, day] = match;
-  return Date.UTC(Number(year), Number(month) - 1, Number(day));
-}
-
-function parseDraftEvent(eventName?: string | null): { typeLabel: string; setCode: string } | null {
-  const match = eventName?.match(DRAFT_EVENT_PATTERN);
-  if (!match) {
-    return null;
-  }
-
-  const [, rawType, setCode] = match;
-  const typeLabel =
-    {
-      QuickDraft: "Quick",
-      PremierDraft: "Premier",
-      TraditionalDraft: "Traditional",
-      BotDraft: "Bot",
-      Sealed: "Sealed",
-      PremierSealed: "Premier Sealed",
-      TraditionalSealed: "Traditional Sealed",
-      PlayerDraft: "Player",
-    }[rawType] ?? rawType;
-
-  return {
-    typeLabel,
-    setCode,
-  };
-}
-
 function getDraftSessionDateValue(draft: DraftSession): number | null {
-  return parseDateValue(draft.startedAt) ?? parseDateValue(draft.completedAt) ?? parseEventDateValue(draft.eventName);
+  return (
+    parseDateValue(draft.startedAt) ??
+    parseDateValue(draft.completedAt) ??
+    parseEventName(draft.eventName).dateValue
+  );
 }
 
 function formatDraftSessionDate(draft: DraftSession): string {
@@ -68,7 +38,7 @@ function formatDraftSessionDate(draft: DraftSession): string {
     return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(timestamp));
   }
 
-  const eventDateValue = parseEventDateValue(draft.eventName);
+  const eventDateValue = parseEventName(draft.eventName).dateValue;
   if (eventDateValue != null) {
     return new Intl.DateTimeFormat(undefined, {
       dateStyle: "medium",
@@ -80,16 +50,25 @@ function formatDraftSessionDate(draft: DraftSession): string {
 }
 
 function formatDraftSessionType(draft: DraftSession): string {
-  return parseDraftEvent(draft.eventName)?.typeLabel ?? (draft.isBotDraft ? "Bot" : "Player");
+  const parsed = parseEventName(draft.eventName);
+  if (parsed.kindLabel !== "Unknown event") {
+    return parsed.kindLabel;
+  }
+  return draft.isBotDraft ? "Bot Draft" : "Player Draft";
 }
 
-function formatDraftSessionSet(draft: DraftSession): string {
-  const parsed = parseDraftEvent(draft.eventName);
-  if (!parsed) {
-    return "-";
+function DraftSessionSet({ draft, lookup }: { draft: DraftSession; lookup: SetLookup }) {
+  const parsed = parseEventName(draft.eventName);
+  if (!parsed.setCode) {
+    return <>-</>;
   }
-
-  return parsed.setCode;
+  const setInfo = lookup(parsed.setCode);
+  return (
+    <span className="event-label">
+      {setInfo?.iconSvgUri ? <SetSymbol iconSvgUri={setInfo.iconSvgUri} name={setInfo.name} /> : null}
+      <span className="event-label-text">{setInfo?.name ?? parsed.setCode}</span>
+    </span>
+  );
 }
 
 function getDraftDeckTimestamp(deck: DeckSummary): number | null {
@@ -121,6 +100,11 @@ export function DraftsPage() {
     queryKey: ["decks", "draft"],
     queryFn: () => api.decks("draft"),
   });
+
+  const { lookup: setLookup } = useEventSets([
+    ...(draftsQuery.data ?? []).map((draft) => draft.eventName),
+    ...(draftDecksQuery.data ?? []).map((deck) => deck.eventName),
+  ]);
 
   const draftDecks = [...(draftDecksQuery.data ?? [])].sort((a, b) => {
     const aDate = getDraftDeckTimestamp(a);
@@ -189,7 +173,9 @@ export function DraftsPage() {
                   </td>
                   <td>{formatDraftSessionDate(draft)}</td>
                   <td>{formatDraftSessionType(draft)}</td>
-                  <td>{formatDraftSessionSet(draft)}</td>
+                  <td>
+                    <DraftSessionSet draft={draft} lookup={setLookup} />
+                  </td>
                   <td>{draft.wins ?? "-"}</td>
                   <td>{draft.losses ?? "-"}</td>
                 </tr>
@@ -228,7 +214,9 @@ export function DraftsPage() {
                     </Link>
                   </td>
                   <td>{deck.format || "-"}</td>
-                  <td>{deck.eventName || "-"}</td>
+                  <td>
+                    <EventLabel eventName={deck.eventName} lookup={setLookup} />
+                  </td>
                   <td>{deck.matches}</td>
                   <td>{deck.wins}</td>
                   <td>{deck.losses}</td>
