@@ -12,6 +12,7 @@ import {
   preferredReplayFrameIndex,
   replayFrameHasLifeDelta,
   replayFrameLifeTotalWinner,
+  replayLifeDelta,
   replayTurnBoundaryCount,
   replayTurnValue,
   summarizeReplayGame,
@@ -123,6 +124,19 @@ describe("meaningful frame filtering", () => {
     const f0 = frame({ id: 1 });
     const f1 = frame({ id: 2 });
     expect(filterMeaningfulReplayFrames([f0, f1])).toEqual([f1]);
+  });
+});
+
+describe("HUD life delta", () => {
+  test("returns the signed change for a side, or null when flat/unknown", () => {
+    const prev = frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 18 });
+    const next = frame({ id: 2, selfLifeTotal: 17, opponentLifeTotal: 18 });
+    expect(replayLifeDelta(prev, next, "self")).toBe(-3);
+    expect(replayLifeDelta(prev, next, "opponent")).toBeNull();
+    expect(replayLifeDelta(null, next, "self")).toBeNull();
+    expect(
+      replayLifeDelta(frame({ id: 1 }), frame({ id: 2, selfLifeTotal: 5 }), "self"),
+    ).toBeNull();
   });
 });
 

@@ -27,6 +27,7 @@ import { fetchCardPreview } from "../lib/scryfall";
 import type { CardPreview } from "../lib/scryfall";
 import type {
   MatchCardPlay,
+  MatchReplayChange,
   MatchReplayFrame,
   MatchReplayFrameObject,
 } from "../lib/types";
@@ -50,9 +51,9 @@ import {
   replayAnnotationHasType,
   replayChangePriority,
   replayFrameAnnotations,
-  replayFrameLifeTotalsSummary,
   replayFrameMomentLabel,
   replayFramePrimarySummary,
+  replayLifeDelta,
   replayMomentLabel,
   replayObjectBlockAttackerIDs,
   replayObjectCounterSummaries,
@@ -84,7 +85,11 @@ import {
   type ReplayGameSummary,
   type ReplayTurnBoundary,
 } from "../lib/replay";
-import { useReplayPlayer } from "../lib/replay/useReplayPlayer";
+import {
+  REPLAY_SPEED_OPTIONS,
+  useReplayPlayer,
+} from "../lib/replay/useReplayPlayer";
+import { useReplayKeyboard } from "../lib/replay/useReplayKeyboard";
 
 type OpponentDeckCard = {
   cardId: number;
@@ -1497,6 +1502,126 @@ function MatchReplayTurnSelector({
   );
 }
 
+function MatchReplaySpeedControl({
+  speed,
+  onSelectSpeed,
+}: {
+  speed: number;
+  onSelectSpeed: (speed: number) => void;
+}) {
+  return (
+    <div
+      className="match-replay-speed"
+      role="group"
+      aria-label="Playback speed"
+    >
+      <span className="match-replay-speed-label">Speed</span>
+      {REPLAY_SPEED_OPTIONS.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className={`match-replay-speed-button ${speed === option ? "is-active" : ""}`}
+          aria-pressed={speed === option}
+          onClick={() => onSelectSpeed(option)}
+        >
+          {option}×
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MatchReplayHudLife({
+  side,
+  life,
+  delta,
+  flashKey,
+}: {
+  side: "self" | "opponent";
+  life?: number;
+  delta: number | null;
+  flashKey: number;
+}) {
+  return (
+    <div className={`match-replay-hud-life is-${side}`}>
+      <p className="match-replay-hud-life-label">{timelinePlayerLabel(side)}</p>
+      <div className="match-replay-hud-life-readout">
+        <span className="match-replay-hud-life-value">
+          {typeof life === "number" ? life : "—"}
+        </span>
+        {delta !== null ? (
+          <span
+            key={flashKey}
+            className={`match-replay-hud-delta ${delta > 0 ? "is-up" : "is-down"}`}
+            aria-label={`${timelinePlayerLabel(side)} life ${delta > 0 ? "gained" : "lost"} ${Math.abs(delta)}`}
+          >
+            {delta > 0 ? `+${delta}` : delta}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MatchReplayHud({
+  currentFrame,
+  previousFrame,
+  stepNumber,
+  stepCount,
+  headline,
+  changes,
+}: {
+  currentFrame: MatchReplayFrame;
+  previousFrame: MatchReplayFrame | null;
+  stepNumber: number;
+  stepCount: number;
+  headline: string;
+  changes: MatchReplayChange[];
+}) {
+  return (
+    <section className="match-replay-hud" aria-label="Replay status">
+      <MatchReplayHudLife
+        side="opponent"
+        life={currentFrame.opponentLifeTotal}
+        delta={replayLifeDelta(previousFrame, currentFrame, "opponent")}
+        flashKey={currentFrame.id}
+      />
+      <div className="match-replay-hud-center">
+        <div className="match-replay-hud-meta">
+          <span className="match-replay-hud-moment">
+            {replayFrameMomentLabel(currentFrame)}
+          </span>
+          <span className="match-replay-hud-step">
+            Step {stepNumber} / {stepCount}
+          </span>
+        </div>
+        <p className="match-replay-hud-headline">{headline}</p>
+        {changes.length > 0 ? (
+          <div
+            className="match-replay-change-list is-hud"
+            aria-label="Step changes"
+          >
+            {changes.map((change, index) => (
+              <span
+                className="match-replay-change-pill"
+                key={`${change.instanceId}-${change.action}-${index}`}
+              >
+                {describeReplayChange(change)}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <MatchReplayHudLife
+        side="self"
+        life={currentFrame.selfLifeTotal}
+        delta={replayLifeDelta(previousFrame, currentFrame, "self")}
+        flashKey={currentFrame.id}
+      />
+    </section>
+  );
+}
+
 function MatchReplayFrameBoard({
   gameNumber,
   frames,
@@ -1513,6 +1638,8 @@ function MatchReplayFrameBoard({
     setIndex: setSelectedFrameIndex,
     isPlaying,
     setIsPlaying,
+    speed,
+    setSpeed,
     lastIndex: lastFrameIndex,
   } = useReplayPlayer(frames.length, preferredReplayFrameIndex(frames));
   const [zoneDialogState, setZoneDialogState] =
@@ -1726,12 +1853,6 @@ function MatchReplayFrameBoard({
   const changedInstanceIDs = new Set(
     currentFrameChanges.map((change) => change.instanceId),
   );
-  const unknownObjectsCount = currentObjects.filter(
-    (object) => object.playerSide === "unknown",
-  ).length;
-  const stackCount = currentObjects.filter(
-    (object) => boardZoneKind(object.zoneType) === "stack",
-  ).length;
   const primarySummary = replayFramePrimarySummary(currentFrame, previousFrame);
   const notableChanges = [...currentFrameChanges]
     .sort(
@@ -1745,19 +1866,47 @@ function MatchReplayFrameBoard({
   const canJumpNextTurn =
     currentTurnBoundaryIndex >= 0 &&
     currentTurnBoundaryIndex < turnBoundaries.length - 1;
-  const frameVisibilitySummary = `${currentObjects.length} tracked card${
-    currentObjects.length === 1 ? "" : "s"
-  } visible${
-    stackCount > 0 ? ` • ${stackCount} currently on the stack` : " • stack empty"
-  }${
-    replayFrameLifeTotalsSummary(currentFrame)
-      ? ` • ${replayFrameLifeTotalsSummary(currentFrame)}`
-      : ""
-  }${
-    unknownObjectsCount > 0
-      ? ` • ${unknownObjectsCount} with unknown owner`
-      : ""
-  }.`;
+
+  const goToFirstStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(0);
+  };
+  const goToLastStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(lastFrameIndex);
+  };
+  const goToPrevStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(Math.max(safeSelectedFrameIndex - 1, 0));
+  };
+  const goToNextStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(Math.min(safeSelectedFrameIndex + 1, lastFrameIndex));
+  };
+  const goToPrevTurn = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(
+      turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
+    );
+  };
+  const goToNextTurn = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(
+      turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
+        frames.length - 1,
+    );
+  };
+  const togglePlay = () => setIsPlaying((currentValue) => !currentValue);
+
+  useReplayKeyboard({
+    onStepBackward: goToPrevStep,
+    onStepForward: goToNextStep,
+    onPrevTurn: goToPrevTurn,
+    onNextTurn: goToNextTurn,
+    onTogglePlay: togglePlay,
+    onFirst: goToFirstStep,
+    onLast: goToLastStep,
+  });
 
   useEffect(() => {
     setFocusedConnectionInstanceId(null);
@@ -1796,10 +1945,6 @@ function MatchReplayFrameBoard({
       <div className="match-replay-head">
         <div className="match-replay-head-copy">
           <h4>Game {gameNumber}</h4>
-          <p className="match-replay-caption">
-            {replayFrameMomentLabel(currentFrame)} • Step{" "}
-            {safeSelectedFrameIndex + 1} of {frames.length}
-          </p>
           {gameSummary ? (
             <div className="match-replay-result">
               <ResultPill result={gameSummary.result} />
@@ -1811,70 +1956,61 @@ function MatchReplayFrameBoard({
       </div>
 
       <div className="match-replay-controls">
-        <div
-          className="match-replay-button-row"
-          role="group"
-          aria-label={`Game ${gameNumber} replay controls`}
-        >
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => setIsPlaying((currentValue) => !currentValue)}
-            aria-pressed={isPlaying}
+        <div className="match-replay-controls-bar">
+          <div
+            className="match-replay-button-row"
+            role="group"
+            aria-label={`Game ${gameNumber} replay controls`}
           >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
-              );
-            }}
-            disabled={!canJumpPrevTurn}
-          >
-            Previous Turn
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(Math.max(safeSelectedFrameIndex - 1, 0));
-            }}
-            disabled={!canStepBackward}
-          >
-            Previous Step
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                Math.min(safeSelectedFrameIndex + 1, lastFrameIndex),
-              );
-            }}
-            disabled={!canStepForward}
-          >
-            Next Step
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
-                  frames.length - 1,
-              );
-            }}
-            disabled={!canJumpNextTurn}
-          >
-            Next Turn
-          </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={togglePlay}
+              aria-pressed={isPlaying}
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevTurn}
+              disabled={!canJumpPrevTurn}
+            >
+              Previous Turn
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevStep}
+              disabled={!canStepBackward}
+            >
+              Previous Step
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextStep}
+              disabled={!canStepForward}
+            >
+              Next Step
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextTurn}
+              disabled={!canJumpNextTurn}
+            >
+              Next Turn
+            </button>
+          </div>
+
+          <div className="match-replay-controls-aux">
+            <MatchReplaySpeedControl speed={speed} onSelectSpeed={setSpeed} />
+            <p className="match-replay-kbd-hint">
+              <kbd>←</kbd>
+              <kbd>→</kbd> step · <kbd>⇧</kbd> turn · <kbd>space</kbd> play
+            </p>
+          </div>
         </div>
 
         <div className="match-replay-track-panel">
@@ -1923,36 +2059,14 @@ function MatchReplayFrameBoard({
         </aside>
 
         <div className="match-replay-board-column">
-          <section
-            className="match-replay-statusbar"
-            aria-label="Replay status"
-          >
-            <div className="match-replay-statusbar-head">
-              <p className="match-replay-sidebox-label">Replay Step</p>
-              <p className="match-replay-statusbar-title">
-                {replayFrameMomentLabel(currentFrame)}
-              </p>
-            </div>
-            <p className="match-replay-statusbar-copy">{primarySummary}</p>
-            <p className="match-replay-statusbar-copy">
-              {frameVisibilitySummary}
-            </p>
-            {notableChanges.length > 0 ? (
-              <div
-                className="match-replay-change-list is-statusbar"
-                aria-label="Frame changes"
-              >
-                {notableChanges.map((change, index) => (
-                  <span
-                    className="match-replay-change-pill"
-                    key={`${change.instanceId}-${change.action}-${index}`}
-                  >
-                    {describeReplayChange(change)}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </section>
+          <MatchReplayHud
+            currentFrame={currentFrame}
+            previousFrame={previousFrame}
+            stepNumber={safeSelectedFrameIndex + 1}
+            stepCount={frames.length}
+            headline={primarySummary}
+            changes={notableChanges}
+          />
 
           <div className="match-replay-board is-combat-board">
             <MatchReplayFrameBattlefield
@@ -2189,6 +2303,8 @@ function MatchTimelineBoard({
     setIndex: setSelectedActionIndex,
     isPlaying,
     setIsPlaying,
+    speed,
+    setSpeed,
   } = useReplayPlayer(plays.length, plays.length > 0 ? plays.length - 1 : 0);
   const [zoneDialogState, setZoneDialogState] =
     useState<MatchReplayZoneDialogState | null>(null);
@@ -2215,6 +2331,50 @@ function MatchTimelineBoard({
           boundary.turnKey === replayTurnValue(currentAction.turnNumber),
       )
     : -1;
+
+  const lastActionIndex = plays.length > 0 ? plays.length - 1 : 0;
+  const goToFirstAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(0);
+  };
+  const goToLastAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(lastActionIndex);
+  };
+  const goToPrevAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex((currentIndex) => Math.max(currentIndex - 1, 0));
+  };
+  const goToNextAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex((currentIndex) =>
+      Math.min(currentIndex + 1, lastActionIndex),
+    );
+  };
+  const goToPrevActionTurn = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(
+      turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
+    );
+  };
+  const goToNextActionTurn = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(
+      turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
+        lastActionIndex,
+    );
+  };
+  const togglePlay = () => setIsPlaying((currentValue) => !currentValue);
+
+  useReplayKeyboard({
+    onStepBackward: goToPrevAction,
+    onStepForward: goToNextAction,
+    onPrevTurn: goToPrevActionTurn,
+    onNextTurn: goToNextActionTurn,
+    onTogglePlay: togglePlay,
+    onFirst: goToFirstAction,
+    onLast: goToLastAction,
+  });
 
   if (!currentAction) {
     return (
@@ -2253,72 +2413,61 @@ function MatchTimelineBoard({
       </div>
 
       <div className="match-replay-controls">
-        <div
-          className="match-replay-button-row"
-          role="group"
-          aria-label={`Game ${gameNumber} replay controls`}
-        >
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => setIsPlaying((currentValue) => !currentValue)}
-            aria-pressed={isPlaying}
+        <div className="match-replay-controls-bar">
+          <div
+            className="match-replay-button-row"
+            role="group"
+            aria-label={`Game ${gameNumber} replay controls`}
           >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex(
-                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
-              );
-            }}
-            disabled={!canJumpPrevTurn}
-          >
-            Previous Turn
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex((currentIndex) =>
-                Math.max(currentIndex - 1, 0),
-              );
-            }}
-            disabled={!canStepBackward}
-          >
-            Previous Action
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex((currentIndex) =>
-                Math.min(currentIndex + 1, plays.length - 1),
-              );
-            }}
-            disabled={!canStepForward}
-          >
-            Next Action
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex(
-                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
-                  plays.length - 1,
-              );
-            }}
-            disabled={!canJumpNextTurn}
-          >
-            Next Turn
-          </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={togglePlay}
+              aria-pressed={isPlaying}
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevActionTurn}
+              disabled={!canJumpPrevTurn}
+            >
+              Previous Turn
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevAction}
+              disabled={!canStepBackward}
+            >
+              Previous Action
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextAction}
+              disabled={!canStepForward}
+            >
+              Next Action
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextActionTurn}
+              disabled={!canJumpNextTurn}
+            >
+              Next Turn
+            </button>
+          </div>
+
+          <div className="match-replay-controls-aux">
+            <MatchReplaySpeedControl speed={speed} onSelectSpeed={setSpeed} />
+            <p className="match-replay-kbd-hint">
+              <kbd>←</kbd>
+              <kbd>→</kbd> step · <kbd>⇧</kbd> turn · <kbd>space</kbd> play
+            </p>
+          </div>
         </div>
 
         <div className="match-replay-track-panel">

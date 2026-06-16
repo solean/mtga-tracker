@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
-const AUTOPLAY_INTERVAL_MS = 1200;
+/** Autoplay cadence at 1× speed; divided by the selected speed multiplier. */
+const BASE_AUTOPLAY_INTERVAL_MS = 1200;
+
+/** Selectable autoplay speed multipliers, slowest to fastest. */
+export const REPLAY_SPEED_OPTIONS = [0.5, 1, 2, 4] as const;
 
 type ReplayPlayer = {
   /** Current step, always clamped to the valid range for `length`. */
@@ -8,6 +12,9 @@ type ReplayPlayer = {
   setIndex: (next: number | ((current: number) => number)) => void;
   isPlaying: boolean;
   setIsPlaying: (next: boolean | ((current: boolean) => boolean)) => void;
+  /** Autoplay speed multiplier (1 = the original 1200ms cadence). */
+  speed: number;
+  setSpeed: (next: number) => void;
   /** Highest valid index (0 when the timeline is empty). */
   lastIndex: number;
 };
@@ -25,6 +32,7 @@ export function useReplayPlayer(
 ): ReplayPlayer {
   const [index, setIndex] = useState(initialIndex);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const lastIndex = length > 0 ? length - 1 : 0;
   const safeIndex = Math.min(index, lastIndex);
 
@@ -48,10 +56,18 @@ export function useReplayPlayer(
 
     const timeoutID = window.setTimeout(() => {
       setIndex(Math.min(safeIndex + 1, lastIndex));
-    }, AUTOPLAY_INTERVAL_MS);
+    }, BASE_AUTOPLAY_INTERVAL_MS / speed);
 
     return () => window.clearTimeout(timeoutID);
-  }, [isPlaying, lastIndex, safeIndex]);
+  }, [isPlaying, lastIndex, safeIndex, speed]);
 
-  return { index: safeIndex, setIndex, isPlaying, setIsPlaying, lastIndex };
+  return {
+    index: safeIndex,
+    setIndex,
+    isPlaying,
+    setIsPlaying,
+    speed,
+    setSpeed,
+    lastIndex,
+  };
 }

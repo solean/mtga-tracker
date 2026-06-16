@@ -1085,3 +1085,21 @@ export function summarizeReplayZones(
   return counts;
 }
 
+
+/**
+ * Signed life change for one side between two frames, or null when either total
+ * is missing or unchanged. Drives the HUD delta flash.
+ */
+export function replayLifeDelta(
+  previousFrame: MatchReplayFrame | null | undefined,
+  frame: MatchReplayFrame | null | undefined,
+  side: "self" | "opponent",
+): number | null {
+  const previous = replayFrameLifeTotalForSide(previousFrame, side);
+  const current = replayFrameLifeTotalForSide(frame, side);
+  if (typeof previous !== "number" || typeof current !== "number") {
+    return null;
+  }
+  const delta = current - previous;
+  return delta === 0 ? null : delta;
+}

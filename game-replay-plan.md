@@ -11,8 +11,16 @@ Status markers: ✅ done · 🔲 open · 🟡 in progress
 > declarations; the page dropped ~4,090 → ~3,030 lines), the duplicated transport
 > state machine unified into `web/src/lib/replay/useReplayPlayer.ts`, and a test
 > runner wired up (`bun test`) with `web/test/replay.test.ts`. No behavior change
-> — verified by `tsc -b`, `bun run build`, and **21 passing tests**. Next up:
-> **Phase 1** (HUD strip + keyboard nav + speed control).
+> — verified by `tsc -b`, `bun run build`, and **21 passing tests**.
+>
+> ✅ **Phase 1 complete.** Persistent HUD (`MatchReplayHud` — big life totals
+> with a Δ flash, turn/phase, step counter, beat headline, change pills) replaces
+> the buried status sentence; keyboard transport (`useReplayKeyboard`: ←/→ step,
+> ⇧+←/→ turn, space play, Home/End); and a 0.5×/1×/2×/4× speed control on the
+> hook (`useReplayPlayer`). Wired into both the frame board and the observed
+> timeline board. **22 tests pass**; verified live against match 675 (895 frames)
+> — HUD renders, Shift+← jumps turns, a −7 combat swing flashes red, 2× speed
+> toggles, no console errors. Next up: **Phase 2** (scrubber + life sparkline).
 
 ---
 
@@ -81,11 +89,12 @@ floating top-right, life pods at the poles.
   not in a column.
 - Biggest perceptual jump; mostly layout/CSS.
 
-### 2. A persistent HUD strip 🔲
+### 2. A persistent HUD strip ✅
 Both players' life **big**, a Δ flash on change (reuse `replayFrameHasLifeDelta`,
-~992), turn + phase, active player, and the current beat as a **headline**.
-Replaces the buried `frameVisibilitySummary` sentence. The "what's happening now"
-anchor that never moves.
+~992), turn + phase, and the current beat as a **headline**. Replaces the buried
+`frameVisibilitySummary` sentence. The "what's happening now" anchor that never
+moves. *Done in Phase 1 (`MatchReplayHud`); active-player indicator deferred
+since the frame data doesn't expose it cleanly.*
 
 ### 3. A scrubber with a dual life sparkline 🔲
 REVIEW items 5 & 6 in one component. A full-width track: one tick per step, turn
@@ -102,9 +111,11 @@ The "List" view reborn as a chess-style move list that co-pilots the board
 instead of living in a separate tab. Current beat highlighted, click any line to
 jump, turns as group headers. Where the narration improvements pay off.
 
-### 5. Keyboard + speed 🔲
+### 5. Keyboard + speed ✅
 `←/→` step, `Shift+←/→` turn, `Space` play/pause, `Home/End`, and a
-0.5×/1×/2×/4× speed control. Cheapest win, highest "feels pro" payoff.
+0.5×/1×/2×/4× speed control. Cheapest win, highest "feels pro" payoff. *Done in
+Phase 1 (`useReplayKeyboard` + speed state in `useReplayPlayer`); the global
+listener ignores focused inputs/buttons/tabs so it never double-fires.*
 
 ---
 
@@ -175,7 +186,7 @@ calls this *"the highest-value refactor in the repo."*
 | Phase | Ships | Effort | Notes |
 |---|---|---|---|
 | 0 ✅ | Extract `lib/replay/` + `useReplayPlayer` + wire up `bun test` | M | Done — unblocks everything; no behavior change (typecheck + build + 21 tests green) |
-| 1 | HUD strip + keyboard + speed | S | Immediate feel upgrade |
+| 1 ✅ | HUD strip + keyboard + speed | S | Done — verified live against match 675 (HUD, turn jumps, −7 delta flash, 2× speed) |
 | 2 | Scrubber + life sparkline (retire turn pills) | M | |
 | 3 | Mirrored arena layout | M | Biggest visual jump |
 | 4 | Coalesced beats + humanized play-by-play rail | M | |
