@@ -39,6 +39,8 @@ import {
   boardTurnLabel,
   boardZoneKind,
   boardZoneLabel,
+  buildReplayLifeSeries,
+  buildReplayTickKinds,
   buildReplayTurnBoundaries,
   cardDisplayName,
   cardFallbackHref,
@@ -54,6 +56,7 @@ import {
   replayFrameMomentLabel,
   replayFramePrimarySummary,
   replayLifeDelta,
+  replayLifeSeriesDomain,
   replayMomentLabel,
   replayObjectBlockAttackerIDs,
   replayObjectCounterSummaries,
@@ -63,8 +66,6 @@ import {
   replayObjectPTLabel,
   replayObjectStatePills,
   replayObjectStatusText,
-  replayTurnBoundaryCount,
-  replayTurnLabel,
   replayTurnValue,
   shouldRenderOnBattlefield,
   sortBattlefieldSectionObjects,
@@ -83,6 +84,8 @@ import {
   type ReplayConnectionKind,
   type ReplayGameGroup,
   type ReplayGameSummary,
+  type ReplayLifePoint,
+  type ReplayTickKind,
   type ReplayTurnBoundary,
 } from "../lib/replay";
 import {
@@ -1447,57 +1450,191 @@ function MatchReplayStack({
   );
 }
 
-function MatchReplayTurnSelector({
-  turns,
-  selectedItemIndex,
-  selectedTurnIndex,
-  onSelectTurn,
+const SCRUBBER_VIEW_W = 1000;
+const SCRUBBER_VIEW_H = 64;
+const SCRUBBER_LIFE_TOP = 7;
+const SCRUBBER_LIFE_H = 31;
+const SCRUBBER_TICK_TOP = 43;
+const SCRUBBER_TICK_BOTTOM = 51;
+
+function MatchReplayScrubber({
+  length,
+  index,
+  onSeek,
+  turnBoundaries,
   itemLabel,
+  lifeSeries,
+  tickKinds,
 }: {
-  turns: ReplayTurnBoundary[];
-  selectedItemIndex: number;
-  selectedTurnIndex: number;
-  onSelectTurn: (index: number) => void;
+  length: number;
+  index: number;
+  onSeek: (index: number) => void;
+  turnBoundaries: ReplayTurnBoundary[];
   itemLabel: "step" | "action";
+  lifeSeries?: ReplayLifePoint[];
+  tickKinds?: ReplayTickKind[];
 }) {
-  if (turns.length === 0) {
-    return null;
-  }
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const lastIndex = length > 0 ? length - 1 : 0;
+
+  const xOf = (i: number) =>
+    lastIndex > 0 ? (i / lastIndex) * SCRUBBER_VIEW_W : 0;
+  const pctOf = (i: number) => (lastIndex > 0 ? (i / lastIndex) * 100 : 0);
+
+  const domain =
+    lifeSeries && lifeSeries.length > 0
+      ? replayLifeSeriesDomain(lifeSeries)
+      : null;
+  const yOf = (value: number) => {
+    if (!domain) {
+      return SCRUBBER_LIFE_TOP + SCRUBBER_LIFE_H;
+    }
+    const span = domain.max - domain.min || 1;
+    return SCRUBBER_LIFE_TOP + (1 - (value - domain.min) / span) * SCRUBBER_LIFE_H;
+  };
+  const lifePath = (side: "self" | "opponent") => {
+    if (!lifeSeries) {
+      return "";
+    }
+    const points: string[] = [];
+    lifeSeries.forEach((point, i) => {
+      const value = point[side];
+      if (typeof value === "number") {
+        points.push(`${xOf(i).toFixed(1)},${yOf(value).toFixed(2)}`);
+      }
+    });
+    return points.join(" ");
+  };
+
+  const seekFromClientX = (clientX: number) => {
+    const element = trackRef.current;
+    if (!element) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const fraction = Math.max(
+      0,
+      Math.min(1, (clientX - rect.left) / rect.width),
+    );
+    onSeek(Math.round(fraction * lastIndex));
+  };
 
   return (
-    <div className="match-replay-track-scroll">
-      <div className="match-replay-turn-track" role="group" aria-label="Replay turns">
-        {turns.map((turn, index) => {
-          const isCurrent = index === selectedTurnIndex;
-          const itemCount = replayTurnBoundaryCount(turn);
-          const itemCountLabel = `${itemCount} ${itemLabel}${itemCount === 1 ? "" : "s"}`;
-          const currentTurnIndex =
-            isCurrent && selectedItemIndex >= turn.firstIndex
-              ? selectedItemIndex - turn.firstIndex + 1
-              : null;
+    <div className="match-replay-scrubber">
+      <div
+        ref={trackRef}
+        className={`match-replay-scrubber-track ${isScrubbing ? "is-scrubbing" : ""}`}
+        role="slider"
+        tabIndex={0}
+        aria-label={`Replay ${itemLabel} position`}
+        aria-valuemin={1}
+        aria-valuemax={Math.max(length, 1)}
+        aria-valuenow={index + 1}
+        aria-valuetext={`${itemLabel} ${index + 1} of ${length}`}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            // pointer capture is best-effort
+          }
+          setIsScrubbing(true);
+          seekFromClientX(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (isScrubbing) {
+            seekFromClientX(event.clientX);
+          }
+        }}
+        onPointerUp={(event) => {
+          setIsScrubbing(false);
+          try {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          } catch {
+            // pointer capture may already be released
+          }
+        }}
+        onPointerCancel={() => setIsScrubbing(false)}
+      >
+        <svg
+          className="match-replay-scrubber-svg"
+          viewBox={`0 0 ${SCRUBBER_VIEW_W} ${SCRUBBER_VIEW_H}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {turnBoundaries.map((boundary) => (
+            <line
+              key={`turn-${boundary.turnKey}-${boundary.firstIndex}`}
+              className="match-replay-scrubber-turn-line"
+              x1={xOf(boundary.firstIndex)}
+              x2={xOf(boundary.firstIndex)}
+              y1={0}
+              y2={SCRUBBER_VIEW_H}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {tickKinds?.map((kind, i) =>
+            kind === "other" ? null : (
+              <line
+                key={`tick-${i}`}
+                className={`match-replay-scrubber-tick is-${kind}`}
+                x1={xOf(i)}
+                x2={xOf(i)}
+                y1={SCRUBBER_TICK_TOP}
+                y2={SCRUBBER_TICK_BOTTOM}
+                vectorEffect="non-scaling-stroke"
+              />
+            ),
+          )}
+          {lifeSeries ? (
+            <>
+              <polyline
+                className="match-replay-scrubber-life is-opponent"
+                points={lifePath("opponent")}
+                vectorEffect="non-scaling-stroke"
+              />
+              <polyline
+                className="match-replay-scrubber-life is-self"
+                points={lifePath("self")}
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          ) : null}
+        </svg>
 
-          return (
-            <button
-              key={`${turn.turnKey}-${turn.firstIndex}`}
-              type="button"
-              className={`match-replay-turn-pill ${isCurrent ? "is-current" : ""}`}
-              aria-pressed={isCurrent}
-              aria-label={`${replayTurnLabel(turn.turnKey)}. ${itemCountLabel}.${currentTurnIndex ? ` Currently on ${itemLabel} ${currentTurnIndex} of ${itemCount}.` : " Jump to the start of this turn."}`}
-              onClick={() => onSelectTurn(turn.firstIndex)}
+        <div className="match-replay-scrubber-turn-labels" aria-hidden="true">
+          {turnBoundaries.map((boundary) => (
+            <span
+              key={`turn-label-${boundary.turnKey}-${boundary.firstIndex}`}
+              className="match-replay-scrubber-turn-label"
+              style={{ left: `${pctOf(boundary.firstIndex)}%` }}
             >
-              <span className="match-replay-turn-pill-label">
-                {boardTurnLabel(turn.turnKey)}
-              </span>
-              <span className="match-replay-turn-pill-meta">
-                {itemCountLabel}
-                {currentTurnIndex
-                  ? ` • ${itemLabel} ${currentTurnIndex}/${itemCount}`
-                  : ""}
-              </span>
-            </button>
-          );
-        })}
+              {boardTurnLabel(boundary.turnKey)}
+            </span>
+          ))}
+        </div>
+
+        <div
+          className="match-replay-scrubber-head"
+          style={{ left: `${pctOf(index)}%` }}
+          aria-hidden="true"
+        />
       </div>
+
+      {lifeSeries ? (
+        <div className="match-replay-scrubber-legend" aria-hidden="true">
+          <span className="match-replay-scrubber-legend-item is-self">
+            <span className="match-replay-scrubber-legend-swatch" /> You
+          </span>
+          <span className="match-replay-scrubber-legend-item is-opponent">
+            <span className="match-replay-scrubber-legend-swatch" /> Opponent
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1656,6 +1793,8 @@ function MatchReplayFrameBoard({
       ? frames[safeSelectedFrameIndex - 1] ?? null
       : null;
   const turnBoundaries = useMemo(() => buildReplayTurnBoundaries(frames), [frames]);
+  const lifeSeries = useMemo(() => buildReplayLifeSeries(frames), [frames]);
+  const tickKinds = useMemo(() => buildReplayTickKinds(frames), [frames]);
 
   const currentTurnBoundaryIndex = currentFrame
     ? turnBoundaries.findIndex(
@@ -2014,12 +2153,17 @@ function MatchReplayFrameBoard({
         </div>
 
         <div className="match-replay-track-panel">
-          <MatchReplayTurnSelector
-            turns={turnBoundaries}
-            selectedItemIndex={safeSelectedFrameIndex}
-            selectedTurnIndex={currentTurnBoundaryIndex}
-            onSelectTurn={setSelectedFrameIndex}
+          <MatchReplayScrubber
+            length={frames.length}
+            index={safeSelectedFrameIndex}
+            onSeek={(nextIndex) => {
+              setIsPlaying(false);
+              setSelectedFrameIndex(nextIndex);
+            }}
+            turnBoundaries={turnBoundaries}
             itemLabel="step"
+            lifeSeries={lifeSeries}
+            tickKinds={tickKinds}
           />
         </div>
       </div>
@@ -2471,11 +2615,14 @@ function MatchTimelineBoard({
         </div>
 
         <div className="match-replay-track-panel">
-          <MatchReplayTurnSelector
-            turns={turnBoundaries}
-            selectedItemIndex={selectedActionIndex}
-            selectedTurnIndex={currentTurnBoundaryIndex}
-            onSelectTurn={setSelectedActionIndex}
+          <MatchReplayScrubber
+            length={plays.length}
+            index={selectedActionIndex}
+            onSeek={(nextIndex) => {
+              setIsPlaying(false);
+              setSelectedActionIndex(nextIndex);
+            }}
+            turnBoundaries={turnBoundaries}
             itemLabel="action"
           />
         </div>

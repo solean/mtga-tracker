@@ -4,6 +4,8 @@ import {
   battlefieldSectionKind,
   boardZoneKind,
   boardZoneLabel,
+  buildReplayLifeSeries,
+  buildReplayTickKinds,
   buildReplayTurnBoundaries,
   describeReplayChange,
   filterMeaningfulReplayFrames,
@@ -12,7 +14,9 @@ import {
   preferredReplayFrameIndex,
   replayFrameHasLifeDelta,
   replayFrameLifeTotalWinner,
+  replayFrameTickKind,
   replayLifeDelta,
+  replayLifeSeriesDomain,
   replayTurnBoundaryCount,
   replayTurnValue,
   summarizeReplayGame,
@@ -124,6 +128,75 @@ describe("meaningful frame filtering", () => {
     const f0 = frame({ id: 1 });
     const f1 = frame({ id: 2 });
     expect(filterMeaningfulReplayFrames([f0, f1])).toEqual([f1]);
+  });
+});
+
+describe("life series", () => {
+  test("carries the last known life total forward across gaps", () => {
+    const series = buildReplayLifeSeries([
+      frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+      frame({ id: 2, selfLifeTotal: 18 }),
+      frame({ id: 3, opponentLifeTotal: 15 }),
+    ]);
+    expect(series).toEqual([
+      { self: 20, opponent: 20 },
+      { self: 18, opponent: 20 },
+      { self: 18, opponent: 15 },
+    ]);
+  });
+
+  test("domain always spans at least 0–20 and widens to extremes", () => {
+    expect(replayLifeSeriesDomain([{ self: 12, opponent: 8 }])).toEqual({
+      min: 0,
+      max: 20,
+    });
+    expect(
+      replayLifeSeriesDomain([
+        { self: 24, opponent: -3 },
+        { self: 5, opponent: 5 },
+      ]),
+    ).toEqual({ min: -3, max: 24 });
+  });
+});
+
+describe("scrubber tick classification", () => {
+  test("ranks life swings, combat, and spells off the change stream", () => {
+    const prev = frame({ id: 1, selfLifeTotal: 20 });
+    expect(
+      replayFrameTickKind(frame({ id: 2, selfLifeTotal: 17 }), prev),
+    ).toBe("life");
+    expect(
+      replayFrameTickKind(
+        frame({ id: 2, changes: [change({ action: "block" })] }),
+        null,
+      ),
+    ).toBe("combat");
+    expect(
+      replayFrameTickKind(
+        frame({
+          id: 2,
+          changes: [change({ action: "move_public", toZoneType: "Stack" })],
+        }),
+        null,
+      ),
+    ).toBe("spell");
+    expect(
+      replayFrameTickKind(frame({ id: 2, changes: [change({ action: "tap" })] }), null),
+    ).toBe("other");
+  });
+
+  test("builds a tick kind per frame in order", () => {
+    const kinds = buildReplayTickKinds([
+      frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+      frame({
+        id: 2,
+        selfLifeTotal: 20,
+        opponentLifeTotal: 20,
+        changes: [change({ action: "attack" })],
+      }),
+      frame({ id: 3, selfLifeTotal: 18, opponentLifeTotal: 20 }),
+    ]);
+    expect(kinds).toEqual(["other", "combat", "life"]);
   });
 });
 

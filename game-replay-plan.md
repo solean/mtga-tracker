@@ -20,7 +20,17 @@ Status markers: ✅ done · 🔲 open · 🟡 in progress
 > hook (`useReplayPlayer`). Wired into both the frame board and the observed
 > timeline board. **22 tests pass**; verified live against match 675 (895 frames)
 > — HUD renders, Shift+← jumps turns, a −7 combat swing flashes red, 2× speed
-> toggles, no console errors. Next up: **Phase 2** (scrubber + life sparkline).
+> toggles, no console errors.
+>
+> ✅ **Phase 2 complete.** `MatchReplayScrubber` retires the turn-pill row: a
+> full-width track with a dual life sparkline (green you / red opponent across the
+> whole game), turn-boundary labels, event ticks colored by kind (combat/spell/
+> life), a draggable playhead, and click/drag-to-seek. Backed by new pure helpers
+> `buildReplayLifeSeries` / `replayLifeSeriesDomain` / `replayFrameTickKind` /
+> `buildReplayTickKinds`. **26 tests pass**; verified live on match 675 — sparkline
+> traces both life totals, T?–T13 labels render, clicking 75% jumps to step 67
+> (Turn 11) with the HUD in sync, no console errors. Next up: **Phase 3**
+> (mirrored arena layout).
 
 ---
 
@@ -96,15 +106,14 @@ Both players' life **big**, a Δ flash on change (reuse `replayFrameHasLifeDelta
 moves. *Done in Phase 1 (`MatchReplayHud`); active-player indicator deferred
 since the frame data doesn't expose it cleanly.*
 
-### 3. A scrubber with a dual life sparkline 🔲
-REVIEW items 5 & 6 in one component. A full-width track: one tick per step, turn
-boundaries marked, a draggable playhead, and your/opponent life drawn as two
-lines across the whole game (the comeback, the burn turn made visible) and
-clickable.
-
-- Replaces the turn-pill row (`MatchReplayTurnSelector`, ~2470) with something
-  denser and more useful.
-- All data already on the frames (`selfLifeTotal` / `opponentLifeTotal`).
+### 3. A scrubber with a dual life sparkline ✅
+REVIEW items 5 & 6 in one component. A full-width track: event ticks colored by
+kind, turn boundaries marked, a draggable playhead, and your/opponent life drawn
+as two lines across the whole game (the comeback, the burn turn made visible) and
+clickable. *Done in Phase 2 (`MatchReplayScrubber`); replaced
+`MatchReplayTurnSelector` entirely. The frame board passes a carried-forward life
+series + tick kinds; the observed timeline board gets the track + turn markers
+without the sparkline (no life data on plays).*
 
 ### 4. A turn-grouped play-by-play rail 🔲
 The "List" view reborn as a chess-style move list that co-pilots the board
@@ -187,7 +196,7 @@ calls this *"the highest-value refactor in the repo."*
 |---|---|---|---|
 | 0 ✅ | Extract `lib/replay/` + `useReplayPlayer` + wire up `bun test` | M | Done — unblocks everything; no behavior change (typecheck + build + 21 tests green) |
 | 1 ✅ | HUD strip + keyboard + speed | S | Done — verified live against match 675 (HUD, turn jumps, −7 delta flash, 2× speed) |
-| 2 | Scrubber + life sparkline (retire turn pills) | M | |
+| 2 ✅ | Scrubber + life sparkline (retire turn pills) | M | Done — dual sparkline, colored ticks, click-seek; verified live (75% → step 67) |
 | 3 | Mirrored arena layout | M | Biggest visual jump |
 | 4 | Coalesced beats + humanized play-by-play rail | M | |
 | 5 | Combat moments, card motion, key-moment pins | L | The "wow" tier |

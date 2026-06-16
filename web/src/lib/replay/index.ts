@@ -1103,3 +1103,90 @@ export function replayLifeDelta(
   const delta = current - previous;
   return delta === 0 ? null : delta;
 }
+
+export type ReplayLifePoint = { self: number | null; opponent: number | null };
+export type ReplayLifeDomain = { min: number; max: number };
+export type ReplayTickKind = "combat" | "spell" | "life" | "other";
+
+/**
+ * Per-step life totals for both players, carrying the last known value forward
+ * across frames that omit a total. Drives the scrubber's dual sparkline.
+ */
+export function buildReplayLifeSeries(
+  frames: MatchReplayFrame[],
+): ReplayLifePoint[] {
+  let lastSelf: number | null = null;
+  let lastOpponent: number | null = null;
+  return frames.map((frame) => {
+    if (typeof frame.selfLifeTotal === "number") {
+      lastSelf = frame.selfLifeTotal;
+    }
+    if (typeof frame.opponentLifeTotal === "number") {
+      lastOpponent = frame.opponentLifeTotal;
+    }
+    return { self: lastSelf, opponent: lastOpponent };
+  });
+}
+
+/** Y-axis domain for a life series, always including the 0–20 baseline range. */
+export function replayLifeSeriesDomain(
+  series: ReplayLifePoint[],
+): ReplayLifeDomain {
+  let min = 0;
+  let max = 20;
+  for (const point of series) {
+    if (typeof point.self === "number") {
+      min = Math.min(min, point.self);
+      max = Math.max(max, point.self);
+    }
+    if (typeof point.opponent === "number") {
+      min = Math.min(min, point.opponent);
+      max = Math.max(max, point.opponent);
+    }
+  }
+  return { min, max };
+}
+
+/** Classifies a frame's primary event for scrubber tick coloring. */
+export function replayFrameTickKind(
+  frame: MatchReplayFrame,
+  previousFrame: MatchReplayFrame | null,
+): ReplayTickKind {
+  if (
+    replayLifeDelta(previousFrame, frame, "self") !== null ||
+    replayLifeDelta(previousFrame, frame, "opponent") !== null
+  ) {
+    return "life";
+  }
+  const changes = frame.changes ?? [];
+  if (
+    changes.some(
+      (change) =>
+        change.action === "attack" ||
+        change.action === "block" ||
+        change.action === "stop_attack" ||
+        change.action === "stop_block",
+    )
+  ) {
+    return "combat";
+  }
+  if (
+    changes.some(
+      (change) =>
+        (change.action === "enter_public" || change.action === "move_public") &&
+        boardZoneKind(change.toZoneType ?? "") === "stack",
+    )
+  ) {
+    return "spell";
+  }
+  return "other";
+}
+
+/** Tick kind for every frame, in order. */
+export function buildReplayTickKinds(
+  frames: MatchReplayFrame[],
+): ReplayTickKind[] {
+  return frames.map((frame, index) =>
+    replayFrameTickKind(frame, index > 0 ? frames[index - 1] ?? null : null),
+  );
+}
