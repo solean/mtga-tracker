@@ -27,81 +27,72 @@ import { fetchCardPreview } from "../lib/scryfall";
 import type { CardPreview } from "../lib/scryfall";
 import type {
   MatchCardPlay,
-  MatchReplayChange,
   MatchReplayFrame,
   MatchReplayFrameObject,
 } from "../lib/types";
+import {
+  battlefieldSectionKind,
+  battlefieldSectionLabel,
+  battlefieldSectionOrder,
+  boardPlayMeta,
+  boardTurnLabel,
+  boardZoneKind,
+  boardZoneLabel,
+  buildReplayTurnBoundaries,
+  cardDisplayName,
+  cardFallbackHref,
+  describeReplayChange,
+  filterMeaningfulReplayFrames,
+  isInspectableZoneKind,
+  parseManaCostParts,
+  preferredReplayFrameIndex,
+  replayAnnotationDetailIntValue,
+  replayAnnotationHasType,
+  replayChangePriority,
+  replayFrameAnnotations,
+  replayFrameLifeTotalsSummary,
+  replayFrameMomentLabel,
+  replayFramePrimarySummary,
+  replayMomentLabel,
+  replayObjectBlockAttackerIDs,
+  replayObjectCounterSummaries,
+  replayObjectIsAttacking,
+  replayObjectIsBlocking,
+  replayObjectName,
+  replayObjectPTLabel,
+  replayObjectStatePills,
+  replayObjectStatusText,
+  replayTurnBoundaryCount,
+  replayTurnLabel,
+  replayTurnValue,
+  shouldRenderOnBattlefield,
+  sortBattlefieldSectionObjects,
+  sortReplayObjects,
+  summarizeReplayFrameZones,
+  summarizeReplayGame,
+  summarizeReplayZones,
+  timelinePhaseLabel,
+  timelinePlayerLabel,
+  timelineZoneLabel,
+  type BattlefieldSectionKind,
+  type BoardZoneKind,
+  type InspectableZoneKind,
+  type PreviewCard,
+  type ReplayBoardConnection,
+  type ReplayConnectionKind,
+  type ReplayGameGroup,
+  type ReplayGameSummary,
+  type ReplayTurnBoundary,
+} from "../lib/replay";
+import { useReplayPlayer } from "../lib/replay/useReplayPlayer";
 
 type OpponentDeckCard = {
   cardId: number;
   cardName?: string;
   quantity: number;
 };
-type PreviewCard = {
-  cardId: number;
-  cardName?: string;
-};
-
 type PopoverPlacement = "left" | "right";
-type ManaCostPart =
-  | { kind: "symbol"; token: string }
-  | { kind: "separator"; value: string };
 type TimelineDisplayMode = "board" | "list";
-type BoardZoneKind =
-  | "hand"
-  | "battlefield"
-  | "stack"
-  | "graveyard"
-  | "exile"
-  | "revealed"
-  | "other";
-type InspectableZoneKind = "graveyard" | "exile";
-type BattlefieldSectionKind =
-  | "lands"
-  | "creatures"
-  | "artifacts_enchantments"
-  | "planeswalkers"
-  | "battles"
-  | "other";
-type ReplayCounterSummary = {
-  label: string;
-  count: number;
-};
-type ReplayConnectionKind = "combat" | "spellTarget";
-type ReplayBoardConnection = {
-  kind: ReplayConnectionKind;
-  sourceId: number;
-  targetId: number;
-};
-type ReplayAnnotationDetail = {
-  key?: string;
-  type?: string;
-  valueInt32?: number[];
-  valueString?: string[];
-};
-type ReplayAnnotation = {
-  affectorId?: number;
-  affectedIds?: number[];
-  type?: string[];
-  details?: ReplayAnnotationDetail[];
-};
-type ReplayAnnotationPayload = {
-  annotations?: ReplayAnnotation[];
-  persistentAnnotations?: ReplayAnnotation[];
-};
-type ReplayGameSummary = {
-  result: "win" | "loss" | "unknown";
-  detail: string;
-};
-type ReplayGameSummaryOptions = {
-  isFinalGame?: boolean;
-  matchResult?: "win" | "loss" | "unknown";
-};
-type ReplayGameGroup = {
-  gameNumber: number;
-  frames: MatchReplayFrame[];
-  summary: ReplayGameSummary | null;
-};
 type MatchReplayZoneDialogState =
   | {
       source: "replay";
@@ -116,147 +107,8 @@ type MatchReplayZoneDialogState =
       plays: MatchCardPlay[];
     };
 
-const BOARD_ZONE_ORDER: BoardZoneKind[] = [
-  "hand",
-  "battlefield",
-  "stack",
-  "graveyard",
-  "exile",
-  "revealed",
-  "other",
-];
-const BATTLEFIELD_SECTION_ORDER: BattlefieldSectionKind[] = [
-  "lands",
-  "other",
-  "battles",
-  "planeswalkers",
-  "artifacts_enchantments",
-  "creatures",
-];
-const SELF_BATTLEFIELD_SECTION_ORDER: BattlefieldSectionKind[] = [
-  "creatures",
-  "artifacts_enchantments",
-  "planeswalkers",
-  "battles",
-  "other",
-  "lands",
-];
-
-function cardDisplayName(card: PreviewCard): string {
-  return card.cardName?.trim() || `Card ${card.cardId}`;
-}
-
-function timelinePlayerLabel(playerSide?: string): string {
-  if (playerSide === "self") return "You";
-  if (playerSide === "opponent") return "Opponent";
-  return "Unknown";
-}
-
-function timelineZoneLabel(zone: string): string {
-  const trimmed = zone.trim();
-  if (!trimmed) return "-";
-  return trimmed
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function timelinePhaseLabel(phase: string | undefined): string {
-  const trimmed = phase?.trim() ?? "";
-  if (!trimmed) return "-";
-  return trimmed
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function cardPreviewQueryKey(card: PreviewCard): [string, number, string] {
   return ["card-preview", card.cardId, cardDisplayName(card)];
-}
-
-function cardFallbackHref(card: PreviewCard): string {
-  const name = cardDisplayName(card);
-  return card.cardName?.trim()
-    ? `https://scryfall.com/search?q=${encodeURIComponent(`!"${name}"`)}`
-    : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
-}
-
-function parseManaCostParts(manaCost: string): ManaCostPart[] {
-  const trimmed = manaCost.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const parts: ManaCostPart[] = [];
-  const tokenPattern = /\{([^}]+)\}/g;
-  let lastIndex = 0;
-
-  while (true) {
-    const match = tokenPattern.exec(trimmed);
-    if (!match) {
-      break;
-    }
-
-    const between = trimmed.slice(lastIndex, match.index).trim();
-    if (between) {
-      parts.push({ kind: "separator", value: between });
-    }
-
-    const token = match[1]?.trim();
-    if (token) {
-      parts.push({ kind: "symbol", token });
-    }
-
-    lastIndex = tokenPattern.lastIndex;
-  }
-
-  const tail = trimmed.slice(lastIndex).trim();
-  if (tail) {
-    parts.push({ kind: "separator", value: tail });
-  }
-
-  return parts;
-}
-
-function boardZoneKind(zone: string): BoardZoneKind {
-  const normalized = zone.trim().toLowerCase();
-  if (!normalized) return "other";
-  if (normalized.includes("hand")) return "hand";
-  if (normalized.includes("battlefield")) return "battlefield";
-  if (normalized.includes("stack")) return "stack";
-  if (normalized.includes("graveyard")) return "graveyard";
-  if (normalized.includes("exile")) return "exile";
-  if (normalized.includes("reveal")) return "revealed";
-  return "other";
-}
-
-function boardZoneLabel(kind: BoardZoneKind): string {
-  if (kind === "hand") return "Hand";
-  if (kind === "battlefield") return "Battlefield";
-  if (kind === "stack") return "Stack";
-  if (kind === "graveyard") return "Graveyard";
-  if (kind === "exile") return "Exile";
-  if (kind === "revealed") return "Revealed";
-  return "Other";
-}
-
-function isInspectableZoneKind(kind: BoardZoneKind): kind is InspectableZoneKind {
-  return kind === "graveyard" || kind === "exile";
-}
-
-function boardTurnLabel(turnNumber?: number): string {
-  return turnNumber && turnNumber > 0 ? `T${turnNumber}` : "T?";
-}
-
-function boardPlayMeta(play: MatchCardPlay): string {
-  const parts = [boardTurnLabel(play.turnNumber)];
-  const phase = timelinePhaseLabel(play.phase);
-  if (phase !== "-") {
-    parts.push(phase);
-  }
-  return parts.join(" • ");
 }
 
 function ManaCostDisplay({ manaCost }: { manaCost: string }) {
@@ -535,883 +387,6 @@ function ReplayCardPreviewAnchor({
         : null}
     </div>
   );
-}
-
-function replayTurnValue(turnNumber?: number): number {
-  return typeof turnNumber === "number" && turnNumber > 0 ? turnNumber : -1;
-}
-
-function replayTurnLabel(turnNumber?: number): string {
-  return typeof turnNumber === "number" && turnNumber > 0
-    ? `Turn ${turnNumber}`
-    : "Unknown turn";
-}
-
-function replayMomentLabel(play: MatchCardPlay): string {
-  const phase = timelinePhaseLabel(play.phase);
-  if (phase === "-") {
-    return replayTurnLabel(play.turnNumber);
-  }
-  return `${replayTurnLabel(play.turnNumber)} - ${phase}`;
-}
-
-function replayFrameMomentLabel(frame: MatchReplayFrame): string {
-  const phase = timelinePhaseLabel(frame.phase);
-  if (phase === "-") {
-    return replayTurnLabel(frame.turnNumber);
-  }
-  return `${replayTurnLabel(frame.turnNumber)} - ${phase}`;
-}
-
-type ReplayTurnBoundary = {
-  turnKey: number;
-  firstIndex: number;
-  lastIndex: number;
-};
-
-function buildReplayTurnBoundaries<T extends { turnNumber?: number }>(
-  items: T[],
-): ReplayTurnBoundary[] {
-  const firstByTurn = new Map<number, number>();
-  const lastByTurn = new Map<number, number>();
-
-  for (let index = 0; index < items.length; index += 1) {
-    const turnKey = replayTurnValue(items[index].turnNumber);
-    if (!firstByTurn.has(turnKey)) {
-      firstByTurn.set(turnKey, index);
-    }
-    lastByTurn.set(turnKey, index);
-  }
-
-  return Array.from(firstByTurn.entries())
-    .map(([turnKey, firstIndex]) => ({
-      turnKey,
-      firstIndex,
-      lastIndex: lastByTurn.get(turnKey) ?? firstIndex,
-    }))
-    .sort((a, b) => a.firstIndex - b.firstIndex);
-}
-
-function replayTurnBoundaryCount(boundary: ReplayTurnBoundary): number {
-  return boundary.lastIndex - boundary.firstIndex + 1;
-}
-
-function replayObjectSortValue(object: MatchReplayFrameObject): number {
-  return typeof object.zonePosition === "number"
-    ? object.zonePosition
-    : Number.MAX_SAFE_INTEGER;
-}
-
-function sortReplayObjects(
-  a: MatchReplayFrameObject,
-  b: MatchReplayFrameObject,
-): number {
-  return (
-    replayObjectSortValue(a) - replayObjectSortValue(b) ||
-    a.instanceId - b.instanceId
-  );
-}
-
-function replayChangePriority(action: string): number {
-  switch (action) {
-    case "leave_public":
-      return 100;
-    case "move_public":
-      return 95;
-    case "enter_public":
-      return 90;
-    case "controller_change":
-      return 85;
-    case "attack":
-    case "stop_attack":
-    case "block":
-    case "stop_block":
-      return 80;
-    case "tap":
-    case "untap":
-      return 70;
-    case "counters_change":
-      return 65;
-    case "stat_change":
-      return 60;
-    case "summoning_sickness_change":
-      return 50;
-    default:
-      return 10;
-  }
-}
-
-function replayObjectDetails(
-  object: MatchReplayFrameObject,
-): Record<string, unknown> | null {
-  const raw = object.detailsJson?.trim();
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function replayObjectCardTypes(object: MatchReplayFrameObject): string[] {
-  const details = replayObjectDetails(object);
-  const raw = details?.["cardTypes"];
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw.filter((value): value is string => typeof value === "string");
-}
-
-function replayObjectHasType(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-  type: string,
-): boolean {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  if (typeLine.includes(type)) {
-    return true;
-  }
-
-  const normalized = type.toLowerCase();
-  return replayObjectCardTypes(object).some((value) =>
-    value.toLowerCase().includes(normalized),
-  );
-}
-
-function replayObjectIsAttacking(object: MatchReplayFrameObject): boolean {
-  return Boolean(object.attackState?.trim());
-}
-
-function replayObjectIsBlocking(object: MatchReplayFrameObject): boolean {
-  return Boolean(object.blockState?.trim());
-}
-
-function replayObjectPTLabel(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): string | null {
-  if (
-    typeof object.power !== "number" ||
-    typeof object.toughness !== "number" ||
-    !replayObjectHasType(object, preview, "creature")
-  ) {
-    return null;
-  }
-  return `${object.power}/${object.toughness}`;
-}
-
-function replayObjectCounterSummaries(
-  object: MatchReplayFrameObject,
-): ReplayCounterSummary[] {
-  const raw = object.counterSummaryJson?.trim();
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return null;
-        }
-        const label =
-          typeof (entry as { label?: unknown }).label === "string"
-            ? (entry as { label: string }).label.trim()
-            : "";
-        const count =
-          typeof (entry as { count?: unknown }).count === "number"
-            ? (entry as { count: number }).count
-            : Number.NaN;
-        if (!label || !Number.isFinite(count) || count === 0) {
-          return null;
-        }
-        return { label, count };
-      })
-      .filter((entry): entry is ReplayCounterSummary => entry !== null);
-  } catch {
-    return [];
-  }
-}
-
-function replayObjectBlockCount(object: MatchReplayFrameObject): number {
-  return replayObjectBlockAttackerIDs(object).length;
-}
-
-function replayObjectBlockAttackerIDs(object: MatchReplayFrameObject): number[] {
-  const raw = object.blockAttackerIdsJson?.trim();
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is number => typeof value === "number")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function replayFrameAnnotations(frame: MatchReplayFrame | null): ReplayAnnotation[] {
-  const raw = frame?.annotationsJson?.trim();
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return [];
-    }
-
-    const payload = parsed as ReplayAnnotationPayload;
-    const next: ReplayAnnotation[] = [];
-    if (Array.isArray(payload.annotations)) {
-      next.push(...payload.annotations);
-    }
-    if (Array.isArray(payload.persistentAnnotations)) {
-      next.push(...payload.persistentAnnotations);
-    }
-    return next.filter(
-      (annotation): annotation is ReplayAnnotation =>
-        Boolean(annotation) && typeof annotation === "object",
-    );
-  } catch {
-    return [];
-  }
-}
-
-function replayAnnotationHasType(
-  annotation: ReplayAnnotation,
-  expectedType: string,
-): boolean {
-  return Array.isArray(annotation.type) && annotation.type.includes(expectedType);
-}
-
-function replayAnnotationDetailIntValue(
-  annotation: ReplayAnnotation,
-  key: string,
-): number | undefined {
-  if (!Array.isArray(annotation.details)) {
-    return undefined;
-  }
-
-  for (const detail of annotation.details) {
-    if (detail?.key !== key || !Array.isArray(detail.valueInt32)) {
-      continue;
-    }
-    const value = detail.valueInt32[0];
-    if (typeof value === "number") {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function replayObjectStatePills(
-  object: MatchReplayFrameObject,
-): ReplayCounterSummary[] {
-  const pills: ReplayCounterSummary[] = [];
-
-  if (object.isTapped) {
-    pills.push({ label: "Tapped", count: 1 });
-  }
-  if (replayObjectIsAttacking(object)) {
-    pills.push({ label: "Attacking", count: 1 });
-  }
-  if (replayObjectIsBlocking(object)) {
-    const blockCount = replayObjectBlockCount(object);
-    pills.push({
-      label: blockCount > 1 ? `Blocking ${blockCount}` : "Blocking",
-      count: 1,
-    });
-  }
-  if (object.hasSummoningSickness) {
-    pills.push({ label: "Summoning Sick", count: 1 });
-  }
-  if (
-    typeof object.ownerSeatId === "number" &&
-    typeof object.controllerSeatId === "number" &&
-    object.ownerSeatId !== object.controllerSeatId
-  ) {
-    pills.push({ label: "Stolen", count: 1 });
-  }
-
-  return pills;
-}
-
-function replayObjectStatusText(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): string {
-  const parts = [
-    timelinePlayerLabel(object.playerSide),
-    timelineZoneLabel(object.zoneType),
-  ];
-  const ptLabel = replayObjectPTLabel(object, preview);
-  if (ptLabel) {
-    parts.push(ptLabel);
-  }
-  if (object.isTapped) {
-    parts.push("Tapped");
-  }
-  if (replayObjectIsAttacking(object)) {
-    parts.push("Attacking");
-  }
-  if (replayObjectIsBlocking(object)) {
-    parts.push("Blocking");
-  }
-  if (object.hasSummoningSickness) {
-    parts.push("Summoning sick");
-  }
-  for (const counter of replayObjectCounterSummaries(object)) {
-    parts.push(`${counter.label} x${counter.count}`);
-  }
-  return parts.join(" • ");
-}
-
-function replayObjectName(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): string {
-  return (preview?.name ?? cardDisplayName(object)).trim();
-}
-
-function replayObjectIsBasicLand(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): boolean {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  if (typeLine.includes("basic")) {
-    return true;
-  }
-
-  return replayObjectHasType(object, preview, "basic");
-}
-
-function replayObjectBasicLandRank(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): number {
-  const name = replayObjectName(object, preview).toLowerCase();
-
-  if (name === "plains") return 0;
-  if (name === "island") return 1;
-  if (name === "swamp") return 2;
-  if (name === "mountain") return 3;
-  if (name === "forest") return 4;
-  if (name === "wastes") return 5;
-  return 6;
-}
-
-function sortBattlefieldSectionObjects(
-  kind: BattlefieldSectionKind,
-  objects: MatchReplayFrameObject[],
-  previewByCardID: Map<number, CardPreview | null>,
-): MatchReplayFrameObject[] {
-  if (kind !== "lands") {
-    return objects;
-  }
-
-  return [...objects].sort((a, b) => {
-    const aPreview = previewByCardID.get(a.cardId) ?? null;
-    const bPreview = previewByCardID.get(b.cardId) ?? null;
-    const aBasic = replayObjectIsBasicLand(a, aPreview);
-    const bBasic = replayObjectIsBasicLand(b, bPreview);
-
-    if (aBasic !== bBasic) {
-      return aBasic ? -1 : 1;
-    }
-
-    if (aBasic && bBasic) {
-      const basicRankDelta =
-        replayObjectBasicLandRank(a, aPreview) -
-        replayObjectBasicLandRank(b, bPreview);
-      if (basicRankDelta !== 0) {
-        return basicRankDelta;
-      }
-    }
-
-    const nameDelta = replayObjectName(a, aPreview).localeCompare(
-      replayObjectName(b, bPreview),
-    );
-    if (nameDelta !== 0) {
-      return nameDelta;
-    }
-
-    return sortReplayObjects(a, b);
-  });
-}
-
-function replayFrameLifeTotalForSide(
-  frame: MatchReplayFrame | null | undefined,
-  side: "self" | "opponent",
-): number | undefined {
-  if (!frame) {
-    return undefined;
-  }
-  return side === "self" ? frame.selfLifeTotal : frame.opponentLifeTotal;
-}
-
-function replayFrameLifeTotalsSummary(
-  frame: MatchReplayFrame | null | undefined,
-): string | null {
-  const selfLifeTotal = replayFrameLifeTotalForSide(frame, "self");
-  const opponentLifeTotal = replayFrameLifeTotalForSide(frame, "opponent");
-  if (
-    typeof selfLifeTotal !== "number" &&
-    typeof opponentLifeTotal !== "number"
-  ) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (typeof selfLifeTotal === "number") {
-    parts.push(`You ${selfLifeTotal}`);
-  }
-  if (typeof opponentLifeTotal === "number") {
-    parts.push(`Opponent ${opponentLifeTotal}`);
-  }
-  return parts.join(" • ");
-}
-
-function replayFrameHasLifeDelta(
-  previousFrame: MatchReplayFrame | null,
-  frame: MatchReplayFrame,
-): boolean {
-  if (!previousFrame) {
-    return false;
-  }
-  return (
-    replayFrameLifeTotalForSide(previousFrame, "self") !==
-      replayFrameLifeTotalForSide(frame, "self") ||
-    replayFrameLifeTotalForSide(previousFrame, "opponent") !==
-      replayFrameLifeTotalForSide(frame, "opponent")
-  );
-}
-
-function isMeaningfulReplayFrame(
-  frame: MatchReplayFrame,
-  previousFrame: MatchReplayFrame | null,
-): boolean {
-  return (
-    (frame.changes?.length ?? 0) > 0 || replayFrameHasLifeDelta(previousFrame, frame)
-  );
-}
-
-function filterMeaningfulReplayFrames(
-  frames: MatchReplayFrame[],
-): MatchReplayFrame[] {
-  if (frames.length <= 1) {
-    return frames;
-  }
-
-  const meaningfulFrames: MatchReplayFrame[] = [];
-  for (let index = 0; index < frames.length; index += 1) {
-    const frame = frames[index];
-    const previousFrame = index > 0 ? frames[index - 1] ?? null : null;
-    if (isMeaningfulReplayFrame(frame, previousFrame)) {
-      meaningfulFrames.push(frame);
-    }
-  }
-
-  if (meaningfulFrames.length > 0) {
-    return meaningfulFrames;
-  }
-
-  const lastFrame = frames[frames.length - 1];
-  return lastFrame ? [lastFrame] : [];
-}
-
-function summarizeReplayFrameZones(
-  objects: MatchReplayFrameObject[],
-): Map<BoardZoneKind, number> {
-  const counts = new Map<BoardZoneKind, number>();
-  for (const kind of BOARD_ZONE_ORDER) {
-    counts.set(kind, 0);
-  }
-
-  for (const object of objects) {
-    const kind = boardZoneKind(object.zoneType);
-    counts.set(kind, (counts.get(kind) ?? 0) + 1);
-  }
-
-  return counts;
-}
-
-function replayFramePrimaryChange(
-  frame: MatchReplayFrame | null,
-): MatchReplayChange | null {
-  const changes = frame?.changes ?? [];
-  if (changes.length === 0) {
-    return null;
-  }
-  return [...changes].sort(
-    (a, b) =>
-      replayChangePriority(b.action) - replayChangePriority(a.action),
-  )[0] ?? null;
-}
-
-function replayFramePrimarySummary(
-  frame: MatchReplayFrame | null,
-  previousFrame: MatchReplayFrame | null,
-): string {
-  const primaryChange = replayFramePrimaryChange(frame);
-  if (primaryChange) {
-    return describeReplayChange(primaryChange);
-  }
-  if (frame && replayFrameHasLifeDelta(previousFrame, frame)) {
-    const summary = replayFrameLifeTotalsSummary(frame);
-    return summary ? `Life totals changed. ${summary}.` : "Life totals changed.";
-  }
-  return "Initial replay snapshot for this game state.";
-}
-
-function replayFrameWinningPlayerSide(
-  frame: MatchReplayFrame | null | undefined,
-): "self" | "opponent" | "unknown" {
-  const side = frame?.winningPlayerSide;
-  return side === "self" || side === "opponent" ? side : "unknown";
-}
-
-function normalizeReplayWinReason(reason?: string | null): string {
-  return (reason ?? "")
-    .trim()
-    .replace(/^ResultReason_/, "")
-    .replace(/^WinningReason_/, "");
-}
-
-function formatReplayWinReason(reason: string): string {
-  const normalized = normalizeReplayWinReason(reason);
-  if (!normalized) {
-    return "";
-  }
-  return normalized
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/_/g, " ")
-    .toLowerCase();
-}
-
-function replayFrameLifeTotalWinner(
-  frame: MatchReplayFrame,
-): "self" | "opponent" | "unknown" {
-  const selfLifeTotal = frame.selfLifeTotal;
-  const opponentLifeTotal = frame.opponentLifeTotal;
-  const selfIsDead =
-    typeof selfLifeTotal === "number" && Number.isFinite(selfLifeTotal) && selfLifeTotal <= 0;
-  const opponentIsDead =
-    typeof opponentLifeTotal === "number" &&
-    Number.isFinite(opponentLifeTotal) &&
-    opponentLifeTotal <= 0;
-
-  if (selfIsDead === opponentIsDead) {
-    return "unknown";
-  }
-  return selfIsDead ? "opponent" : "self";
-}
-
-function terminalReplayFrameConfidence(frame: MatchReplayFrame): number {
-  const explicitWinner = replayFrameWinningPlayerSide(frame);
-  if (explicitWinner !== "unknown") {
-    return 4;
-  }
-  if (replayFrameLifeTotalWinner(frame) !== "unknown") {
-    return 3;
-  }
-  if (normalizeReplayWinReason(frame.winReason) !== "") {
-    return 2;
-  }
-  if ((frame.gameStage ?? "").trim().toLowerCase() === "gameover") {
-    return 1;
-  }
-  return 0;
-}
-
-function summarizeReplayGame(
-  frames: MatchReplayFrame[],
-  options: ReplayGameSummaryOptions = {},
-): ReplayGameSummary | null {
-  if (frames.length === 0) {
-    return null;
-  }
-
-  let terminalFrame: MatchReplayFrame | null = null;
-  let bestConfidence = 0;
-  for (let index = frames.length - 1; index >= 0; index -= 1) {
-    const frame = frames[index];
-    const confidence = terminalReplayFrameConfidence(frame);
-    if (confidence === 0) {
-      continue;
-    }
-    if (!terminalFrame || confidence > bestConfidence) {
-      terminalFrame = frame;
-      bestConfidence = confidence;
-      if (confidence >= 4) {
-        break;
-      }
-    }
-  }
-  terminalFrame ??= frames[frames.length - 1] ?? null;
-  if (!terminalFrame) {
-    return null;
-  }
-
-  const lifeTotalWinner = replayFrameLifeTotalWinner(terminalFrame);
-  // Prefer terminal life totals when they clearly identify a winner. Arena can
-  // occasionally report a concede reason on the final frame after lethal damage.
-  const winningPlayerSide =
-    lifeTotalWinner !== "unknown"
-      ? lifeTotalWinner
-      : replayFrameWinningPlayerSide(terminalFrame);
-
-  let result: "win" | "loss" | "unknown" =
-    winningPlayerSide === "self"
-      ? "win"
-      : winningPlayerSide === "opponent"
-        ? "loss"
-        : "unknown";
-  const normalizedReason = normalizeReplayWinReason(terminalFrame.winReason);
-
-  let detail = "";
-  if (lifeTotalWinner === "opponent") {
-    detail = "You went to 0 life.";
-  } else if (lifeTotalWinner === "self") {
-    detail = "Opponent went to 0 life.";
-  } else if (normalizedReason === "Concede") {
-    const concedingPlayerSide =
-      winningPlayerSide === "self"
-        ? "opponent"
-        : winningPlayerSide === "opponent"
-          ? "self"
-          : "unknown";
-    detail =
-      concedingPlayerSide === "unknown"
-        ? "A player conceded."
-        : `${timelinePlayerLabel(concedingPlayerSide)} conceded.`;
-  } else if (normalizedReason) {
-    detail = `Ended by ${formatReplayWinReason(normalizedReason)}.`;
-  } else if (result === "win") {
-    detail = "You won this game.";
-  } else if (result === "loss") {
-    detail = "You lost this game.";
-  } else {
-    detail = "Game result recorded.";
-  }
-
-  if (
-    options.isFinalGame &&
-    (options.matchResult === "win" || options.matchResult === "loss") &&
-    options.matchResult !== result
-  ) {
-    result = options.matchResult;
-    if (normalizedReason === "Concede") {
-      detail = result === "win" ? "Opponent conceded." : "You conceded.";
-    } else if (result === "win") {
-      detail =
-        typeof terminalFrame.opponentLifeTotal === "number" &&
-        terminalFrame.opponentLifeTotal <= 0
-          ? "Opponent went to 0 life."
-          : "You won this game.";
-    } else {
-      detail =
-        typeof terminalFrame.selfLifeTotal === "number" &&
-        terminalFrame.selfLifeTotal <= 0
-          ? "You went to 0 life."
-          : "You lost this game.";
-    }
-  }
-
-  return { result, detail };
-}
-
-function preferredReplayFrameIndex(frames: MatchReplayFrame[]): number {
-  if (frames.length === 0) {
-    return 0;
-  }
-
-  for (let index = frames.length - 1; index >= 0; index -= 1) {
-    if ((frames[index]?.objects?.length ?? 0) > 0) {
-      return index;
-    }
-  }
-
-  return frames.length - 1;
-}
-
-function describeReplayChange(change: MatchReplayChange): string {
-  const actor = timelinePlayerLabel(change.playerSide);
-  const name = cardDisplayName({
-    cardId: change.cardId,
-    cardName: change.cardName,
-  });
-
-  if (change.action === "enter_public") {
-    return `${actor} showed ${name} in ${timelineZoneLabel(change.toZoneType ?? "")}.`;
-  }
-  if (change.action === "move_public") {
-    return `${actor} moved ${name} from ${timelineZoneLabel(change.fromZoneType ?? "")} to ${timelineZoneLabel(change.toZoneType ?? "")}.`;
-  }
-  if (change.action === "leave_public") {
-    return `${actor} lost public visibility of ${name} from ${timelineZoneLabel(change.fromZoneType ?? "")}.`;
-  }
-  if (change.action === "controller_change") {
-    return `${actor} took control of ${name}.`;
-  }
-  if (change.action === "tap") {
-    return `${actor} tapped ${name}.`;
-  }
-  if (change.action === "untap") {
-    return `${actor} untapped ${name}.`;
-  }
-  if (change.action === "attack") {
-    return `${actor} attacked with ${name}.`;
-  }
-  if (change.action === "stop_attack") {
-    return `${name} stopped attacking.`;
-  }
-  if (change.action === "block") {
-    return `${actor} declared ${name} as a blocker.`;
-  }
-  if (change.action === "stop_block") {
-    return `${name} stopped blocking.`;
-  }
-  if (change.action === "summoning_sickness_change") {
-    return `${name}'s summoning-sickness state changed.`;
-  }
-  if (change.action === "stat_change") {
-    return `${name}'s power and toughness changed.`;
-  }
-  if (change.action === "counters_change") {
-    return `${name}'s counters changed.`;
-  }
-  return `${actor} changed ${name}.`;
-}
-
-function previewIsPermanent(preview: CardPreview | null): boolean {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  if (!typeLine) {
-    return false;
-  }
-
-  return (
-    typeLine.includes("artifact") ||
-    typeLine.includes("battle") ||
-    typeLine.includes("creature") ||
-    typeLine.includes("enchantment") ||
-    typeLine.includes("land") ||
-    typeLine.includes("planeswalker")
-  );
-}
-
-function shouldRenderOnBattlefield(
-  play: MatchCardPlay,
-  preview: CardPreview | null,
-  activePlayID: number,
-): boolean {
-  const zone = boardZoneKind(play.firstPublicZone);
-  if (zone === "battlefield") {
-    return true;
-  }
-
-  // Reconstruct likely permanent resolution: if a permanent first appeared on
-  // the stack and it is no longer the current action, show it on the board.
-  if (
-    zone === "stack" &&
-    play.id !== activePlayID &&
-    previewIsPermanent(preview)
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function battlefieldSectionKind(
-  preview: CardPreview | null,
-  object?: MatchReplayFrameObject,
-): BattlefieldSectionKind {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  const fallbackTypes = object
-    ? replayObjectCardTypes(object).map((value) => value.toLowerCase())
-    : [];
-  const hasType = (type: string) =>
-    typeLine.includes(type) ||
-    fallbackTypes.some((value) => value.includes(type));
-
-  if (!typeLine && fallbackTypes.length === 0) {
-    return "other";
-  }
-  if (hasType("land")) {
-    return "lands";
-  }
-  if (hasType("creature")) {
-    return "creatures";
-  }
-  if (hasType("planeswalker")) {
-    return "planeswalkers";
-  }
-  if (hasType("battle")) {
-    return "battles";
-  }
-  if (hasType("artifact") || hasType("enchantment")) {
-    return "artifacts_enchantments";
-  }
-  return "other";
-}
-
-function battlefieldSectionLabel(kind: BattlefieldSectionKind): string {
-  switch (kind) {
-    case "lands":
-      return "Lands";
-    case "creatures":
-      return "Creatures";
-    case "artifacts_enchantments":
-      return "Artifacts + Enchantments";
-    case "planeswalkers":
-      return "Planeswalkers";
-    case "battles":
-      return "Battles";
-    default:
-      return "Other Permanents";
-  }
-}
-
-function battlefieldSectionOrder(
-  side: "self" | "opponent",
-): BattlefieldSectionKind[] {
-  return side === "self"
-    ? SELF_BATTLEFIELD_SECTION_ORDER
-    : BATTLEFIELD_SECTION_ORDER;
-}
-
-function summarizeReplayZones(
-  plays: MatchCardPlay[],
-): Map<BoardZoneKind, number> {
-  const counts = new Map<BoardZoneKind, number>();
-  for (const kind of BOARD_ZONE_ORDER) {
-    counts.set(kind, 0);
-  }
-
-  for (const play of plays) {
-    const kind = boardZoneKind(play.firstPublicZone);
-    counts.set(kind, (counts.get(kind) ?? 0) + 1);
-  }
-
-  return counts;
 }
 
 function MatchReplayCard({
@@ -2533,11 +1508,13 @@ function MatchReplayFrameBoard({
   gameSummary: ReplayGameSummary | null;
   previewByCardID: Map<number, CardPreview | null>;
 }) {
-  const initialFrameIndex = preferredReplayFrameIndex(frames);
-  const [selectedFrameIndex, setSelectedFrameIndex] = useState(
-    initialFrameIndex,
-  );
-  const [isPlaying, setIsPlaying] = useState(false);
+  const {
+    index: safeSelectedFrameIndex,
+    setIndex: setSelectedFrameIndex,
+    isPlaying,
+    setIsPlaying,
+    lastIndex: lastFrameIndex,
+  } = useReplayPlayer(frames.length, preferredReplayFrameIndex(frames));
   const [zoneDialogState, setZoneDialogState] =
     useState<MatchReplayZoneDialogState | null>(null);
   const [focusedConnectionInstanceId, setFocusedConnectionInstanceId] = useState<
@@ -2545,36 +1522,6 @@ function MatchReplayFrameBoard({
   >(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const replayCardShellsRef = useRef(new Map<number, HTMLDivElement>());
-  const lastFrameIndex = frames.length > 0 ? frames.length - 1 : 0;
-  const safeSelectedFrameIndex = Math.min(selectedFrameIndex, lastFrameIndex);
-
-  useEffect(() => {
-    if (frames.length === 0) {
-      setSelectedFrameIndex(0);
-      setIsPlaying(false);
-      return;
-    }
-
-    setSelectedFrameIndex((currentIndex) =>
-      Math.min(currentIndex, frames.length - 1),
-    );
-  }, [frames]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      return;
-    }
-    if (safeSelectedFrameIndex >= lastFrameIndex) {
-      setIsPlaying(false);
-      return;
-    }
-
-    const timeoutID = window.setTimeout(() => {
-      setSelectedFrameIndex(Math.min(safeSelectedFrameIndex + 1, lastFrameIndex));
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutID);
-  }, [isPlaying, lastFrameIndex, safeSelectedFrameIndex]);
 
   const currentFrame = frames[safeSelectedFrameIndex] ?? null;
   const previousFrame =
@@ -3237,42 +2184,14 @@ function MatchTimelineBoard({
   plays: MatchCardPlay[];
   previewByCardID: Map<number, CardPreview | null>;
 }) {
-  const [selectedActionIndex, setSelectedActionIndex] = useState(
-    plays.length > 0 ? plays.length - 1 : 0,
-  );
-  const [isPlaying, setIsPlaying] = useState(false);
+  const {
+    index: selectedActionIndex,
+    setIndex: setSelectedActionIndex,
+    isPlaying,
+    setIsPlaying,
+  } = useReplayPlayer(plays.length, plays.length > 0 ? plays.length - 1 : 0);
   const [zoneDialogState, setZoneDialogState] =
     useState<MatchReplayZoneDialogState | null>(null);
-
-  useEffect(() => {
-    if (plays.length === 0) {
-      setSelectedActionIndex(0);
-      setIsPlaying(false);
-      return;
-    }
-
-    setSelectedActionIndex((currentIndex) =>
-      Math.min(currentIndex, plays.length - 1),
-    );
-  }, [plays]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      return;
-    }
-    if (selectedActionIndex >= plays.length - 1) {
-      setIsPlaying(false);
-      return;
-    }
-
-    const timeoutID = window.setTimeout(() => {
-      setSelectedActionIndex((currentIndex) =>
-        Math.min(currentIndex + 1, plays.length - 1),
-      );
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutID);
-  }, [isPlaying, plays.length, selectedActionIndex]);
 
   const currentAction = plays[selectedActionIndex] ?? null;
   const visiblePlays = useMemo(
@@ -4085,3 +3004,4 @@ export function MatchDetailPage() {
     </div>
   );
 }
+
