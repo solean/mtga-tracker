@@ -1,0 +1,460 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  battlefieldSectionKind,
+  boardZoneKind,
+  boardZoneLabel,
+  buildReplayBeat,
+  buildReplayLifeSeries,
+  buildReplayTickKinds,
+  buildReplayTurnBoundaries,
+  findReplayKeyMoments,
+  describeReplayChange,
+  filterMeaningfulReplayFrames,
+  formatReplayWinReason,
+  normalizeReplayWinReason,
+  preferredReplayFrameIndex,
+  replayFrameHasLifeDelta,
+  replayFrameLifeTotalWinner,
+  replayFrameTickKind,
+  replayLifeDelta,
+  replayLifeSeriesDomain,
+  replayTurnBoundaryCount,
+  replayTurnValue,
+  summarizeReplayGame,
+} from "../src/lib/replay";
+import type { CardPreview } from "../src/lib/scryfall";
+import type {
+  MatchReplayChange,
+  MatchReplayFrame,
+  MatchReplayFrameObject,
+} from "../src/lib/types";
+
+function change(values: Partial<MatchReplayChange> = {}): MatchReplayChange {
+  return {
+    instanceId: values.instanceId ?? 1,
+    cardId: values.cardId ?? 100,
+    cardName: values.cardName,
+    playerSide: values.playerSide ?? "self",
+    action: values.action ?? "move_public",
+    fromZoneType: values.fromZoneType,
+    toZoneType: values.toZoneType,
+    isToken: values.isToken ?? false,
+  };
+}
+
+function object(
+  values: Partial<MatchReplayFrameObject> = {},
+): MatchReplayFrameObject {
+  return {
+    id: values.id ?? 1,
+    frameId: values.frameId ?? 1,
+    instanceId: values.instanceId ?? 1,
+    cardId: values.cardId ?? 100,
+    cardName: values.cardName,
+    playerSide: values.playerSide ?? "self",
+    zoneType: values.zoneType ?? "Battlefield",
+    power: values.power,
+    toughness: values.toughness,
+    isToken: values.isToken ?? false,
+    isTapped: values.isTapped ?? false,
+    hasSummoningSickness: values.hasSummoningSickness ?? false,
+  };
+}
+
+function frame(values: Partial<MatchReplayFrame> = {}): MatchReplayFrame {
+  return { id: values.id ?? 1, ...values };
+}
+
+function preview(typeLine: string): CardPreview {
+  return { name: "x", imageUrl: "", typeLine };
+}
+
+describe("zone classification", () => {
+  test("maps Arena zone strings to a board zone kind", () => {
+    expect(boardZoneKind("ZoneType_Hand")).toBe("hand");
+    expect(boardZoneKind("Battlefield")).toBe("battlefield");
+    expect(boardZoneKind("p1_graveyard")).toBe("graveyard");
+    expect(boardZoneKind("")).toBe("other");
+    expect(boardZoneLabel("graveyard")).toBe("Graveyard");
+  });
+
+  test("sorts permanents into battlefield sections by type line", () => {
+    expect(battlefieldSectionKind(preview("Basic Land — Forest"))).toBe("lands");
+    expect(battlefieldSectionKind(preview("Creature — Otter"))).toBe("creatures");
+    expect(battlefieldSectionKind(preview("Legendary Planeswalker — Jace"))).toBe(
+      "planeswalkers",
+    );
+    expect(battlefieldSectionKind(preview("Enchantment — Class"))).toBe(
+      "artifacts_enchantments",
+    );
+    expect(battlefieldSectionKind(null)).toBe("other");
+  });
+});
+
+describe("turn boundaries", () => {
+  test("groups items by turn, preserving first/last index", () => {
+    const boundaries = buildReplayTurnBoundaries([
+      { turnNumber: 1 },
+      { turnNumber: 1 },
+      { turnNumber: 2 },
+    ]);
+    expect(boundaries).toHaveLength(2);
+    expect(boundaries[0]).toMatchObject({ turnKey: 1, firstIndex: 0, lastIndex: 1 });
+    expect(replayTurnBoundaryCount(boundaries[0])).toBe(2);
+    expect(boundaries[1]).toMatchObject({ turnKey: 2, firstIndex: 2, lastIndex: 2 });
+  });
+
+  test("normalizes missing/zero turns to a sentinel", () => {
+    expect(replayTurnValue(undefined)).toBe(-1);
+    expect(replayTurnValue(0)).toBe(-1);
+    expect(replayTurnValue(3)).toBe(3);
+  });
+});
+
+describe("meaningful frame filtering", () => {
+  test("keeps frames with changes and drops inert ones", () => {
+    const f0 = frame({ id: 1 });
+    const f1 = frame({ id: 2, changes: [change({ action: "tap" })] });
+    const f2 = frame({ id: 3 });
+    expect(filterMeaningfulReplayFrames([f0, f1, f2])).toEqual([f1]);
+  });
+
+  test("keeps a frame whose only change is a life swing", () => {
+    const f0 = frame({ id: 1, selfLifeTotal: 20 });
+    const f1 = frame({ id: 2, selfLifeTotal: 18 });
+    expect(replayFrameHasLifeDelta(f0, f1)).toBe(true);
+    // f0 is inert on its own (no prior frame, no changes) and is dropped; the
+    // life-swing frame f1 is retained.
+    expect(filterMeaningfulReplayFrames([f0, f1])).toEqual([f1]);
+  });
+
+  test("falls back to the last frame when nothing is meaningful", () => {
+    const f0 = frame({ id: 1 });
+    const f1 = frame({ id: 2 });
+    expect(filterMeaningfulReplayFrames([f0, f1])).toEqual([f1]);
+  });
+
+  test("drops GRE noise moves (same-zone shuffles like Limbo to Limbo)", () => {
+    const noise = change({
+      action: "move_public",
+      fromZoneType: "Limbo",
+      toZoneType: "Limbo",
+    });
+    const real = frame({ id: 2, changes: [change({ action: "tap" })] });
+    expect(
+      filterMeaningfulReplayFrames([
+        frame({ id: 1, changes: [noise] }),
+        real,
+        frame({ id: 3, changes: [noise] }),
+      ]),
+    ).toEqual([real]);
+  });
+});
+
+describe("life series", () => {
+  test("carries the last known life total forward across gaps", () => {
+    const series = buildReplayLifeSeries([
+      frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+      frame({ id: 2, selfLifeTotal: 18 }),
+      frame({ id: 3, opponentLifeTotal: 15 }),
+    ]);
+    expect(series).toEqual([
+      { self: 20, opponent: 20 },
+      { self: 18, opponent: 20 },
+      { self: 18, opponent: 15 },
+    ]);
+  });
+
+  test("domain always spans at least 0–20 and widens to extremes", () => {
+    expect(replayLifeSeriesDomain([{ self: 12, opponent: 8 }])).toEqual({
+      min: 0,
+      max: 20,
+    });
+    expect(
+      replayLifeSeriesDomain([
+        { self: 24, opponent: -3 },
+        { self: 5, opponent: 5 },
+      ]),
+    ).toEqual({ min: -3, max: 24 });
+  });
+});
+
+describe("scrubber tick classification", () => {
+  test("ranks life swings, combat, and spells off the change stream", () => {
+    const prev = frame({ id: 1, selfLifeTotal: 20 });
+    expect(
+      replayFrameTickKind(frame({ id: 2, selfLifeTotal: 17 }), prev),
+    ).toBe("life");
+    expect(
+      replayFrameTickKind(
+        frame({ id: 2, changes: [change({ action: "block" })] }),
+        null,
+      ),
+    ).toBe("combat");
+    expect(
+      replayFrameTickKind(
+        frame({
+          id: 2,
+          changes: [change({ action: "move_public", toZoneType: "Stack" })],
+        }),
+        null,
+      ),
+    ).toBe("spell");
+    expect(
+      replayFrameTickKind(frame({ id: 2, changes: [change({ action: "tap" })] }), null),
+    ).toBe("other");
+  });
+
+  test("builds a tick kind per frame in order", () => {
+    const kinds = buildReplayTickKinds([
+      frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+      frame({
+        id: 2,
+        selfLifeTotal: 20,
+        opponentLifeTotal: 20,
+        changes: [change({ action: "attack" })],
+      }),
+      frame({ id: 3, selfLifeTotal: 18, opponentLifeTotal: 20 }),
+    ]);
+    expect(kinds).toEqual(["other", "combat", "life"]);
+  });
+});
+
+describe("play-by-play beats", () => {
+  test("renders an attack with the creature's power/toughness", () => {
+    const f = frame({
+      id: 2,
+      changes: [change({ action: "attack", playerSide: "opponent", cardName: "Otter", instanceId: 7 })],
+      objects: [object({ instanceId: 7, power: 2, toughness: 2 })],
+    });
+    expect(buildReplayBeat(f, null)).toEqual({
+      text: "Opponent attacks with Otter (2/2)",
+    });
+  });
+
+  test("notes creature deaths on a block", () => {
+    const f = frame({
+      id: 2,
+      changes: [
+        change({ action: "block", playerSide: "self", cardName: "Tarmogoyf", instanceId: 3 }),
+        change({
+          action: "move_public",
+          fromZoneType: "Battlefield",
+          toZoneType: "Graveyard",
+          cardName: "Otter",
+        }),
+      ],
+      objects: [object({ instanceId: 3, power: 4, toughness: 4 })],
+    });
+    expect(buildReplayBeat(f, null)).toEqual({
+      text: "You block with Tarmogoyf (4/4)",
+      note: "a creature dies",
+    });
+  });
+
+  test("summarizes a life swing with before/after totals", () => {
+    const prev = frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 });
+    const f = frame({ id: 2, selfLifeTotal: 20, opponentLifeTotal: 18 });
+    expect(buildReplayBeat(f, prev)).toEqual({
+      text: "Life change · opponent 20 → 18",
+    });
+  });
+
+  test("ignores noise moves when picking the fallback beat", () => {
+    const f = frame({
+      id: 2,
+      changes: [
+        change({ action: "move_public", fromZoneType: "Limbo", toZoneType: "Limbo", cardName: "Kaito" }),
+        change({ action: "tap", playerSide: "opponent", cardName: "Island" }),
+      ],
+    });
+    expect(buildReplayBeat(f, null)).toEqual({ text: "Opponent taps Island" });
+  });
+
+  test("uses friendly phrasing when a permanent leaves the battlefield", () => {
+    expect(
+      buildReplayBeat(
+        frame({
+          id: 2,
+          changes: [
+            change({
+              action: "move_public",
+              cardName: "Wistfulness",
+              fromZoneType: "Battlefield",
+              toZoneType: "Graveyard",
+            }),
+          ],
+        }),
+        null,
+      ),
+    ).toEqual({ text: "Wistfulness is put into the graveyard" });
+  });
+
+  test("narrates a card revealed in hand", () => {
+    expect(
+      buildReplayBeat(
+        frame({
+          id: 2,
+          changes: [
+            change({
+              action: "enter_public",
+              playerSide: "self",
+              cardName: "Kaito",
+              toZoneType: "Hand",
+            }),
+          ],
+        }),
+        null,
+      ),
+    ).toEqual({ text: "You reveal Kaito" });
+  });
+
+  test("marks a tapped land as it enters", () => {
+    const f = frame({
+      id: 2,
+      changes: [
+        change({
+          action: "move_public",
+          playerSide: "opponent",
+          cardName: "Steam Vents",
+          fromZoneType: "Hand",
+          toZoneType: "Battlefield",
+          instanceId: 9,
+        }),
+      ],
+      objects: [object({ instanceId: 9, isTapped: true })],
+    });
+    expect(buildReplayBeat(f, null)).toEqual({
+      text: "Opponent plays Steam Vents",
+      note: "tapped",
+    });
+  });
+});
+
+describe("key moments", () => {
+  test("flags the decisive lethal step and the biggest life swings", () => {
+    const frames = [
+      frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+      frame({ id: 2, selfLifeTotal: 20, opponentLifeTotal: 13 }), // -7 swing
+      frame({ id: 3, selfLifeTotal: 18, opponentLifeTotal: 13 }), // -2 (below threshold)
+      frame({ id: 4, selfLifeTotal: 18, opponentLifeTotal: 0 }), // lethal
+    ];
+    const moments = findReplayKeyMoments(frames);
+    expect(moments).toEqual([
+      { index: 1, kind: "swing", label: "Life swing · opponent -7" },
+      { index: 3, kind: "decisive", label: "Opponent hit 0 life" },
+    ]);
+  });
+
+  test("returns nothing when life never moves", () => {
+    expect(
+      findReplayKeyMoments([
+        frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+        frame({ id: 2, selfLifeTotal: 20, opponentLifeTotal: 20 }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("HUD life delta", () => {
+  test("returns the signed change for a side, or null when flat/unknown", () => {
+    const prev = frame({ id: 1, selfLifeTotal: 20, opponentLifeTotal: 18 });
+    const next = frame({ id: 2, selfLifeTotal: 17, opponentLifeTotal: 18 });
+    expect(replayLifeDelta(prev, next, "self")).toBe(-3);
+    expect(replayLifeDelta(prev, next, "opponent")).toBeNull();
+    expect(replayLifeDelta(null, next, "self")).toBeNull();
+    expect(
+      replayLifeDelta(frame({ id: 1 }), frame({ id: 2, selfLifeTotal: 5 }), "self"),
+    ).toBeNull();
+  });
+});
+
+describe("preferred starting frame", () => {
+  test("prefers the last frame that has visible objects", () => {
+    const frames = [
+      frame({ id: 1, objects: [] }),
+      frame({ id: 2, objects: [object()] }),
+      frame({ id: 3, objects: [] }),
+    ];
+    expect(preferredReplayFrameIndex(frames)).toBe(1);
+  });
+});
+
+describe("change narration", () => {
+  test("renders human-readable beats with the acting player", () => {
+    expect(
+      describeReplayChange(
+        change({ action: "block", playerSide: "opponent", cardName: "Otter" }),
+      ),
+    ).toBe("Opponent declared Otter as a blocker.");
+    expect(
+      describeReplayChange(
+        change({
+          action: "move_public",
+          playerSide: "self",
+          cardName: "Tarmogoyf",
+          fromZoneType: "Hand",
+          toZoneType: "Battlefield",
+        }),
+      ),
+    ).toBe("You moved Tarmogoyf from Hand to Battlefield.");
+  });
+
+  test("falls back to a card id when the name is unknown", () => {
+    expect(
+      describeReplayChange(change({ action: "tap", cardId: 42, cardName: undefined })),
+    ).toBe("You tapped Card 42.");
+  });
+});
+
+describe("win reason formatting", () => {
+  test("strips Arena prefixes and humanizes the reason", () => {
+    expect(normalizeReplayWinReason("ResultReason_Concede")).toBe("Concede");
+    expect(formatReplayWinReason("ResultReason_Concede")).toBe("concede");
+    expect(normalizeReplayWinReason(null)).toBe("");
+  });
+});
+
+describe("game result inference", () => {
+  test("reads the winner from terminal life totals", () => {
+    expect(
+      replayFrameLifeTotalWinner(frame({ selfLifeTotal: 0, opponentLifeTotal: 5 })),
+    ).toBe("opponent");
+    expect(
+      replayFrameLifeTotalWinner(frame({ selfLifeTotal: 12, opponentLifeTotal: 0 })),
+    ).toBe("self");
+    expect(
+      replayFrameLifeTotalWinner(frame({ selfLifeTotal: 3, opponentLifeTotal: 4 })),
+    ).toBe("unknown");
+  });
+
+  test("summarizes a lethal-damage loss", () => {
+    const summary = summarizeReplayGame([
+      frame({ id: 1, selfLifeTotal: 4, opponentLifeTotal: 6 }),
+      frame({ id: 2, selfLifeTotal: 0, opponentLifeTotal: 6 }),
+    ]);
+    expect(summary).toEqual({ result: "loss", detail: "You went to 0 life." });
+  });
+
+  test("summarizes an opponent concession", () => {
+    const summary = summarizeReplayGame([
+      frame({
+        id: 1,
+        selfLifeTotal: 20,
+        opponentLifeTotal: 20,
+        winningPlayerSide: "self",
+        winReason: "ResultReason_Concede",
+      }),
+    ]);
+    expect(summary).toEqual({ result: "win", detail: "Opponent conceded." });
+  });
+
+  test("lets a known match result override an ambiguous final game", () => {
+    const summary = summarizeReplayGame(
+      [frame({ id: 1, selfLifeTotal: 6, opponentLifeTotal: 7 })],
+      { isFinalGame: true, matchResult: "win" },
+    );
+    expect(summary?.result).toBe("win");
+  });
+});

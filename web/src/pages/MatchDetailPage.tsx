@@ -27,81 +27,81 @@ import { fetchCardPreview } from "../lib/scryfall";
 import type { CardPreview } from "../lib/scryfall";
 import type {
   MatchCardPlay,
-  MatchReplayChange,
   MatchReplayFrame,
   MatchReplayFrameObject,
 } from "../lib/types";
+import {
+  battlefieldSectionKind,
+  battlefieldSectionLabel,
+  battlefieldSectionOrder,
+  boardPlayMeta,
+  boardTurnLabel,
+  boardZoneKind,
+  boardZoneLabel,
+  buildReplayBeat,
+  buildReplayLifeSeries,
+  buildReplayTickKinds,
+  buildReplayTurnBoundaries,
+  cardDisplayName,
+  cardFallbackHref,
+  filterMeaningfulReplayFrames,
+  findReplayKeyMoments,
+  isInspectableZoneKind,
+  parseManaCostParts,
+  preferredReplayFrameIndex,
+  replayAnnotationDetailIntValue,
+  replayAnnotationHasType,
+  replayFrameAnnotations,
+  replayFrameMomentLabel,
+  replayLifeDelta,
+  replayLifeSeriesDomain,
+  replayMomentLabel,
+  replayObjectBlockAttackerIDs,
+  replayObjectCounterSummaries,
+  replayObjectIsAttacking,
+  replayObjectIsBlocking,
+  replayObjectName,
+  replayObjectPTLabel,
+  replayObjectStatePills,
+  replayObjectStatusText,
+  replayTurnLabel,
+  replayTurnValue,
+  shouldRenderOnBattlefield,
+  sortBattlefieldSectionObjects,
+  sortReplayObjects,
+  summarizeReplayFrameZones,
+  summarizeReplayGame,
+  summarizeReplayZones,
+  timelinePhaseLabel,
+  timelinePlayerLabel,
+  timelineZoneLabel,
+  type BattlefieldSectionKind,
+  type BoardZoneKind,
+  type InspectableZoneKind,
+  type PreviewCard,
+  type ReplayBoardConnection,
+  type ReplayConnectionKind,
+  type ReplayBeat,
+  type ReplayGameGroup,
+  type ReplayGameSummary,
+  type ReplayKeyMoment,
+  type ReplayLifePoint,
+  type ReplayTickKind,
+  type ReplayTurnBoundary,
+} from "../lib/replay";
+import {
+  REPLAY_SPEED_OPTIONS,
+  useReplayPlayer,
+} from "../lib/replay/useReplayPlayer";
+import { useReplayKeyboard } from "../lib/replay/useReplayKeyboard";
 
 type OpponentDeckCard = {
   cardId: number;
   cardName?: string;
   quantity: number;
 };
-type PreviewCard = {
-  cardId: number;
-  cardName?: string;
-};
-
 type PopoverPlacement = "left" | "right";
-type ManaCostPart =
-  | { kind: "symbol"; token: string }
-  | { kind: "separator"; value: string };
 type TimelineDisplayMode = "board" | "list";
-type BoardZoneKind =
-  | "hand"
-  | "battlefield"
-  | "stack"
-  | "graveyard"
-  | "exile"
-  | "revealed"
-  | "other";
-type InspectableZoneKind = "graveyard" | "exile";
-type BattlefieldSectionKind =
-  | "lands"
-  | "creatures"
-  | "artifacts_enchantments"
-  | "planeswalkers"
-  | "battles"
-  | "other";
-type ReplayCounterSummary = {
-  label: string;
-  count: number;
-};
-type ReplayConnectionKind = "combat" | "spellTarget";
-type ReplayBoardConnection = {
-  kind: ReplayConnectionKind;
-  sourceId: number;
-  targetId: number;
-};
-type ReplayAnnotationDetail = {
-  key?: string;
-  type?: string;
-  valueInt32?: number[];
-  valueString?: string[];
-};
-type ReplayAnnotation = {
-  affectorId?: number;
-  affectedIds?: number[];
-  type?: string[];
-  details?: ReplayAnnotationDetail[];
-};
-type ReplayAnnotationPayload = {
-  annotations?: ReplayAnnotation[];
-  persistentAnnotations?: ReplayAnnotation[];
-};
-type ReplayGameSummary = {
-  result: "win" | "loss" | "unknown";
-  detail: string;
-};
-type ReplayGameSummaryOptions = {
-  isFinalGame?: boolean;
-  matchResult?: "win" | "loss" | "unknown";
-};
-type ReplayGameGroup = {
-  gameNumber: number;
-  frames: MatchReplayFrame[];
-  summary: ReplayGameSummary | null;
-};
 type MatchReplayZoneDialogState =
   | {
       source: "replay";
@@ -116,147 +116,8 @@ type MatchReplayZoneDialogState =
       plays: MatchCardPlay[];
     };
 
-const BOARD_ZONE_ORDER: BoardZoneKind[] = [
-  "hand",
-  "battlefield",
-  "stack",
-  "graveyard",
-  "exile",
-  "revealed",
-  "other",
-];
-const BATTLEFIELD_SECTION_ORDER: BattlefieldSectionKind[] = [
-  "lands",
-  "other",
-  "battles",
-  "planeswalkers",
-  "artifacts_enchantments",
-  "creatures",
-];
-const SELF_BATTLEFIELD_SECTION_ORDER: BattlefieldSectionKind[] = [
-  "creatures",
-  "artifacts_enchantments",
-  "planeswalkers",
-  "battles",
-  "other",
-  "lands",
-];
-
-function cardDisplayName(card: PreviewCard): string {
-  return card.cardName?.trim() || `Card ${card.cardId}`;
-}
-
-function timelinePlayerLabel(playerSide?: string): string {
-  if (playerSide === "self") return "You";
-  if (playerSide === "opponent") return "Opponent";
-  return "Unknown";
-}
-
-function timelineZoneLabel(zone: string): string {
-  const trimmed = zone.trim();
-  if (!trimmed) return "-";
-  return trimmed
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function timelinePhaseLabel(phase: string | undefined): string {
-  const trimmed = phase?.trim() ?? "";
-  if (!trimmed) return "-";
-  return trimmed
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function cardPreviewQueryKey(card: PreviewCard): [string, number, string] {
   return ["card-preview", card.cardId, cardDisplayName(card)];
-}
-
-function cardFallbackHref(card: PreviewCard): string {
-  const name = cardDisplayName(card);
-  return card.cardName?.trim()
-    ? `https://scryfall.com/search?q=${encodeURIComponent(`!"${name}"`)}`
-    : `https://scryfall.com/search?q=${encodeURIComponent(`arenaid:${card.cardId}`)}`;
-}
-
-function parseManaCostParts(manaCost: string): ManaCostPart[] {
-  const trimmed = manaCost.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const parts: ManaCostPart[] = [];
-  const tokenPattern = /\{([^}]+)\}/g;
-  let lastIndex = 0;
-
-  while (true) {
-    const match = tokenPattern.exec(trimmed);
-    if (!match) {
-      break;
-    }
-
-    const between = trimmed.slice(lastIndex, match.index).trim();
-    if (between) {
-      parts.push({ kind: "separator", value: between });
-    }
-
-    const token = match[1]?.trim();
-    if (token) {
-      parts.push({ kind: "symbol", token });
-    }
-
-    lastIndex = tokenPattern.lastIndex;
-  }
-
-  const tail = trimmed.slice(lastIndex).trim();
-  if (tail) {
-    parts.push({ kind: "separator", value: tail });
-  }
-
-  return parts;
-}
-
-function boardZoneKind(zone: string): BoardZoneKind {
-  const normalized = zone.trim().toLowerCase();
-  if (!normalized) return "other";
-  if (normalized.includes("hand")) return "hand";
-  if (normalized.includes("battlefield")) return "battlefield";
-  if (normalized.includes("stack")) return "stack";
-  if (normalized.includes("graveyard")) return "graveyard";
-  if (normalized.includes("exile")) return "exile";
-  if (normalized.includes("reveal")) return "revealed";
-  return "other";
-}
-
-function boardZoneLabel(kind: BoardZoneKind): string {
-  if (kind === "hand") return "Hand";
-  if (kind === "battlefield") return "Battlefield";
-  if (kind === "stack") return "Stack";
-  if (kind === "graveyard") return "Graveyard";
-  if (kind === "exile") return "Exile";
-  if (kind === "revealed") return "Revealed";
-  return "Other";
-}
-
-function isInspectableZoneKind(kind: BoardZoneKind): kind is InspectableZoneKind {
-  return kind === "graveyard" || kind === "exile";
-}
-
-function boardTurnLabel(turnNumber?: number): string {
-  return turnNumber && turnNumber > 0 ? `T${turnNumber}` : "T?";
-}
-
-function boardPlayMeta(play: MatchCardPlay): string {
-  const parts = [boardTurnLabel(play.turnNumber)];
-  const phase = timelinePhaseLabel(play.phase);
-  if (phase !== "-") {
-    parts.push(phase);
-  }
-  return parts.join(" • ");
 }
 
 function ManaCostDisplay({ manaCost }: { manaCost: string }) {
@@ -537,883 +398,6 @@ function ReplayCardPreviewAnchor({
   );
 }
 
-function replayTurnValue(turnNumber?: number): number {
-  return typeof turnNumber === "number" && turnNumber > 0 ? turnNumber : -1;
-}
-
-function replayTurnLabel(turnNumber?: number): string {
-  return typeof turnNumber === "number" && turnNumber > 0
-    ? `Turn ${turnNumber}`
-    : "Unknown turn";
-}
-
-function replayMomentLabel(play: MatchCardPlay): string {
-  const phase = timelinePhaseLabel(play.phase);
-  if (phase === "-") {
-    return replayTurnLabel(play.turnNumber);
-  }
-  return `${replayTurnLabel(play.turnNumber)} - ${phase}`;
-}
-
-function replayFrameMomentLabel(frame: MatchReplayFrame): string {
-  const phase = timelinePhaseLabel(frame.phase);
-  if (phase === "-") {
-    return replayTurnLabel(frame.turnNumber);
-  }
-  return `${replayTurnLabel(frame.turnNumber)} - ${phase}`;
-}
-
-type ReplayTurnBoundary = {
-  turnKey: number;
-  firstIndex: number;
-  lastIndex: number;
-};
-
-function buildReplayTurnBoundaries<T extends { turnNumber?: number }>(
-  items: T[],
-): ReplayTurnBoundary[] {
-  const firstByTurn = new Map<number, number>();
-  const lastByTurn = new Map<number, number>();
-
-  for (let index = 0; index < items.length; index += 1) {
-    const turnKey = replayTurnValue(items[index].turnNumber);
-    if (!firstByTurn.has(turnKey)) {
-      firstByTurn.set(turnKey, index);
-    }
-    lastByTurn.set(turnKey, index);
-  }
-
-  return Array.from(firstByTurn.entries())
-    .map(([turnKey, firstIndex]) => ({
-      turnKey,
-      firstIndex,
-      lastIndex: lastByTurn.get(turnKey) ?? firstIndex,
-    }))
-    .sort((a, b) => a.firstIndex - b.firstIndex);
-}
-
-function replayTurnBoundaryCount(boundary: ReplayTurnBoundary): number {
-  return boundary.lastIndex - boundary.firstIndex + 1;
-}
-
-function replayObjectSortValue(object: MatchReplayFrameObject): number {
-  return typeof object.zonePosition === "number"
-    ? object.zonePosition
-    : Number.MAX_SAFE_INTEGER;
-}
-
-function sortReplayObjects(
-  a: MatchReplayFrameObject,
-  b: MatchReplayFrameObject,
-): number {
-  return (
-    replayObjectSortValue(a) - replayObjectSortValue(b) ||
-    a.instanceId - b.instanceId
-  );
-}
-
-function replayChangePriority(action: string): number {
-  switch (action) {
-    case "leave_public":
-      return 100;
-    case "move_public":
-      return 95;
-    case "enter_public":
-      return 90;
-    case "controller_change":
-      return 85;
-    case "attack":
-    case "stop_attack":
-    case "block":
-    case "stop_block":
-      return 80;
-    case "tap":
-    case "untap":
-      return 70;
-    case "counters_change":
-      return 65;
-    case "stat_change":
-      return 60;
-    case "summoning_sickness_change":
-      return 50;
-    default:
-      return 10;
-  }
-}
-
-function replayObjectDetails(
-  object: MatchReplayFrameObject,
-): Record<string, unknown> | null {
-  const raw = object.detailsJson?.trim();
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function replayObjectCardTypes(object: MatchReplayFrameObject): string[] {
-  const details = replayObjectDetails(object);
-  const raw = details?.["cardTypes"];
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw.filter((value): value is string => typeof value === "string");
-}
-
-function replayObjectHasType(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-  type: string,
-): boolean {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  if (typeLine.includes(type)) {
-    return true;
-  }
-
-  const normalized = type.toLowerCase();
-  return replayObjectCardTypes(object).some((value) =>
-    value.toLowerCase().includes(normalized),
-  );
-}
-
-function replayObjectIsAttacking(object: MatchReplayFrameObject): boolean {
-  return Boolean(object.attackState?.trim());
-}
-
-function replayObjectIsBlocking(object: MatchReplayFrameObject): boolean {
-  return Boolean(object.blockState?.trim());
-}
-
-function replayObjectPTLabel(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): string | null {
-  if (
-    typeof object.power !== "number" ||
-    typeof object.toughness !== "number" ||
-    !replayObjectHasType(object, preview, "creature")
-  ) {
-    return null;
-  }
-  return `${object.power}/${object.toughness}`;
-}
-
-function replayObjectCounterSummaries(
-  object: MatchReplayFrameObject,
-): ReplayCounterSummary[] {
-  const raw = object.counterSummaryJson?.trim();
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return null;
-        }
-        const label =
-          typeof (entry as { label?: unknown }).label === "string"
-            ? (entry as { label: string }).label.trim()
-            : "";
-        const count =
-          typeof (entry as { count?: unknown }).count === "number"
-            ? (entry as { count: number }).count
-            : Number.NaN;
-        if (!label || !Number.isFinite(count) || count === 0) {
-          return null;
-        }
-        return { label, count };
-      })
-      .filter((entry): entry is ReplayCounterSummary => entry !== null);
-  } catch {
-    return [];
-  }
-}
-
-function replayObjectBlockCount(object: MatchReplayFrameObject): number {
-  return replayObjectBlockAttackerIDs(object).length;
-}
-
-function replayObjectBlockAttackerIDs(object: MatchReplayFrameObject): number[] {
-  const raw = object.blockAttackerIdsJson?.trim();
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is number => typeof value === "number")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function replayFrameAnnotations(frame: MatchReplayFrame | null): ReplayAnnotation[] {
-  const raw = frame?.annotationsJson?.trim();
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return [];
-    }
-
-    const payload = parsed as ReplayAnnotationPayload;
-    const next: ReplayAnnotation[] = [];
-    if (Array.isArray(payload.annotations)) {
-      next.push(...payload.annotations);
-    }
-    if (Array.isArray(payload.persistentAnnotations)) {
-      next.push(...payload.persistentAnnotations);
-    }
-    return next.filter(
-      (annotation): annotation is ReplayAnnotation =>
-        Boolean(annotation) && typeof annotation === "object",
-    );
-  } catch {
-    return [];
-  }
-}
-
-function replayAnnotationHasType(
-  annotation: ReplayAnnotation,
-  expectedType: string,
-): boolean {
-  return Array.isArray(annotation.type) && annotation.type.includes(expectedType);
-}
-
-function replayAnnotationDetailIntValue(
-  annotation: ReplayAnnotation,
-  key: string,
-): number | undefined {
-  if (!Array.isArray(annotation.details)) {
-    return undefined;
-  }
-
-  for (const detail of annotation.details) {
-    if (detail?.key !== key || !Array.isArray(detail.valueInt32)) {
-      continue;
-    }
-    const value = detail.valueInt32[0];
-    if (typeof value === "number") {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function replayObjectStatePills(
-  object: MatchReplayFrameObject,
-): ReplayCounterSummary[] {
-  const pills: ReplayCounterSummary[] = [];
-
-  if (object.isTapped) {
-    pills.push({ label: "Tapped", count: 1 });
-  }
-  if (replayObjectIsAttacking(object)) {
-    pills.push({ label: "Attacking", count: 1 });
-  }
-  if (replayObjectIsBlocking(object)) {
-    const blockCount = replayObjectBlockCount(object);
-    pills.push({
-      label: blockCount > 1 ? `Blocking ${blockCount}` : "Blocking",
-      count: 1,
-    });
-  }
-  if (object.hasSummoningSickness) {
-    pills.push({ label: "Summoning Sick", count: 1 });
-  }
-  if (
-    typeof object.ownerSeatId === "number" &&
-    typeof object.controllerSeatId === "number" &&
-    object.ownerSeatId !== object.controllerSeatId
-  ) {
-    pills.push({ label: "Stolen", count: 1 });
-  }
-
-  return pills;
-}
-
-function replayObjectStatusText(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): string {
-  const parts = [
-    timelinePlayerLabel(object.playerSide),
-    timelineZoneLabel(object.zoneType),
-  ];
-  const ptLabel = replayObjectPTLabel(object, preview);
-  if (ptLabel) {
-    parts.push(ptLabel);
-  }
-  if (object.isTapped) {
-    parts.push("Tapped");
-  }
-  if (replayObjectIsAttacking(object)) {
-    parts.push("Attacking");
-  }
-  if (replayObjectIsBlocking(object)) {
-    parts.push("Blocking");
-  }
-  if (object.hasSummoningSickness) {
-    parts.push("Summoning sick");
-  }
-  for (const counter of replayObjectCounterSummaries(object)) {
-    parts.push(`${counter.label} x${counter.count}`);
-  }
-  return parts.join(" • ");
-}
-
-function replayObjectName(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): string {
-  return (preview?.name ?? cardDisplayName(object)).trim();
-}
-
-function replayObjectIsBasicLand(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): boolean {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  if (typeLine.includes("basic")) {
-    return true;
-  }
-
-  return replayObjectHasType(object, preview, "basic");
-}
-
-function replayObjectBasicLandRank(
-  object: MatchReplayFrameObject,
-  preview: CardPreview | null,
-): number {
-  const name = replayObjectName(object, preview).toLowerCase();
-
-  if (name === "plains") return 0;
-  if (name === "island") return 1;
-  if (name === "swamp") return 2;
-  if (name === "mountain") return 3;
-  if (name === "forest") return 4;
-  if (name === "wastes") return 5;
-  return 6;
-}
-
-function sortBattlefieldSectionObjects(
-  kind: BattlefieldSectionKind,
-  objects: MatchReplayFrameObject[],
-  previewByCardID: Map<number, CardPreview | null>,
-): MatchReplayFrameObject[] {
-  if (kind !== "lands") {
-    return objects;
-  }
-
-  return [...objects].sort((a, b) => {
-    const aPreview = previewByCardID.get(a.cardId) ?? null;
-    const bPreview = previewByCardID.get(b.cardId) ?? null;
-    const aBasic = replayObjectIsBasicLand(a, aPreview);
-    const bBasic = replayObjectIsBasicLand(b, bPreview);
-
-    if (aBasic !== bBasic) {
-      return aBasic ? -1 : 1;
-    }
-
-    if (aBasic && bBasic) {
-      const basicRankDelta =
-        replayObjectBasicLandRank(a, aPreview) -
-        replayObjectBasicLandRank(b, bPreview);
-      if (basicRankDelta !== 0) {
-        return basicRankDelta;
-      }
-    }
-
-    const nameDelta = replayObjectName(a, aPreview).localeCompare(
-      replayObjectName(b, bPreview),
-    );
-    if (nameDelta !== 0) {
-      return nameDelta;
-    }
-
-    return sortReplayObjects(a, b);
-  });
-}
-
-function replayFrameLifeTotalForSide(
-  frame: MatchReplayFrame | null | undefined,
-  side: "self" | "opponent",
-): number | undefined {
-  if (!frame) {
-    return undefined;
-  }
-  return side === "self" ? frame.selfLifeTotal : frame.opponentLifeTotal;
-}
-
-function replayFrameLifeTotalsSummary(
-  frame: MatchReplayFrame | null | undefined,
-): string | null {
-  const selfLifeTotal = replayFrameLifeTotalForSide(frame, "self");
-  const opponentLifeTotal = replayFrameLifeTotalForSide(frame, "opponent");
-  if (
-    typeof selfLifeTotal !== "number" &&
-    typeof opponentLifeTotal !== "number"
-  ) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  if (typeof selfLifeTotal === "number") {
-    parts.push(`You ${selfLifeTotal}`);
-  }
-  if (typeof opponentLifeTotal === "number") {
-    parts.push(`Opponent ${opponentLifeTotal}`);
-  }
-  return parts.join(" • ");
-}
-
-function replayFrameHasLifeDelta(
-  previousFrame: MatchReplayFrame | null,
-  frame: MatchReplayFrame,
-): boolean {
-  if (!previousFrame) {
-    return false;
-  }
-  return (
-    replayFrameLifeTotalForSide(previousFrame, "self") !==
-      replayFrameLifeTotalForSide(frame, "self") ||
-    replayFrameLifeTotalForSide(previousFrame, "opponent") !==
-      replayFrameLifeTotalForSide(frame, "opponent")
-  );
-}
-
-function isMeaningfulReplayFrame(
-  frame: MatchReplayFrame,
-  previousFrame: MatchReplayFrame | null,
-): boolean {
-  return (
-    (frame.changes?.length ?? 0) > 0 || replayFrameHasLifeDelta(previousFrame, frame)
-  );
-}
-
-function filterMeaningfulReplayFrames(
-  frames: MatchReplayFrame[],
-): MatchReplayFrame[] {
-  if (frames.length <= 1) {
-    return frames;
-  }
-
-  const meaningfulFrames: MatchReplayFrame[] = [];
-  for (let index = 0; index < frames.length; index += 1) {
-    const frame = frames[index];
-    const previousFrame = index > 0 ? frames[index - 1] ?? null : null;
-    if (isMeaningfulReplayFrame(frame, previousFrame)) {
-      meaningfulFrames.push(frame);
-    }
-  }
-
-  if (meaningfulFrames.length > 0) {
-    return meaningfulFrames;
-  }
-
-  const lastFrame = frames[frames.length - 1];
-  return lastFrame ? [lastFrame] : [];
-}
-
-function summarizeReplayFrameZones(
-  objects: MatchReplayFrameObject[],
-): Map<BoardZoneKind, number> {
-  const counts = new Map<BoardZoneKind, number>();
-  for (const kind of BOARD_ZONE_ORDER) {
-    counts.set(kind, 0);
-  }
-
-  for (const object of objects) {
-    const kind = boardZoneKind(object.zoneType);
-    counts.set(kind, (counts.get(kind) ?? 0) + 1);
-  }
-
-  return counts;
-}
-
-function replayFramePrimaryChange(
-  frame: MatchReplayFrame | null,
-): MatchReplayChange | null {
-  const changes = frame?.changes ?? [];
-  if (changes.length === 0) {
-    return null;
-  }
-  return [...changes].sort(
-    (a, b) =>
-      replayChangePriority(b.action) - replayChangePriority(a.action),
-  )[0] ?? null;
-}
-
-function replayFramePrimarySummary(
-  frame: MatchReplayFrame | null,
-  previousFrame: MatchReplayFrame | null,
-): string {
-  const primaryChange = replayFramePrimaryChange(frame);
-  if (primaryChange) {
-    return describeReplayChange(primaryChange);
-  }
-  if (frame && replayFrameHasLifeDelta(previousFrame, frame)) {
-    const summary = replayFrameLifeTotalsSummary(frame);
-    return summary ? `Life totals changed. ${summary}.` : "Life totals changed.";
-  }
-  return "Initial replay snapshot for this game state.";
-}
-
-function replayFrameWinningPlayerSide(
-  frame: MatchReplayFrame | null | undefined,
-): "self" | "opponent" | "unknown" {
-  const side = frame?.winningPlayerSide;
-  return side === "self" || side === "opponent" ? side : "unknown";
-}
-
-function normalizeReplayWinReason(reason?: string | null): string {
-  return (reason ?? "")
-    .trim()
-    .replace(/^ResultReason_/, "")
-    .replace(/^WinningReason_/, "");
-}
-
-function formatReplayWinReason(reason: string): string {
-  const normalized = normalizeReplayWinReason(reason);
-  if (!normalized) {
-    return "";
-  }
-  return normalized
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/_/g, " ")
-    .toLowerCase();
-}
-
-function replayFrameLifeTotalWinner(
-  frame: MatchReplayFrame,
-): "self" | "opponent" | "unknown" {
-  const selfLifeTotal = frame.selfLifeTotal;
-  const opponentLifeTotal = frame.opponentLifeTotal;
-  const selfIsDead =
-    typeof selfLifeTotal === "number" && Number.isFinite(selfLifeTotal) && selfLifeTotal <= 0;
-  const opponentIsDead =
-    typeof opponentLifeTotal === "number" &&
-    Number.isFinite(opponentLifeTotal) &&
-    opponentLifeTotal <= 0;
-
-  if (selfIsDead === opponentIsDead) {
-    return "unknown";
-  }
-  return selfIsDead ? "opponent" : "self";
-}
-
-function terminalReplayFrameConfidence(frame: MatchReplayFrame): number {
-  const explicitWinner = replayFrameWinningPlayerSide(frame);
-  if (explicitWinner !== "unknown") {
-    return 4;
-  }
-  if (replayFrameLifeTotalWinner(frame) !== "unknown") {
-    return 3;
-  }
-  if (normalizeReplayWinReason(frame.winReason) !== "") {
-    return 2;
-  }
-  if ((frame.gameStage ?? "").trim().toLowerCase() === "gameover") {
-    return 1;
-  }
-  return 0;
-}
-
-function summarizeReplayGame(
-  frames: MatchReplayFrame[],
-  options: ReplayGameSummaryOptions = {},
-): ReplayGameSummary | null {
-  if (frames.length === 0) {
-    return null;
-  }
-
-  let terminalFrame: MatchReplayFrame | null = null;
-  let bestConfidence = 0;
-  for (let index = frames.length - 1; index >= 0; index -= 1) {
-    const frame = frames[index];
-    const confidence = terminalReplayFrameConfidence(frame);
-    if (confidence === 0) {
-      continue;
-    }
-    if (!terminalFrame || confidence > bestConfidence) {
-      terminalFrame = frame;
-      bestConfidence = confidence;
-      if (confidence >= 4) {
-        break;
-      }
-    }
-  }
-  terminalFrame ??= frames[frames.length - 1] ?? null;
-  if (!terminalFrame) {
-    return null;
-  }
-
-  const lifeTotalWinner = replayFrameLifeTotalWinner(terminalFrame);
-  // Prefer terminal life totals when they clearly identify a winner. Arena can
-  // occasionally report a concede reason on the final frame after lethal damage.
-  const winningPlayerSide =
-    lifeTotalWinner !== "unknown"
-      ? lifeTotalWinner
-      : replayFrameWinningPlayerSide(terminalFrame);
-
-  let result: "win" | "loss" | "unknown" =
-    winningPlayerSide === "self"
-      ? "win"
-      : winningPlayerSide === "opponent"
-        ? "loss"
-        : "unknown";
-  const normalizedReason = normalizeReplayWinReason(terminalFrame.winReason);
-
-  let detail = "";
-  if (lifeTotalWinner === "opponent") {
-    detail = "You went to 0 life.";
-  } else if (lifeTotalWinner === "self") {
-    detail = "Opponent went to 0 life.";
-  } else if (normalizedReason === "Concede") {
-    const concedingPlayerSide =
-      winningPlayerSide === "self"
-        ? "opponent"
-        : winningPlayerSide === "opponent"
-          ? "self"
-          : "unknown";
-    detail =
-      concedingPlayerSide === "unknown"
-        ? "A player conceded."
-        : `${timelinePlayerLabel(concedingPlayerSide)} conceded.`;
-  } else if (normalizedReason) {
-    detail = `Ended by ${formatReplayWinReason(normalizedReason)}.`;
-  } else if (result === "win") {
-    detail = "You won this game.";
-  } else if (result === "loss") {
-    detail = "You lost this game.";
-  } else {
-    detail = "Game result recorded.";
-  }
-
-  if (
-    options.isFinalGame &&
-    (options.matchResult === "win" || options.matchResult === "loss") &&
-    options.matchResult !== result
-  ) {
-    result = options.matchResult;
-    if (normalizedReason === "Concede") {
-      detail = result === "win" ? "Opponent conceded." : "You conceded.";
-    } else if (result === "win") {
-      detail =
-        typeof terminalFrame.opponentLifeTotal === "number" &&
-        terminalFrame.opponentLifeTotal <= 0
-          ? "Opponent went to 0 life."
-          : "You won this game.";
-    } else {
-      detail =
-        typeof terminalFrame.selfLifeTotal === "number" &&
-        terminalFrame.selfLifeTotal <= 0
-          ? "You went to 0 life."
-          : "You lost this game.";
-    }
-  }
-
-  return { result, detail };
-}
-
-function preferredReplayFrameIndex(frames: MatchReplayFrame[]): number {
-  if (frames.length === 0) {
-    return 0;
-  }
-
-  for (let index = frames.length - 1; index >= 0; index -= 1) {
-    if ((frames[index]?.objects?.length ?? 0) > 0) {
-      return index;
-    }
-  }
-
-  return frames.length - 1;
-}
-
-function describeReplayChange(change: MatchReplayChange): string {
-  const actor = timelinePlayerLabel(change.playerSide);
-  const name = cardDisplayName({
-    cardId: change.cardId,
-    cardName: change.cardName,
-  });
-
-  if (change.action === "enter_public") {
-    return `${actor} showed ${name} in ${timelineZoneLabel(change.toZoneType ?? "")}.`;
-  }
-  if (change.action === "move_public") {
-    return `${actor} moved ${name} from ${timelineZoneLabel(change.fromZoneType ?? "")} to ${timelineZoneLabel(change.toZoneType ?? "")}.`;
-  }
-  if (change.action === "leave_public") {
-    return `${actor} lost public visibility of ${name} from ${timelineZoneLabel(change.fromZoneType ?? "")}.`;
-  }
-  if (change.action === "controller_change") {
-    return `${actor} took control of ${name}.`;
-  }
-  if (change.action === "tap") {
-    return `${actor} tapped ${name}.`;
-  }
-  if (change.action === "untap") {
-    return `${actor} untapped ${name}.`;
-  }
-  if (change.action === "attack") {
-    return `${actor} attacked with ${name}.`;
-  }
-  if (change.action === "stop_attack") {
-    return `${name} stopped attacking.`;
-  }
-  if (change.action === "block") {
-    return `${actor} declared ${name} as a blocker.`;
-  }
-  if (change.action === "stop_block") {
-    return `${name} stopped blocking.`;
-  }
-  if (change.action === "summoning_sickness_change") {
-    return `${name}'s summoning-sickness state changed.`;
-  }
-  if (change.action === "stat_change") {
-    return `${name}'s power and toughness changed.`;
-  }
-  if (change.action === "counters_change") {
-    return `${name}'s counters changed.`;
-  }
-  return `${actor} changed ${name}.`;
-}
-
-function previewIsPermanent(preview: CardPreview | null): boolean {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  if (!typeLine) {
-    return false;
-  }
-
-  return (
-    typeLine.includes("artifact") ||
-    typeLine.includes("battle") ||
-    typeLine.includes("creature") ||
-    typeLine.includes("enchantment") ||
-    typeLine.includes("land") ||
-    typeLine.includes("planeswalker")
-  );
-}
-
-function shouldRenderOnBattlefield(
-  play: MatchCardPlay,
-  preview: CardPreview | null,
-  activePlayID: number,
-): boolean {
-  const zone = boardZoneKind(play.firstPublicZone);
-  if (zone === "battlefield") {
-    return true;
-  }
-
-  // Reconstruct likely permanent resolution: if a permanent first appeared on
-  // the stack and it is no longer the current action, show it on the board.
-  if (
-    zone === "stack" &&
-    play.id !== activePlayID &&
-    previewIsPermanent(preview)
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function battlefieldSectionKind(
-  preview: CardPreview | null,
-  object?: MatchReplayFrameObject,
-): BattlefieldSectionKind {
-  const typeLine = preview?.typeLine?.toLowerCase() ?? "";
-  const fallbackTypes = object
-    ? replayObjectCardTypes(object).map((value) => value.toLowerCase())
-    : [];
-  const hasType = (type: string) =>
-    typeLine.includes(type) ||
-    fallbackTypes.some((value) => value.includes(type));
-
-  if (!typeLine && fallbackTypes.length === 0) {
-    return "other";
-  }
-  if (hasType("land")) {
-    return "lands";
-  }
-  if (hasType("creature")) {
-    return "creatures";
-  }
-  if (hasType("planeswalker")) {
-    return "planeswalkers";
-  }
-  if (hasType("battle")) {
-    return "battles";
-  }
-  if (hasType("artifact") || hasType("enchantment")) {
-    return "artifacts_enchantments";
-  }
-  return "other";
-}
-
-function battlefieldSectionLabel(kind: BattlefieldSectionKind): string {
-  switch (kind) {
-    case "lands":
-      return "Lands";
-    case "creatures":
-      return "Creatures";
-    case "artifacts_enchantments":
-      return "Artifacts + Enchantments";
-    case "planeswalkers":
-      return "Planeswalkers";
-    case "battles":
-      return "Battles";
-    default:
-      return "Other Permanents";
-  }
-}
-
-function battlefieldSectionOrder(
-  side: "self" | "opponent",
-): BattlefieldSectionKind[] {
-  return side === "self"
-    ? SELF_BATTLEFIELD_SECTION_ORDER
-    : BATTLEFIELD_SECTION_ORDER;
-}
-
-function summarizeReplayZones(
-  plays: MatchCardPlay[],
-): Map<BoardZoneKind, number> {
-  const counts = new Map<BoardZoneKind, number>();
-  for (const kind of BOARD_ZONE_ORDER) {
-    counts.set(kind, 0);
-  }
-
-  for (const play of plays) {
-    const kind = boardZoneKind(play.firstPublicZone);
-    counts.set(kind, (counts.get(kind) ?? 0) + 1);
-  }
-
-  return counts;
-}
-
 function MatchReplayCard({
   play,
   preview,
@@ -1511,7 +495,11 @@ function MatchReplayObjectCard({
   ]
     .filter((part): part is string => Boolean(part))
     .join(" • ");
-  const statePills = replayObjectStatePills(object);
+  // "Tapped" and "Attacking" are already conveyed visually (90° rotation and the
+  // red attack border), so drop those text pills to keep the board compact.
+  const statePills = replayObjectStatePills(object).filter(
+    (pill) => pill.label !== "Tapped" && pill.label !== "Attacking",
+  );
   const counterPills = replayObjectCounterSummaries(object);
   const isTappedBoardCard =
     size === "board" &&
@@ -2056,12 +1044,14 @@ function MatchReplayFrameSideSummary({
   lifeTotal,
   includeHand = false,
   onOpenZone,
+  variant = "box",
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
   lifeTotal?: number;
   includeHand?: boolean;
   onOpenZone?: (state: MatchReplayZoneDialogState) => void;
+  variant?: "box" | "rail";
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -2071,6 +1061,73 @@ function MatchReplayFrameSideSummary({
     () => summarizeReplayFrameZones(sideObjects),
     [sideObjects],
   );
+
+  if (variant === "rail") {
+    const railZones: BoardZoneKind[] = ["graveyard", "exile", "revealed"];
+    const visibleZones = railZones.filter(
+      (kind) => (zoneCounts.get(kind) ?? 0) > 0,
+    );
+
+    return (
+      <section
+        className={`match-replay-zonerail is-${side}`}
+        aria-label={`${timelinePlayerLabel(side)} off-board zones`}
+      >
+        <span className="match-replay-zonerail-label">
+          {timelinePlayerLabel(side)}
+        </span>
+        {visibleZones.length === 0 ? (
+          <span className="match-replay-zonerail-empty">
+            No graveyard, exile, or revealed cards
+          </span>
+        ) : (
+          visibleZones.map((kind) => {
+            const count = zoneCounts.get(kind) ?? 0;
+            const canOpen = isInspectableZoneKind(kind) && onOpenZone;
+            const inner = (
+              <>
+                <span className="match-replay-zonechip-term">
+                  {boardZoneLabel(kind)}
+                </span>
+                <span className="match-replay-zonechip-value">{count}</span>
+              </>
+            );
+
+            if (canOpen) {
+              return (
+                <button
+                  type="button"
+                  className="match-replay-zonechip is-button"
+                  key={kind}
+                  aria-haspopup="dialog"
+                  aria-label={`View ${timelinePlayerLabel(side)} ${boardZoneLabel(kind).toLowerCase()}, ${count} card${count === 1 ? "" : "s"}`}
+                  onClick={() =>
+                    onOpenZone({
+                      source: "replay",
+                      side,
+                      zone: kind,
+                      objects: sideObjects.filter(
+                        (object) => boardZoneKind(object.zoneType) === kind,
+                      ),
+                    })
+                  }
+                >
+                  {inner}
+                </button>
+              );
+            }
+
+            return (
+              <span className="match-replay-zonechip" key={kind}>
+                {inner}
+              </span>
+            );
+          })
+        )}
+      </section>
+    );
+  }
+
   const stats: BoardZoneKind[] = includeHand
     ? ["hand", "battlefield", "graveyard", "exile", "revealed"]
     : ["battlefield", "graveyard", "exile", "revealed"];
@@ -2356,6 +1413,8 @@ function MatchReplayStack({
   connectionInteractiveInstanceIDs?: Set<number>;
   onConnectionFocusChange?: (instanceId: number | null) => void;
 }) {
+  // Stack zone positions count down from the top: position 1 is the spell
+  // that resolves next, so ascending order is already top-first.
   const stackObjects = useMemo(
     () =>
       [...(frame.objects ?? [])]
@@ -2363,162 +1422,508 @@ function MatchReplayStack({
         .sort(sortReplayObjects),
     [frame],
   );
-  const topObject = stackObjects[stackObjects.length - 1] ?? null;
 
-  return (
-    <section className="match-replay-stackbox" aria-label="Current stack">
-      <div className="match-replay-stackbox-head">
-        <div>
-          <p className="match-replay-sidebox-label">Stack</p>
-          <p className="match-replay-sidebox-total">
-            {stackObjects.length === 0
-              ? "Empty"
-              : `${stackObjects.length} public card${stackObjects.length === 1 ? "" : "s"}`}
-          </p>
-        </div>
-        {topObject ? (
-          <p className="match-replay-stackbox-player">
-            Top • {timelinePlayerLabel(topObject.playerSide)}
-          </p>
-        ) : null}
-      </div>
-      <div
-        className={`match-replay-stackbox-body is-replay-stack ${stackObjects.length === 0 ? "is-empty" : ""}`}
-      >
-        <div
-          className="match-replay-stack-cards"
-          aria-label="Current stack ordered bottom to top"
-        >
-          {stackObjects.length === 0 ? (
-            <p className="match-replay-empty">
-              No public stack in this step.
-            </p>
-          ) : (
-            stackObjects.map((object, index) => (
-              <div
-                className={`match-replay-stack-slot ${
-                  connectionHighlightedInstanceIDs?.has(object.instanceId)
-                    ? "is-connection-highlighted"
-                    : ""
-                }`}
-                key={object.instanceId}
-                onMouseEnter={
-                  connectionInteractiveInstanceIDs?.has(object.instanceId) &&
-                  onConnectionFocusChange
-                    ? () => onConnectionFocusChange(object.instanceId)
-                    : undefined
-                }
-                onMouseLeave={
-                  connectionInteractiveInstanceIDs?.has(object.instanceId) &&
-                  onConnectionFocusChange
-                    ? () => onConnectionFocusChange(null)
-                    : undefined
-                }
-                onFocus={
-                  connectionInteractiveInstanceIDs?.has(object.instanceId) &&
-                  onConnectionFocusChange
-                    ? () => onConnectionFocusChange(object.instanceId)
-                    : undefined
-                }
-                onBlur={
-                  connectionInteractiveInstanceIDs?.has(object.instanceId) &&
-                  onConnectionFocusChange
-                    ? () => onConnectionFocusChange(null)
-                    : undefined
-                }
-              >
-                <div
-                  className="match-replay-stack-card-shell"
-                  ref={
-                    onRegisterCardShell
-                      ? (element) =>
-                          onRegisterCardShell(object.instanceId, element)
-                      : undefined
-                  }
-                >
-                  <MatchReplayObjectCard
-                    object={object}
-                    preview={previewByCardID.get(object.cardId) ?? null}
-                    active={
-                      highlightedInstanceIDs.has(object.instanceId) ||
-                      index === stackObjects.length - 1
-                    }
-                    size="stack"
-                    chipLabel={
-                      index === stackObjects.length - 1
-                        ? "Top"
-                        : `${index + 1}`
-                    }
-                    connectionHighlighted={
-                      connectionHighlightedInstanceIDs?.has(object.instanceId) ??
-                      false
-                    }
-                  />
-                </div>
-                <p className="match-replay-stack-slot-copy">
-                  {timelinePlayerLabel(object.playerSide)}
-                </p>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MatchReplayTurnSelector({
-  turns,
-  selectedItemIndex,
-  selectedTurnIndex,
-  onSelectTurn,
-  itemLabel,
-}: {
-  turns: ReplayTurnBoundary[];
-  selectedItemIndex: number;
-  selectedTurnIndex: number;
-  onSelectTurn: (index: number) => void;
-  itemLabel: "step" | "action";
-}) {
-  if (turns.length === 0) {
+  if (stackObjects.length === 0) {
     return null;
   }
 
   return (
-    <div className="match-replay-track-scroll">
-      <div className="match-replay-turn-track" role="group" aria-label="Replay turns">
-        {turns.map((turn, index) => {
-          const isCurrent = index === selectedTurnIndex;
-          const itemCount = replayTurnBoundaryCount(turn);
-          const itemCountLabel = `${itemCount} ${itemLabel}${itemCount === 1 ? "" : "s"}`;
-          const currentTurnIndex =
-            isCurrent && selectedItemIndex >= turn.firstIndex
-              ? selectedItemIndex - turn.firstIndex + 1
-              : null;
+    <section className="match-replay-stackstrip" aria-label="Current stack">
+      <p className="match-replay-stackstrip-label">
+        Stack
+        {stackObjects.length > 1 ? ` · ${stackObjects.length}` : ""}
+      </p>
+      <ol
+        className="match-replay-stack-tickets"
+        aria-label="Current stack ordered top to bottom"
+      >
+        {stackObjects.map((object, index) => {
+          const preview = previewByCardID.get(object.cardId) ?? null;
+          const card = { cardId: object.cardId, cardName: object.cardName };
+          const name = preview?.name ?? cardDisplayName(card);
+          const isTop = index === 0;
+          const manaCost = preview?.manaCost?.trim() ?? "";
+          const connectionFocusable =
+            connectionInteractiveInstanceIDs?.has(object.instanceId) &&
+            onConnectionFocusChange;
 
           return (
-            <button
-              key={`${turn.turnKey}-${turn.firstIndex}`}
-              type="button"
-              className={`match-replay-turn-pill ${isCurrent ? "is-current" : ""}`}
-              aria-pressed={isCurrent}
-              aria-label={`${replayTurnLabel(turn.turnKey)}. ${itemCountLabel}.${currentTurnIndex ? ` Currently on ${itemLabel} ${currentTurnIndex} of ${itemCount}.` : " Jump to the start of this turn."}`}
-              onClick={() => onSelectTurn(turn.firstIndex)}
+            <li
+              className={`match-replay-stack-ticket is-${object.playerSide} ${isTop ? "is-top" : ""} ${
+                highlightedInstanceIDs.has(object.instanceId) ? "is-active" : ""
+              } ${
+                connectionHighlightedInstanceIDs?.has(object.instanceId)
+                  ? "is-connection-highlighted"
+                  : ""
+              }`}
+              style={{ "--stack-depth": index } as CSSProperties}
+              key={object.instanceId}
+              onMouseEnter={
+                connectionFocusable
+                  ? () => onConnectionFocusChange(object.instanceId)
+                  : undefined
+              }
+              onMouseLeave={
+                connectionFocusable
+                  ? () => onConnectionFocusChange(null)
+                  : undefined
+              }
+              onFocus={
+                connectionFocusable
+                  ? () => onConnectionFocusChange(object.instanceId)
+                  : undefined
+              }
+              onBlur={
+                connectionFocusable
+                  ? () => onConnectionFocusChange(null)
+                  : undefined
+              }
             >
-              <span className="match-replay-turn-pill-label">
-                {boardTurnLabel(turn.turnKey)}
-              </span>
-              <span className="match-replay-turn-pill-meta">
-                {itemCountLabel}
-                {currentTurnIndex
-                  ? ` • ${itemLabel} ${currentTurnIndex}/${itemCount}`
-                  : ""}
-              </span>
-            </button>
+              <div
+                className="match-replay-stack-ticket-shell"
+                ref={
+                  onRegisterCardShell
+                    ? (element) =>
+                        onRegisterCardShell(object.instanceId, element)
+                    : undefined
+                }
+              >
+                <ReplayCardPreviewAnchor preview={preview}>
+                  <a
+                    className="match-replay-stack-ticket-link"
+                    href={preview?.scryfallUrl ?? cardFallbackHref(card)}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${name} on Scryfall`}
+                    title={`${name} • ${timelinePlayerLabel(object.playerSide)}${isTop ? " • Top of stack" : ""}`}
+                  >
+                    <span
+                      className="match-replay-stack-ticket-edge"
+                      aria-hidden="true"
+                    />
+                    {preview?.artCropUrl ? (
+                      <img
+                        className="match-replay-stack-ticket-art"
+                        src={preview.artCropUrl}
+                        alt=""
+                        loading="eager"
+                        decoding="async"
+                        width={48}
+                        height={34}
+                      />
+                    ) : null}
+                    <span className="match-replay-stack-ticket-name">
+                      {name}
+                    </span>
+                    {manaCost ? <ManaCostDisplay manaCost={manaCost} /> : null}
+                    <span className="match-replay-stack-ticket-owner">
+                      {object.playerSide === "self" ? "You" : "Opp"}
+                    </span>
+                    {isTop ? (
+                      <span className="match-replay-stack-ticket-tag">Top</span>
+                    ) : (
+                      <span className="match-replay-stack-ticket-index">
+                        {index + 1}
+                      </span>
+                    )}
+                  </a>
+                </ReplayCardPreviewAnchor>
+              </div>
+            </li>
           );
         })}
+      </ol>
+    </section>
+  );
+}
+
+const SCRUBBER_VIEW_W = 1000;
+const SCRUBBER_VIEW_H = 64;
+const SCRUBBER_LIFE_TOP = 7;
+const SCRUBBER_LIFE_H = 31;
+const SCRUBBER_TICK_TOP = 43;
+const SCRUBBER_TICK_BOTTOM = 51;
+
+function MatchReplayScrubber({
+  length,
+  index,
+  onSeek,
+  turnBoundaries,
+  itemLabel,
+  lifeSeries,
+  tickKinds,
+  keyMoments,
+}: {
+  length: number;
+  index: number;
+  onSeek: (index: number) => void;
+  turnBoundaries: ReplayTurnBoundary[];
+  itemLabel: "step" | "action";
+  lifeSeries?: ReplayLifePoint[];
+  tickKinds?: ReplayTickKind[];
+  keyMoments?: ReplayKeyMoment[];
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const lastIndex = length > 0 ? length - 1 : 0;
+
+  const xOf = (i: number) =>
+    lastIndex > 0 ? (i / lastIndex) * SCRUBBER_VIEW_W : 0;
+  const pctOf = (i: number) => (lastIndex > 0 ? (i / lastIndex) * 100 : 0);
+
+  const domain =
+    lifeSeries && lifeSeries.length > 0
+      ? replayLifeSeriesDomain(lifeSeries)
+      : null;
+  const yOf = (value: number) => {
+    if (!domain) {
+      return SCRUBBER_LIFE_TOP + SCRUBBER_LIFE_H;
+    }
+    const span = domain.max - domain.min || 1;
+    return SCRUBBER_LIFE_TOP + (1 - (value - domain.min) / span) * SCRUBBER_LIFE_H;
+  };
+  const lifePath = (side: "self" | "opponent") => {
+    if (!lifeSeries) {
+      return "";
+    }
+    const points: string[] = [];
+    lifeSeries.forEach((point, i) => {
+      const value = point[side];
+      if (typeof value === "number") {
+        points.push(`${xOf(i).toFixed(1)},${yOf(value).toFixed(2)}`);
+      }
+    });
+    return points.join(" ");
+  };
+
+  const seekFromClientX = (clientX: number) => {
+    const element = trackRef.current;
+    if (!element) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const fraction = Math.max(
+      0,
+      Math.min(1, (clientX - rect.left) / rect.width),
+    );
+    onSeek(Math.round(fraction * lastIndex));
+  };
+
+  return (
+    <div className="match-replay-scrubber">
+      <div
+        ref={trackRef}
+        className={`match-replay-scrubber-track ${isScrubbing ? "is-scrubbing" : ""}`}
+        role="slider"
+        tabIndex={0}
+        aria-label={`Replay ${itemLabel} position`}
+        aria-valuemin={1}
+        aria-valuemax={Math.max(length, 1)}
+        aria-valuenow={index + 1}
+        aria-valuetext={`${itemLabel} ${index + 1} of ${length}`}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            // pointer capture is best-effort
+          }
+          setIsScrubbing(true);
+          seekFromClientX(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (isScrubbing) {
+            seekFromClientX(event.clientX);
+          }
+        }}
+        onPointerUp={(event) => {
+          setIsScrubbing(false);
+          try {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          } catch {
+            // pointer capture may already be released
+          }
+        }}
+        onPointerCancel={() => setIsScrubbing(false)}
+      >
+        <svg
+          className="match-replay-scrubber-svg"
+          viewBox={`0 0 ${SCRUBBER_VIEW_W} ${SCRUBBER_VIEW_H}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {turnBoundaries.map((boundary) => (
+            <line
+              key={`turn-${boundary.turnKey}-${boundary.firstIndex}`}
+              className="match-replay-scrubber-turn-line"
+              x1={xOf(boundary.firstIndex)}
+              x2={xOf(boundary.firstIndex)}
+              y1={0}
+              y2={SCRUBBER_VIEW_H}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {tickKinds?.map((kind, i) =>
+            kind === "other" ? null : (
+              <line
+                key={`tick-${i}`}
+                className={`match-replay-scrubber-tick is-${kind}`}
+                x1={xOf(i)}
+                x2={xOf(i)}
+                y1={SCRUBBER_TICK_TOP}
+                y2={SCRUBBER_TICK_BOTTOM}
+                vectorEffect="non-scaling-stroke"
+              />
+            ),
+          )}
+          {lifeSeries ? (
+            <>
+              <polyline
+                className="match-replay-scrubber-life is-opponent"
+                points={lifePath("opponent")}
+                vectorEffect="non-scaling-stroke"
+              />
+              <polyline
+                className="match-replay-scrubber-life is-self"
+                points={lifePath("self")}
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          ) : null}
+        </svg>
+
+        <div className="match-replay-scrubber-turn-labels" aria-hidden="true">
+          {turnBoundaries.map((boundary) => (
+            <span
+              key={`turn-label-${boundary.turnKey}-${boundary.firstIndex}`}
+              className="match-replay-scrubber-turn-label"
+              style={{ left: `${pctOf(boundary.firstIndex)}%` }}
+            >
+              {boardTurnLabel(boundary.turnKey)}
+            </span>
+          ))}
+        </div>
+
+        {keyMoments?.map((moment) => (
+          <button
+            key={`moment-${moment.index}`}
+            type="button"
+            className={`match-replay-scrubber-pin is-${moment.kind}`}
+            style={{ left: `${pctOf(moment.index)}%` }}
+            title={moment.label}
+            aria-label={`Jump to ${moment.label}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => onSeek(moment.index)}
+          />
+        ))}
+
+        <div
+          className="match-replay-scrubber-head"
+          style={{ left: `${pctOf(index)}%` }}
+          aria-hidden="true"
+        />
+      </div>
+
+      {lifeSeries ? (
+        <div className="match-replay-scrubber-legend" aria-hidden="true">
+          <span className="match-replay-scrubber-legend-item is-self">
+            <span className="match-replay-scrubber-legend-swatch" /> You
+          </span>
+          <span className="match-replay-scrubber-legend-item is-opponent">
+            <span className="match-replay-scrubber-legend-swatch" /> Opponent
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MatchReplaySpeedControl({
+  speed,
+  onSelectSpeed,
+}: {
+  speed: number;
+  onSelectSpeed: (speed: number) => void;
+}) {
+  return (
+    <div
+      className="match-replay-speed"
+      role="group"
+      aria-label="Playback speed"
+    >
+      <span className="match-replay-speed-label">Speed</span>
+      {REPLAY_SPEED_OPTIONS.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className={`match-replay-speed-button ${speed === option ? "is-active" : ""}`}
+          aria-pressed={speed === option}
+          onClick={() => onSelectSpeed(option)}
+        >
+          {option}×
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MatchReplayHudLife({
+  side,
+  life,
+  delta,
+  flashKey,
+}: {
+  side: "self" | "opponent";
+  life?: number;
+  delta: number | null;
+  flashKey: number;
+}) {
+  return (
+    <div className={`match-replay-hud-life is-${side}`}>
+      <span className="match-replay-hud-avatar" aria-hidden="true">
+        {side === "opponent" ? "OP" : "YOU"}
+      </span>
+      <div className="match-replay-hud-life-body">
+        <p className="match-replay-hud-life-label">{timelinePlayerLabel(side)}</p>
+        <div className="match-replay-hud-life-readout">
+          <span className="match-replay-hud-life-value">
+            {typeof life === "number" ? life : "—"}
+          </span>
+          {delta !== null ? (
+            <span
+              key={flashKey}
+              className={`match-replay-hud-delta ${delta > 0 ? "is-up" : "is-down"}`}
+              aria-label={`${timelinePlayerLabel(side)} life ${delta > 0 ? "gained" : "lost"} ${Math.abs(delta)}`}
+            >
+              {delta > 0 ? `+${delta}` : delta}
+            </span>
+          ) : null}
+        </div>
       </div>
     </div>
+  );
+}
+
+function MatchReplayHud({
+  currentFrame,
+  previousFrame,
+  stepNumber,
+  stepCount,
+  beat,
+}: {
+  currentFrame: MatchReplayFrame;
+  previousFrame: MatchReplayFrame | null;
+  stepNumber: number;
+  stepCount: number;
+  beat: ReplayBeat;
+}) {
+  return (
+    <section className="match-replay-hud" aria-label="Replay status">
+      <MatchReplayHudLife
+        side="opponent"
+        life={currentFrame.opponentLifeTotal}
+        delta={replayLifeDelta(previousFrame, currentFrame, "opponent")}
+        flashKey={currentFrame.id}
+      />
+      <div className="match-replay-hud-center">
+        <div className="match-replay-hud-meta">
+          <span className="match-replay-hud-moment">
+            {replayFrameMomentLabel(currentFrame)}
+          </span>
+          <span className="match-replay-hud-step">
+            Step {stepNumber} / {stepCount}
+          </span>
+        </div>
+        <p className="match-replay-hud-headline">
+          {beat.text}
+          {beat.note ? (
+            <span className="match-replay-hud-headline-note"> — {beat.note}</span>
+          ) : null}
+        </p>
+      </div>
+      <MatchReplayHudLife
+        side="self"
+        life={currentFrame.selfLifeTotal}
+        delta={replayLifeDelta(previousFrame, currentFrame, "self")}
+        flashKey={currentFrame.id}
+      />
+    </section>
+  );
+}
+
+function MatchReplayMoveList({
+  frames,
+  turnBoundaries,
+  currentIndex,
+  onSeek,
+}: {
+  frames: MatchReplayFrame[];
+  turnBoundaries: ReplayTurnBoundary[];
+  currentIndex: number;
+  onSeek: (index: number) => void;
+}) {
+  const beats = useMemo(
+    () =>
+      frames.map((frame, index) =>
+        buildReplayBeat(frame, index > 0 ? frames[index - 1] ?? null : null),
+      ),
+    [frames],
+  );
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [currentIndex]);
+
+  return (
+    <aside className="match-replay-movelist" aria-label="Play-by-play">
+      <p className="match-replay-movelist-title">Play-by-play</p>
+      <div className="match-replay-movelist-scroll">
+        {turnBoundaries.map((boundary) => (
+          <div
+            className="match-replay-movelist-turn"
+            key={`${boundary.turnKey}-${boundary.firstIndex}`}
+          >
+            <p className="match-replay-movelist-turn-label">
+              {replayTurnLabel(boundary.turnKey)}
+            </p>
+            {Array.from(
+              { length: boundary.lastIndex - boundary.firstIndex + 1 },
+              (_, offset) => boundary.firstIndex + offset,
+            ).map((index) => {
+              const isCurrent = index === currentIndex;
+              const beat = beats[index];
+              if (!beat) {
+                return null;
+              }
+              return (
+                <button
+                  key={index}
+                  ref={isCurrent ? activeRef : undefined}
+                  type="button"
+                  className={`match-replay-movelist-beat ${isCurrent ? "is-current" : ""}`}
+                  aria-current={isCurrent ? "step" : undefined}
+                  onClick={() => onSeek(index)}
+                >
+                  <span className="match-replay-movelist-beat-text">
+                    {beat.text}
+                  </span>
+                  {beat.note ? (
+                    <span className="match-replay-movelist-beat-note">
+                      {" "}
+                      · {beat.note}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </aside>
   );
 }
 
@@ -2533,11 +1938,15 @@ function MatchReplayFrameBoard({
   gameSummary: ReplayGameSummary | null;
   previewByCardID: Map<number, CardPreview | null>;
 }) {
-  const initialFrameIndex = preferredReplayFrameIndex(frames);
-  const [selectedFrameIndex, setSelectedFrameIndex] = useState(
-    initialFrameIndex,
-  );
-  const [isPlaying, setIsPlaying] = useState(false);
+  const {
+    index: safeSelectedFrameIndex,
+    setIndex: setSelectedFrameIndex,
+    isPlaying,
+    setIsPlaying,
+    speed,
+    setSpeed,
+    lastIndex: lastFrameIndex,
+  } = useReplayPlayer(frames.length, preferredReplayFrameIndex(frames));
   const [zoneDialogState, setZoneDialogState] =
     useState<MatchReplayZoneDialogState | null>(null);
   const [focusedConnectionInstanceId, setFocusedConnectionInstanceId] = useState<
@@ -2545,36 +1954,6 @@ function MatchReplayFrameBoard({
   >(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const replayCardShellsRef = useRef(new Map<number, HTMLDivElement>());
-  const lastFrameIndex = frames.length > 0 ? frames.length - 1 : 0;
-  const safeSelectedFrameIndex = Math.min(selectedFrameIndex, lastFrameIndex);
-
-  useEffect(() => {
-    if (frames.length === 0) {
-      setSelectedFrameIndex(0);
-      setIsPlaying(false);
-      return;
-    }
-
-    setSelectedFrameIndex((currentIndex) =>
-      Math.min(currentIndex, frames.length - 1),
-    );
-  }, [frames]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      return;
-    }
-    if (safeSelectedFrameIndex >= lastFrameIndex) {
-      setIsPlaying(false);
-      return;
-    }
-
-    const timeoutID = window.setTimeout(() => {
-      setSelectedFrameIndex(Math.min(safeSelectedFrameIndex + 1, lastFrameIndex));
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutID);
-  }, [isPlaying, lastFrameIndex, safeSelectedFrameIndex]);
 
   const currentFrame = frames[safeSelectedFrameIndex] ?? null;
   const previousFrame =
@@ -2582,6 +1961,9 @@ function MatchReplayFrameBoard({
       ? frames[safeSelectedFrameIndex - 1] ?? null
       : null;
   const turnBoundaries = useMemo(() => buildReplayTurnBoundaries(frames), [frames]);
+  const lifeSeries = useMemo(() => buildReplayLifeSeries(frames), [frames]);
+  const tickKinds = useMemo(() => buildReplayTickKinds(frames), [frames]);
+  const keyMoments = useMemo(() => findReplayKeyMoments(frames), [frames]);
 
   const currentTurnBoundaryIndex = currentFrame
     ? turnBoundaries.findIndex(
@@ -2779,38 +2161,56 @@ function MatchReplayFrameBoard({
   const changedInstanceIDs = new Set(
     currentFrameChanges.map((change) => change.instanceId),
   );
-  const unknownObjectsCount = currentObjects.filter(
-    (object) => object.playerSide === "unknown",
-  ).length;
-  const stackCount = currentObjects.filter(
-    (object) => boardZoneKind(object.zoneType) === "stack",
-  ).length;
-  const primarySummary = replayFramePrimarySummary(currentFrame, previousFrame);
-  const notableChanges = [...currentFrameChanges]
-    .sort(
-      (a, b) =>
-        replayChangePriority(b.action) - replayChangePriority(a.action),
-    )
-    .slice(0, 4);
+  const currentBeat = currentFrame
+    ? buildReplayBeat(currentFrame, previousFrame)
+    : { text: "" };
   const canStepBackward = safeSelectedFrameIndex > 0;
   const canStepForward = safeSelectedFrameIndex < lastFrameIndex;
   const canJumpPrevTurn = currentTurnBoundaryIndex > 0;
   const canJumpNextTurn =
     currentTurnBoundaryIndex >= 0 &&
     currentTurnBoundaryIndex < turnBoundaries.length - 1;
-  const frameVisibilitySummary = `${currentObjects.length} tracked card${
-    currentObjects.length === 1 ? "" : "s"
-  } visible${
-    stackCount > 0 ? ` • ${stackCount} currently on the stack` : " • stack empty"
-  }${
-    replayFrameLifeTotalsSummary(currentFrame)
-      ? ` • ${replayFrameLifeTotalsSummary(currentFrame)}`
-      : ""
-  }${
-    unknownObjectsCount > 0
-      ? ` • ${unknownObjectsCount} with unknown owner`
-      : ""
-  }.`;
+
+  const goToFirstStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(0);
+  };
+  const goToLastStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(lastFrameIndex);
+  };
+  const goToPrevStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(Math.max(safeSelectedFrameIndex - 1, 0));
+  };
+  const goToNextStep = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(Math.min(safeSelectedFrameIndex + 1, lastFrameIndex));
+  };
+  const goToPrevTurn = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(
+      turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
+    );
+  };
+  const goToNextTurn = () => {
+    setIsPlaying(false);
+    setSelectedFrameIndex(
+      turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
+        frames.length - 1,
+    );
+  };
+  const togglePlay = () => setIsPlaying((currentValue) => !currentValue);
+
+  useReplayKeyboard({
+    onStepBackward: goToPrevStep,
+    onStepForward: goToNextStep,
+    onPrevTurn: goToPrevTurn,
+    onNextTurn: goToNextTurn,
+    onTogglePlay: togglePlay,
+    onFirst: goToFirstStep,
+    onLast: goToLastStep,
+  });
 
   useEffect(() => {
     setFocusedConnectionInstanceId(null);
@@ -2849,10 +2249,6 @@ function MatchReplayFrameBoard({
       <div className="match-replay-head">
         <div className="match-replay-head-copy">
           <h4>Game {gameNumber}</h4>
-          <p className="match-replay-caption">
-            {replayFrameMomentLabel(currentFrame)} • Step{" "}
-            {safeSelectedFrameIndex + 1} of {frames.length}
-          </p>
           {gameSummary ? (
             <div className="match-replay-result">
               <ResultPill result={gameSummary.result} />
@@ -2864,181 +2260,164 @@ function MatchReplayFrameBoard({
       </div>
 
       <div className="match-replay-controls">
-        <div
-          className="match-replay-button-row"
-          role="group"
-          aria-label={`Game ${gameNumber} replay controls`}
-        >
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => setIsPlaying((currentValue) => !currentValue)}
-            aria-pressed={isPlaying}
+        <div className="match-replay-controls-bar">
+          <div
+            className="match-replay-button-row"
+            role="group"
+            aria-label={`Game ${gameNumber} replay controls`}
           >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
-              );
-            }}
-            disabled={!canJumpPrevTurn}
-          >
-            Previous Turn
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(Math.max(safeSelectedFrameIndex - 1, 0));
-            }}
-            disabled={!canStepBackward}
-          >
-            Previous Step
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                Math.min(safeSelectedFrameIndex + 1, lastFrameIndex),
-              );
-            }}
-            disabled={!canStepForward}
-          >
-            Next Step
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedFrameIndex(
-                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
-                  frames.length - 1,
-              );
-            }}
-            disabled={!canJumpNextTurn}
-          >
-            Next Turn
-          </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={togglePlay}
+              aria-pressed={isPlaying}
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevTurn}
+              disabled={!canJumpPrevTurn}
+            >
+              Previous Turn
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevStep}
+              disabled={!canStepBackward}
+            >
+              Previous Step
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextStep}
+              disabled={!canStepForward}
+            >
+              Next Step
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextTurn}
+              disabled={!canJumpNextTurn}
+            >
+              Next Turn
+            </button>
+          </div>
+
+          <div className="match-replay-controls-aux">
+            <MatchReplaySpeedControl speed={speed} onSelectSpeed={setSpeed} />
+            <p className="match-replay-kbd-hint">
+              <kbd>←</kbd>
+              <kbd>→</kbd> step · <kbd>⇧</kbd> turn · <kbd>space</kbd> play
+            </p>
+          </div>
         </div>
 
         <div className="match-replay-track-panel">
-          <MatchReplayTurnSelector
-            turns={turnBoundaries}
-            selectedItemIndex={safeSelectedFrameIndex}
-            selectedTurnIndex={currentTurnBoundaryIndex}
-            onSelectTurn={setSelectedFrameIndex}
+          <MatchReplayScrubber
+            length={frames.length}
+            index={safeSelectedFrameIndex}
+            onSeek={(nextIndex) => {
+              setIsPlaying(false);
+              setSelectedFrameIndex(nextIndex);
+            }}
+            turnBoundaries={turnBoundaries}
             itemLabel="step"
+            lifeSeries={lifeSeries}
+            tickKinds={tickKinds}
+            keyMoments={keyMoments}
           />
         </div>
       </div>
 
-      <div className="match-replay-canvas" ref={canvasRef}>
-        <MatchReplayConnectionOverlay
-          surfaceRef={canvasRef}
-          cardShellsRef={replayCardShellsRef}
-          connections={overlayConnections}
-          focusedInstanceId={focusedConnectionInstanceId}
-        />
-        <aside className="match-replay-sidebar">
-          <MatchReplayFrameSideSummary
-            side="opponent"
-            objects={currentObjects}
-            lifeTotal={currentFrame.opponentLifeTotal}
-            onOpenZone={setZoneDialogState}
+      <MatchReplayHud
+        currentFrame={currentFrame}
+        previousFrame={previousFrame}
+        stepNumber={safeSelectedFrameIndex + 1}
+        stepCount={frames.length}
+        beat={currentBeat}
+      />
+
+      <div className="match-replay-canvas is-arena">
+        <div className="match-replay-arena" ref={canvasRef}>
+          <MatchReplayConnectionOverlay
+            surfaceRef={canvasRef}
+            cardShellsRef={replayCardShellsRef}
+            connections={overlayConnections}
+            focusedInstanceId={focusedConnectionInstanceId}
           />
 
-          <MatchReplayStack
-            frame={currentFrame}
+          <div className="match-replay-arena-top">
+            <MatchReplayFrameSideSummary
+              side="opponent"
+              objects={currentObjects}
+              variant="rail"
+              onOpenZone={setZoneDialogState}
+            />
+            <div className="match-replay-arena-stack">
+              <MatchReplayStack
+                frame={currentFrame}
+                previewByCardID={previewByCardID}
+                highlightedInstanceIDs={changedInstanceIDs}
+                onRegisterCardShell={registerCardShell}
+                connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
+                connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
+                onConnectionFocusChange={setFocusedConnectionInstanceId}
+              />
+            </div>
+          </div>
+
+          <MatchReplayFrameBattlefield
+            side="opponent"
+            objects={currentObjects}
             previewByCardID={previewByCardID}
             highlightedInstanceIDs={changedInstanceIDs}
             onRegisterCardShell={registerCardShell}
             connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
             connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
             onConnectionFocusChange={setFocusedConnectionInstanceId}
+            linkedExileObjectsByParentId={linkedExileObjectsByParentId}
+          />
+
+          <MatchReplayFrameBattlefield
+            side="self"
+            objects={currentObjects}
+            previewByCardID={previewByCardID}
+            highlightedInstanceIDs={changedInstanceIDs}
+            onRegisterCardShell={registerCardShell}
+            connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
+            connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
+            onConnectionFocusChange={setFocusedConnectionInstanceId}
+            linkedExileObjectsByParentId={linkedExileObjectsByParentId}
           />
 
           <MatchReplayFrameSideSummary
             side="self"
             objects={currentObjects}
-            lifeTotal={currentFrame.selfLifeTotal}
-            includeHand
+            variant="rail"
             onOpenZone={setZoneDialogState}
           />
-        </aside>
 
-        <div className="match-replay-board-column">
-          <section
-            className="match-replay-statusbar"
-            aria-label="Replay status"
-          >
-            <div className="match-replay-statusbar-head">
-              <p className="match-replay-sidebox-label">Replay Step</p>
-              <p className="match-replay-statusbar-title">
-                {replayFrameMomentLabel(currentFrame)}
-              </p>
-            </div>
-            <p className="match-replay-statusbar-copy">{primarySummary}</p>
-            <p className="match-replay-statusbar-copy">
-              {frameVisibilitySummary}
-            </p>
-            {notableChanges.length > 0 ? (
-              <div
-                className="match-replay-change-list is-statusbar"
-                aria-label="Frame changes"
-              >
-                {notableChanges.map((change, index) => (
-                  <span
-                    className="match-replay-change-pill"
-                    key={`${change.instanceId}-${change.action}-${index}`}
-                  >
-                    {describeReplayChange(change)}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </section>
-
-          <div className="match-replay-board is-combat-board">
-            <MatchReplayFrameBattlefield
-              side="opponent"
-              objects={currentObjects}
-              previewByCardID={previewByCardID}
-              highlightedInstanceIDs={changedInstanceIDs}
-              onRegisterCardShell={registerCardShell}
-              connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
-              connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
-              onConnectionFocusChange={setFocusedConnectionInstanceId}
-              linkedExileObjectsByParentId={linkedExileObjectsByParentId}
-            />
-
-            <MatchReplayFrameBattlefield
-              side="self"
-              objects={currentObjects}
-              previewByCardID={previewByCardID}
-              highlightedInstanceIDs={changedInstanceIDs}
-              onRegisterCardShell={registerCardShell}
-              connectionHighlightedInstanceIDs={overlayHighlightedInstanceIDs}
-              connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
-              onConnectionFocusChange={setFocusedConnectionInstanceId}
-              linkedExileObjectsByParentId={linkedExileObjectsByParentId}
-            />
-
-            <MatchReplayHand
-              objects={currentObjects}
-              previewByCardID={previewByCardID}
-              highlightedInstanceIDs={changedInstanceIDs}
-            />
-          </div>
+          <MatchReplayHand
+            objects={currentObjects}
+            previewByCardID={previewByCardID}
+            highlightedInstanceIDs={changedInstanceIDs}
+          />
         </div>
+
+        <MatchReplayMoveList
+          frames={frames}
+          turnBoundaries={turnBoundaries}
+          currentIndex={safeSelectedFrameIndex}
+          onSeek={(nextIndex) => {
+            setIsPlaying(false);
+            setSelectedFrameIndex(nextIndex);
+          }}
+        />
       </div>
 
       <MatchReplayZoneDialog
@@ -3237,42 +2616,16 @@ function MatchTimelineBoard({
   plays: MatchCardPlay[];
   previewByCardID: Map<number, CardPreview | null>;
 }) {
-  const [selectedActionIndex, setSelectedActionIndex] = useState(
-    plays.length > 0 ? plays.length - 1 : 0,
-  );
-  const [isPlaying, setIsPlaying] = useState(false);
+  const {
+    index: selectedActionIndex,
+    setIndex: setSelectedActionIndex,
+    isPlaying,
+    setIsPlaying,
+    speed,
+    setSpeed,
+  } = useReplayPlayer(plays.length, plays.length > 0 ? plays.length - 1 : 0);
   const [zoneDialogState, setZoneDialogState] =
     useState<MatchReplayZoneDialogState | null>(null);
-
-  useEffect(() => {
-    if (plays.length === 0) {
-      setSelectedActionIndex(0);
-      setIsPlaying(false);
-      return;
-    }
-
-    setSelectedActionIndex((currentIndex) =>
-      Math.min(currentIndex, plays.length - 1),
-    );
-  }, [plays]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      return;
-    }
-    if (selectedActionIndex >= plays.length - 1) {
-      setIsPlaying(false);
-      return;
-    }
-
-    const timeoutID = window.setTimeout(() => {
-      setSelectedActionIndex((currentIndex) =>
-        Math.min(currentIndex + 1, plays.length - 1),
-      );
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutID);
-  }, [isPlaying, plays.length, selectedActionIndex]);
 
   const currentAction = plays[selectedActionIndex] ?? null;
   const visiblePlays = useMemo(
@@ -3296,6 +2649,50 @@ function MatchTimelineBoard({
           boundary.turnKey === replayTurnValue(currentAction.turnNumber),
       )
     : -1;
+
+  const lastActionIndex = plays.length > 0 ? plays.length - 1 : 0;
+  const goToFirstAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(0);
+  };
+  const goToLastAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(lastActionIndex);
+  };
+  const goToPrevAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex((currentIndex) => Math.max(currentIndex - 1, 0));
+  };
+  const goToNextAction = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex((currentIndex) =>
+      Math.min(currentIndex + 1, lastActionIndex),
+    );
+  };
+  const goToPrevActionTurn = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(
+      turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
+    );
+  };
+  const goToNextActionTurn = () => {
+    setIsPlaying(false);
+    setSelectedActionIndex(
+      turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
+        lastActionIndex,
+    );
+  };
+  const togglePlay = () => setIsPlaying((currentValue) => !currentValue);
+
+  useReplayKeyboard({
+    onStepBackward: goToPrevAction,
+    onStepForward: goToNextAction,
+    onPrevTurn: goToPrevActionTurn,
+    onNextTurn: goToNextActionTurn,
+    onTogglePlay: togglePlay,
+    onFirst: goToFirstAction,
+    onLast: goToLastAction,
+  });
 
   if (!currentAction) {
     return (
@@ -3334,80 +2731,72 @@ function MatchTimelineBoard({
       </div>
 
       <div className="match-replay-controls">
-        <div
-          className="match-replay-button-row"
-          role="group"
-          aria-label={`Game ${gameNumber} replay controls`}
-        >
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => setIsPlaying((currentValue) => !currentValue)}
-            aria-pressed={isPlaying}
+        <div className="match-replay-controls-bar">
+          <div
+            className="match-replay-button-row"
+            role="group"
+            aria-label={`Game ${gameNumber} replay controls`}
           >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex(
-                turnBoundaries[currentTurnBoundaryIndex - 1]?.firstIndex ?? 0,
-              );
-            }}
-            disabled={!canJumpPrevTurn}
-          >
-            Previous Turn
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex((currentIndex) =>
-                Math.max(currentIndex - 1, 0),
-              );
-            }}
-            disabled={!canStepBackward}
-          >
-            Previous Action
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex((currentIndex) =>
-                Math.min(currentIndex + 1, plays.length - 1),
-              );
-            }}
-            disabled={!canStepForward}
-          >
-            Next Action
-          </button>
-          <button
-            type="button"
-            className="match-replay-button"
-            onClick={() => {
-              setIsPlaying(false);
-              setSelectedActionIndex(
-                turnBoundaries[currentTurnBoundaryIndex + 1]?.firstIndex ??
-                  plays.length - 1,
-              );
-            }}
-            disabled={!canJumpNextTurn}
-          >
-            Next Turn
-          </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={togglePlay}
+              aria-pressed={isPlaying}
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevActionTurn}
+              disabled={!canJumpPrevTurn}
+            >
+              Previous Turn
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToPrevAction}
+              disabled={!canStepBackward}
+            >
+              Previous Action
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextAction}
+              disabled={!canStepForward}
+            >
+              Next Action
+            </button>
+            <button
+              type="button"
+              className="match-replay-button"
+              onClick={goToNextActionTurn}
+              disabled={!canJumpNextTurn}
+            >
+              Next Turn
+            </button>
+          </div>
+
+          <div className="match-replay-controls-aux">
+            <MatchReplaySpeedControl speed={speed} onSelectSpeed={setSpeed} />
+            <p className="match-replay-kbd-hint">
+              <kbd>←</kbd>
+              <kbd>→</kbd> step · <kbd>⇧</kbd> turn · <kbd>space</kbd> play
+            </p>
+          </div>
         </div>
 
         <div className="match-replay-track-panel">
-          <MatchReplayTurnSelector
-            turns={turnBoundaries}
-            selectedItemIndex={selectedActionIndex}
-            selectedTurnIndex={currentTurnBoundaryIndex}
-            onSelectTurn={setSelectedActionIndex}
+          <MatchReplayScrubber
+            length={plays.length}
+            index={selectedActionIndex}
+            onSeek={(nextIndex) => {
+              setIsPlaying(false);
+              setSelectedActionIndex(nextIndex);
+            }}
+            turnBoundaries={turnBoundaries}
             itemLabel="action"
           />
         </div>
@@ -4085,3 +3474,4 @@ export function MatchDetailPage() {
     </div>
   );
 }
+
