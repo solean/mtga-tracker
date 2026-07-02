@@ -20,7 +20,7 @@ func main() {
 		log.Fatalf("prepare embedded web assets: %v", err)
 	}
 
-	app := NewApp()
+	app := NewApp(assets)
 	if err := wails.Run(&options.App{
 		Title:            "MTGData",
 		Width:            1480,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -27,17 +28,18 @@ import (
 const devAPIEnvVar = "MTGDATA_DEV_API"
 
 type App struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	database *sql.DB
+	ctx          context.Context
+	cancel       context.CancelFunc
+	database     *sql.DB
+	staticAssets fs.FS
 
 	mu         sync.RWMutex
 	apiHandler http.Handler
 	startupErr string
 }
 
-func NewApp() *App {
-	return &App{}
+func NewApp(staticAssets fs.FS) *App {
+	return &App{staticAssets: staticAssets}
 }
 
 // APIMiddleware mounts the backend API on the Wails asset server so the
@@ -140,6 +142,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	server := api.NewServer(store, "", runtimeService)
+	// The dev API listener below serves the whole app to a plain browser, so
+	// give it the embedded frontend; deep links fall back to index.html there.
+	server.SetStaticAssets(a.staticAssets)
 	bgCtx, cancel := context.WithCancel(context.Background())
 
 	a.database = database
