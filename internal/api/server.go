@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,10 +27,11 @@ import (
 )
 
 type Server struct {
-	store      *db.Store
-	staticDir  string
-	appState   *appstate.Service
-	httpClient *http.Client
+	store        *db.Store
+	staticDir    string
+	staticAssets fs.FS
+	appState     *appstate.Service
+	httpClient   *http.Client
 }
 
 func NewServer(store *db.Store, staticDir string, appState *appstate.Service) *Server {
@@ -44,6 +47,11 @@ func NewServer(store *db.Store, staticDir string, appState *appstate.Service) *S
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
+	// Catch-all so unmatched /api/ paths get a 404 instead of falling through
+	// to the SPA index.html fallback on "/".
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not found")
+	})
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/overview", s.handleOverview)
 	mux.HandleFunc("/api/rank-history", s.handleRankHistory)
@@ -65,19 +73,47 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("/api/runtime/update-check", s.handleRuntimeUpdateCheck)
 	}
 
-	if s.staticDir != "" {
+	staticAssets := s.staticAssets
+	if staticAssets == nil && s.staticDir != "" {
 		if fi, err := os.Stat(s.staticDir); err == nil && fi.IsDir() {
-			fs := http.FileServer(http.Dir(s.staticDir))
-			mux.Handle("/", fs)
-		} else {
-			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("mtgdata API is running. Frontend build not found."))
-			})
+			staticAssets = os.DirFS(s.staticDir)
 		}
+	}
+	if staticAssets != nil {
+		mux.Handle("/", spaFileServer(staticAssets))
+	} else if s.staticDir != "" {
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("mtgdata API is running. Frontend build not found."))
+		})
 	}
 
 	return withCORS(withGzip(mux))
+}
+
+// SetStaticAssets serves the frontend from the given filesystem (typically
+// the binary's embedded web/dist) instead of staticDir.
+func (s *Server) SetStaticAssets(assets fs.FS) {
+	s.staticAssets = assets
+}
+
+// spaFileServer serves the built frontend. The React app uses client-side
+// routing (BrowserRouter), so paths that don't match a real file — deep links
+// like /matches/675 — fall back to index.html.
+func spaFileServer(assets fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(assets))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name != "" && name != "." {
+			if f, err := assets.Open(name); err == nil {
+				_ = f.Close()
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // Handler exposes the full route handler so the desktop shell can mount the
