@@ -2883,6 +2883,46 @@ button.match-replay-zonechip.is-button {
   flex: 0 0 auto;
 }
 
+.match-replay-card-row.is-lands {
+  row-gap: 0.6rem;
+}
+
+/* Duplicate lands (same name + tapped state) collapse into a fanned pile:
+   the front card sits fully visible on the left and each card behind peeks
+   out by --land-stack-peek. Hovering a buried card lifts it above the pile. */
+.match-replay-land-stack {
+  --match-replay-board-card-width: clamp(64px, 10.5cqw, 116px);
+  --match-replay-board-card-height: calc(
+    var(--match-replay-board-card-width) * 88 / 63
+  );
+  --land-stack-peek: 1.35rem;
+  position: relative;
+  height: var(--match-replay-board-card-height);
+  width: calc(
+    var(--match-replay-board-card-width) +
+      (var(--land-stack-size, 1) - 1) * var(--land-stack-peek)
+  );
+}
+
+.match-replay-land-stack.is-tapped {
+  width: calc(
+    var(--match-replay-board-card-height) +
+      (var(--land-stack-size, 1) - 1) * var(--land-stack-peek)
+  );
+}
+
+.match-replay-land-stack-item {
+  position: absolute;
+  top: 0;
+  left: calc(var(--land-stack-index, 0) * var(--land-stack-peek));
+  z-index: calc(var(--land-stack-size, 1) - var(--land-stack-index, 0));
+}
+
+.match-replay-land-stack-item:hover,
+.match-replay-land-stack-item:focus-within {
+  z-index: 40;
+}
+
 .match-replay-object {
   --match-replay-board-card-width: clamp(64px, 10.5cqw, 116px);
   --match-replay-board-card-height: calc(

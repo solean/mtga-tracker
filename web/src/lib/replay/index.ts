@@ -628,6 +628,79 @@ export function sortBattlefieldSectionObjects(
   });
 }
 
+export type ReplayLandStack = {
+  key: string;
+  objects: MatchReplayFrameObject[];
+};
+
+export function replayObjectCanStackAsLand(
+  object: MatchReplayFrameObject,
+  preview: CardPreview | null,
+): boolean {
+  // Lands carrying extra state (combat, counters, stolen, summoning sick,
+  // animated with stats) stay standalone so that state remains visible.
+  if (replayObjectIsAttacking(object) || replayObjectIsBlocking(object)) {
+    return false;
+  }
+  if (object.hasSummoningSickness) {
+    return false;
+  }
+  if (replayObjectCounterSummaries(object).length > 0) {
+    return false;
+  }
+  if (
+    typeof object.ownerSeatId === "number" &&
+    typeof object.controllerSeatId === "number" &&
+    object.ownerSeatId !== object.controllerSeatId
+  ) {
+    return false;
+  }
+  if (replayObjectPTLabel(object, preview)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Collapse duplicate lands (same name, same tapped state) into stacks so a
+ * board with six Islands reads as one pile instead of six full cards. Order
+ * follows the first occurrence of each stack in the input; lands that fail
+ * `replayObjectCanStackAsLand` (or the optional extra predicate) come through
+ * as single-card stacks.
+ */
+export function groupBattlefieldLandStacks(
+  objects: MatchReplayFrameObject[],
+  previewByCardID: Map<number, CardPreview | null>,
+  canStack?: (object: MatchReplayFrameObject) => boolean,
+): ReplayLandStack[] {
+  const stacks: ReplayLandStack[] = [];
+  const stacksByKey = new Map<string, ReplayLandStack>();
+
+  for (const object of objects) {
+    const preview = previewByCardID.get(object.cardId) ?? null;
+    const stackable =
+      replayObjectCanStackAsLand(object, preview) &&
+      (canStack?.(object) ?? true);
+    if (!stackable) {
+      stacks.push({ key: `single-${object.instanceId}`, objects: [object] });
+      continue;
+    }
+
+    const name = replayObjectName(object, preview).toLowerCase();
+    const key = `${name || `card-${object.cardId}`}|${object.isTapped ? "tapped" : "untapped"}`;
+    const existing = stacksByKey.get(key);
+    if (existing) {
+      existing.objects.push(object);
+    } else {
+      const stack: ReplayLandStack = { key, objects: [object] };
+      stacksByKey.set(key, stack);
+      stacks.push(stack);
+    }
+  }
+
+  return stacks;
+}
+
 export function replayFrameLifeTotalForSide(
   frame: MatchReplayFrame | null | undefined,
   side: "self" | "opponent",

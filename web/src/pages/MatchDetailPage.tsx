@@ -46,6 +46,7 @@ import {
   cardFallbackHref,
   filterMeaningfulReplayFrames,
   findReplayKeyMoments,
+  groupBattlefieldLandStacks,
   isInspectableZoneKind,
   parseManaCostParts,
   preferredReplayFrameIndex,
@@ -1309,40 +1310,161 @@ function MatchReplayFrameBattlefield({
                   {section.objects.length}
                 </p>
               </div>
-              <div className="match-replay-card-row is-sectioned">
-                {section.objects.map((object) => (
-                  <MatchReplayObjectCard
-                    key={object.instanceId}
-                    object={object}
-                    preview={previewByCardID.get(object.cardId) ?? null}
-                    previewByCardID={previewByCardID}
-                    active={highlightedInstanceIDs.has(object.instanceId)}
-                    shellRef={
-                      onRegisterCardShell
-                        ? (element) =>
-                            onRegisterCardShell(object.instanceId, element)
-                        : undefined
-                    }
-                    connectionHighlighted={
-                      connectionHighlightedInstanceIDs?.has(object.instanceId) ??
-                      false
-                    }
-                    onConnectionFocusChange={
-                      connectionInteractiveInstanceIDs?.has(object.instanceId)
-                        ? onConnectionFocusChange
-                        : undefined
-                    }
-                    linkedExileObjects={
-                      linkedExileObjectsByParentId?.get(object.instanceId) ?? []
-                    }
-                  />
-                ))}
-              </div>
+              {section.kind === "lands" ? (
+                <MatchReplayLandStackRow
+                  objects={section.objects}
+                  previewByCardID={previewByCardID}
+                  highlightedInstanceIDs={highlightedInstanceIDs}
+                  onRegisterCardShell={onRegisterCardShell}
+                  connectionHighlightedInstanceIDs={
+                    connectionHighlightedInstanceIDs
+                  }
+                  connectionInteractiveInstanceIDs={
+                    connectionInteractiveInstanceIDs
+                  }
+                  onConnectionFocusChange={onConnectionFocusChange}
+                  linkedExileObjectsByParentId={linkedExileObjectsByParentId}
+                />
+              ) : (
+                <div className="match-replay-card-row is-sectioned">
+                  {section.objects.map((object) => (
+                    <MatchReplayObjectCard
+                      key={object.instanceId}
+                      object={object}
+                      preview={previewByCardID.get(object.cardId) ?? null}
+                      previewByCardID={previewByCardID}
+                      active={highlightedInstanceIDs.has(object.instanceId)}
+                      shellRef={
+                        onRegisterCardShell
+                          ? (element) =>
+                              onRegisterCardShell(object.instanceId, element)
+                          : undefined
+                      }
+                      connectionHighlighted={
+                        connectionHighlightedInstanceIDs?.has(
+                          object.instanceId,
+                        ) ?? false
+                      }
+                      onConnectionFocusChange={
+                        connectionInteractiveInstanceIDs?.has(object.instanceId)
+                          ? onConnectionFocusChange
+                          : undefined
+                      }
+                      linkedExileObjects={
+                        linkedExileObjectsByParentId?.get(object.instanceId) ??
+                        []
+                      }
+                    />
+                  ))}
+                </div>
+              )}
             </section>
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function MatchReplayLandStackRow({
+  objects,
+  previewByCardID,
+  highlightedInstanceIDs,
+  onRegisterCardShell,
+  connectionHighlightedInstanceIDs,
+  connectionInteractiveInstanceIDs,
+  onConnectionFocusChange,
+  linkedExileObjectsByParentId,
+}: {
+  objects: MatchReplayFrameObject[];
+  previewByCardID: Map<number, CardPreview | null>;
+  highlightedInstanceIDs: Set<number>;
+  onRegisterCardShell?: (instanceId: number, element: HTMLDivElement | null) => void;
+  connectionHighlightedInstanceIDs?: Set<number>;
+  connectionInteractiveInstanceIDs?: Set<number>;
+  onConnectionFocusChange?: (instanceId: number | null) => void;
+  linkedExileObjectsByParentId?: Map<number, MatchReplayFrameObject[]>;
+}) {
+  const stacks = useMemo(
+    () =>
+      groupBattlefieldLandStacks(
+        objects,
+        previewByCardID,
+        (object) =>
+          (linkedExileObjectsByParentId?.get(object.instanceId) ?? []).length ===
+          0,
+      ),
+    [objects, previewByCardID, linkedExileObjectsByParentId],
+  );
+
+  const renderObjectCard = (object: MatchReplayFrameObject) => (
+    <MatchReplayObjectCard
+      key={object.instanceId}
+      object={object}
+      preview={previewByCardID.get(object.cardId) ?? null}
+      previewByCardID={previewByCardID}
+      active={highlightedInstanceIDs.has(object.instanceId)}
+      shellRef={
+        onRegisterCardShell
+          ? (element) => onRegisterCardShell(object.instanceId, element)
+          : undefined
+      }
+      connectionHighlighted={
+        connectionHighlightedInstanceIDs?.has(object.instanceId) ?? false
+      }
+      onConnectionFocusChange={
+        connectionInteractiveInstanceIDs?.has(object.instanceId)
+          ? onConnectionFocusChange
+          : undefined
+      }
+      linkedExileObjects={
+        linkedExileObjectsByParentId?.get(object.instanceId) ?? []
+      }
+    />
+  );
+
+  return (
+    <div className="match-replay-card-row is-sectioned is-lands">
+      {stacks.map((stack) => {
+        if (stack.objects.length === 1) {
+          return renderObjectCard(stack.objects[0]);
+        }
+
+        // Cards involved in the current step (or a hovered connection) move to
+        // the front of the pile so their highlight stays visible.
+        const isFront = (object: MatchReplayFrameObject) =>
+          highlightedInstanceIDs.has(object.instanceId) ||
+          (connectionHighlightedInstanceIDs?.has(object.instanceId) ?? false);
+        const ordered = [...stack.objects].sort(
+          (a, b) => Number(isFront(b)) - Number(isFront(a)),
+        );
+        const front = ordered[0];
+        const frontName = replayObjectName(
+          front,
+          previewByCardID.get(front.cardId) ?? null,
+        );
+
+        return (
+          <div
+            key={stack.key}
+            className={`match-replay-land-stack ${front.isTapped ? "is-tapped" : ""}`}
+            style={{ "--land-stack-size": ordered.length } as CSSProperties}
+            role="group"
+            aria-label={`${frontName} ×${ordered.length}${front.isTapped ? " tapped" : ""}`}
+          >
+            {ordered.map((object, index) => (
+              <div
+                key={object.instanceId}
+                className="match-replay-land-stack-item"
+                style={{ "--land-stack-index": index } as CSSProperties}
+              >
+                {renderObjectCard(object)}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

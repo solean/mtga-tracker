@@ -12,6 +12,7 @@ import {
   describeReplayChange,
   filterMeaningfulReplayFrames,
   formatReplayWinReason,
+  groupBattlefieldLandStacks,
   normalizeReplayWinReason,
   preferredReplayFrameIndex,
   replayFrameHasLifeDelta,
@@ -56,6 +57,8 @@ function object(
     zoneType: values.zoneType ?? "Battlefield",
     power: values.power,
     toughness: values.toughness,
+    attackState: values.attackState,
+    counterSummaryJson: values.counterSummaryJson,
     isToken: values.isToken ?? false,
     isTapped: values.isTapped ?? false,
     hasSummoningSickness: values.hasSummoningSickness ?? false,
@@ -89,6 +92,94 @@ describe("zone classification", () => {
       "artifacts_enchantments",
     );
     expect(battlefieldSectionKind(null)).toBe("other");
+  });
+});
+
+describe("land stacks", () => {
+  const islandPreview: CardPreview = {
+    name: "Island",
+    imageUrl: "",
+    typeLine: "Basic Land — Island",
+  };
+  const plainsPreview: CardPreview = {
+    name: "Plains",
+    imageUrl: "",
+    typeLine: "Basic Land — Plains",
+  };
+
+  test("groups duplicate lands by name and tapped state", () => {
+    const previews = new Map<number, CardPreview | null>([
+      [1, islandPreview],
+      [2, plainsPreview],
+    ]);
+    const objects = [
+      object({ instanceId: 10, cardId: 1 }),
+      object({ instanceId: 11, cardId: 1 }),
+      object({ instanceId: 12, cardId: 1, isTapped: true }),
+      object({ instanceId: 13, cardId: 2 }),
+    ];
+
+    const stacks = groupBattlefieldLandStacks(objects, previews);
+
+    expect(stacks).toHaveLength(3);
+    expect(stacks[0]?.objects.map((o) => o.instanceId)).toEqual([10, 11]);
+    expect(stacks[1]?.objects.map((o) => o.instanceId)).toEqual([12]);
+    expect(stacks[2]?.objects.map((o) => o.instanceId)).toEqual([13]);
+  });
+
+  test("groups same-name lands across different printings", () => {
+    const previews = new Map<number, CardPreview | null>([
+      [1, islandPreview],
+      [2, { ...islandPreview, imageUrl: "other-art" }],
+    ]);
+    const objects = [
+      object({ instanceId: 10, cardId: 1 }),
+      object({ instanceId: 11, cardId: 2 }),
+    ];
+
+    const stacks = groupBattlefieldLandStacks(objects, previews);
+
+    expect(stacks).toHaveLength(1);
+    expect(stacks[0]?.objects.map((o) => o.instanceId)).toEqual([10, 11]);
+  });
+
+  test("keeps lands with extra state as standalone cards", () => {
+    const previews = new Map<number, CardPreview | null>([[1, islandPreview]]);
+    const objects = [
+      object({ instanceId: 10, cardId: 1 }),
+      object({ instanceId: 11, cardId: 1, attackState: "attacking" }),
+      object({
+        instanceId: 12,
+        cardId: 1,
+        counterSummaryJson: JSON.stringify([{ label: "Flood", count: 2 }]),
+      }),
+      object({ instanceId: 13, cardId: 1, hasSummoningSickness: true }),
+      object({ instanceId: 14, cardId: 1 }),
+    ];
+
+    const stacks = groupBattlefieldLandStacks(objects, previews);
+
+    expect(stacks).toHaveLength(4);
+    expect(stacks[0]?.objects.map((o) => o.instanceId)).toEqual([10, 14]);
+    expect(stacks[1]?.objects.map((o) => o.instanceId)).toEqual([11]);
+    expect(stacks[2]?.objects.map((o) => o.instanceId)).toEqual([12]);
+    expect(stacks[3]?.objects.map((o) => o.instanceId)).toEqual([13]);
+  });
+
+  test("honors the extra canStack predicate", () => {
+    const previews = new Map<number, CardPreview | null>([[1, islandPreview]]);
+    const objects = [
+      object({ instanceId: 10, cardId: 1 }),
+      object({ instanceId: 11, cardId: 1 }),
+    ];
+
+    const stacks = groupBattlefieldLandStacks(
+      objects,
+      previews,
+      (o) => o.instanceId !== 11,
+    );
+
+    expect(stacks).toHaveLength(2);
   });
 });
 
