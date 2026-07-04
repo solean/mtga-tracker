@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatRelativeTime, shortenHomePath } from "../lib/format";
-import { useThemeControls } from "../lib/theme";
+import { useThemeControls, type ThemePreference } from "../lib/theme";
 import type { RuntimeConfig, RuntimeOperation, RuntimeStatus, UpdateCheck } from "../lib/types";
 
 function StatusPill({
@@ -27,6 +27,38 @@ function PathValue({ path }: { path: string }) {
     </code>
   );
 }
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <path d="M13.5 9.5A5.75 5.75 0 0 1 6.5 2.5a5.75 5.75 0 1 0 7 7Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MonitorIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <rect x="1.8" y="2.8" width="12.4" height="8.4" rx="1" />
+      <path d="M6 14h4M8 11.2V14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const themeOptions: Array<{ value: ThemePreference; label: string; icon: () => JSX.Element }> = [
+  { value: "dark", label: "Dark", icon: MoonIcon },
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "system", label: "System", icon: MonitorIcon },
+];
 
 const runtimeStatusKey = ["runtime-status"] as const;
 const autostartKey = ["autostart-status"] as const;
@@ -92,7 +124,7 @@ function syncForm(status: RuntimeStatus): RuntimeConfig {
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const { theme, setTheme } = useThemeControls();
+  const { preference, setPreference } = useThemeControls();
   const { data, isLoading, error } = useQuery({
     queryKey: runtimeStatusKey,
     queryFn: api.runtimeStatus,
@@ -459,14 +491,27 @@ export function SettingsPage() {
 
         <p className="settings-note settings-version">Version {data.version || "unknown"}</p>
 
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
-            checked={theme === "light"}
-            onChange={(event) => setTheme(event.target.checked ? "light" : "dark")}
-          />
-          <span>Use light theme.</span>
-        </label>
+        <div className="settings-field settings-theme-field">
+          <span id="settings-theme-label">Theme</span>
+          <div className="settings-segmented" role="radiogroup" aria-labelledby="settings-theme-label">
+            {themeOptions.map((option) => {
+              const Icon = option.icon;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={preference === option.value}
+                  className={`settings-segment${preference === option.value ? " is-active" : ""}`}
+                  onClick={() => setPreference(option.value)}
+                >
+                  <Icon />
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {autostartMutation.error ? (
           <StatusMessage tone="error">{(autostartMutation.error as Error).message}</StatusMessage>

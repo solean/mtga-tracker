@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigationType } from "react-router-dom";
 
-import { ThemeContext, type Theme } from "../lib/theme";
+import { ThemeContext, type Theme, type ThemePreference } from "../lib/theme";
 import { AppErrorFallback, ErrorBoundary } from "./ErrorBoundary";
 import { LiveMatchBanner } from "./LiveMatchBanner";
 import { Plasma } from "./Plasma";
@@ -45,30 +45,46 @@ function applyThemeColorMeta(theme: Theme) {
   metaThemeColor.setAttribute("content", theme === "dark" ? "#050302" : "#f4ece1");
 }
 
-function readStoredTheme(): Theme {
+function readStoredPreference(): ThemePreference {
   if (typeof window === "undefined") return "dark";
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "light" || stored === "system" ? stored : "dark";
   } catch {
     return "dark";
   }
 }
 
+function readSystemTheme(): Theme {
+  if (typeof window === "undefined" || !window.matchMedia) return "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 export function Layout() {
   const location = useLocation();
   const navigationType = useNavigationType();
-  const [theme, setTheme] = useState<Theme>(readStoredTheme);
-  const themeContextValue = useMemo(() => ({ theme, setTheme }), [theme]);
+  const [preference, setPreference] = useState<ThemePreference>(readStoredPreference);
+  const [systemTheme, setSystemTheme] = useState<Theme>(readSystemTheme);
+  const theme: Theme = preference === "system" ? systemTheme : preference;
+  const themeContextValue = useMemo(() => ({ theme, preference, setPreference }), [theme, preference]);
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const query = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? "light" : "dark");
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     applyThemeColorMeta(theme);
     try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+      window.localStorage.setItem(THEME_STORAGE_KEY, preference);
     } catch {
       // Ignore storage failures and keep the in-memory theme.
     }
-  }, [theme]);
+  }, [theme, preference]);
 
   useEffect(() => {
     const context = pageTitle(location.pathname);
@@ -127,7 +143,7 @@ export function Layout() {
             <button
               type="button"
               className={`theme-toggle ${theme === "light" ? "is-light" : ""}`}
-              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+              onClick={() => setPreference(theme === "dark" ? "light" : "dark")}
               aria-pressed={theme === "light"}
               aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
               title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}

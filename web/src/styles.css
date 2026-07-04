@@ -1561,6 +1561,63 @@ span.settings-status-pill {
   margin-top: 0;
 }
 
+.settings-theme-field {
+  margin-top: 0.95rem;
+}
+
+.settings-segmented {
+  display: inline-flex;
+  gap: 0.22rem;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.22rem;
+  background: var(--tabs-bg);
+}
+
+.settings-segment {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 0.42rem 0.72rem;
+  background: none;
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.settings-segment svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+}
+
+.settings-segment:hover {
+  color: var(--text);
+  border-color: var(--tab-hover-border);
+}
+
+.settings-segment.is-active {
+  border-color: var(--tab-active-border);
+  background: linear-gradient(
+    155deg,
+    var(--tab-active-bg-a) 0%,
+    var(--tab-active-bg-b) 100%
+  );
+  color: var(--text-soft);
+}
+
 .settings-unsaved-chip {
   display: inline-flex;
   align-items: center;
