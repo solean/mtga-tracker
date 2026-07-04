@@ -6,11 +6,12 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { DeckColorIdentity } from "../components/MatchDeckColors";
 import { EventLabel } from "../components/EventLabel";
 import { ManaSymbol } from "../components/ManaSymbol";
+import { RarityDot, RARITY_LABELS, RARITY_ORDER } from "../components/RarityDot";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
-import { fetchCardPreview, type CardPreview } from "../lib/scryfall";
+import { fetchCardPreview, type CardPreview, type CardRarity } from "../lib/scryfall";
 import { useEventSets } from "../lib/useEventSets";
 
 type DeckListCard = {
@@ -40,6 +41,7 @@ type MainboardDeckListCard = DeckListCard & {
   imageUrl?: string;
   scryfallUrl?: string;
   typeLine?: string;
+  rarity?: CardRarity;
 };
 
 type SideboardDeckListCard = DeckListCard & {
@@ -48,6 +50,7 @@ type SideboardDeckListCard = DeckListCard & {
   imageUrl?: string;
   scryfallUrl?: string;
   typeLine?: string;
+  rarity?: CardRarity;
 };
 
 type DeckCurveColumn = {
@@ -189,6 +192,47 @@ function parseDeckDisplayMode(value: string | null): DeckDisplayMode {
 
 function sectionTotal(cards: DeckListCard[]): number {
   return cards.reduce((sum, card) => sum + card.quantity, 0);
+}
+
+function countRarities(cards: Array<{ quantity: number; rarity?: CardRarity }>): Record<CardRarity, number> {
+  const counts: Record<CardRarity, number> = { common: 0, uncommon: 0, rare: 0, mythic: 0 };
+  for (const card of cards) {
+    if (card.rarity) {
+      counts[card.rarity] += card.quantity;
+    }
+  }
+  return counts;
+}
+
+function RaritySummaryGroup({
+  label,
+  cards,
+}: {
+  label: string;
+  cards: Array<{ quantity: number; rarity?: CardRarity }>;
+}) {
+  const counts = countRarities(cards);
+  const entries = RARITY_ORDER.filter((rarity) => counts[rarity] > 0);
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <span className="deck-rarity-group">
+      <span className="deck-rarity-group-label">{label}</span>
+      {entries.map((rarity) => (
+        <span
+          className="deck-rarity-item"
+          key={rarity}
+          title={`${counts[rarity]} ${RARITY_LABELS[rarity].toLowerCase()}`}
+          aria-label={`${counts[rarity]} ${RARITY_LABELS[rarity].toLowerCase()}`}
+        >
+          <RarityDot rarity={rarity} />
+          {counts[rarity]}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function formatManaValueLabel(manaValue: number): string {
@@ -862,6 +906,7 @@ export function DeckDetailPage() {
         imageUrl: metadata?.imageUrl,
         scryfallUrl: metadata?.scryfallUrl,
         typeLine: metadata?.typeLine,
+        rarity: metadata?.rarity,
       };
     });
   }, [mainboardCards, mainboardMetadataByCardID]);
@@ -950,6 +995,7 @@ export function DeckDetailPage() {
         imageUrl: metadata?.imageUrl,
         scryfallUrl: metadata?.scryfallUrl,
         typeLine: metadata?.typeLine,
+        rarity: metadata?.rarity,
       };
     });
   }, [sideboardCards, sideboardMetadataByCardID]);
@@ -1019,6 +1065,12 @@ export function DeckDetailPage() {
               {data.format || "Unknown format"} •{" "}
               <EventLabel eventName={data.eventName} lookup={setLookup} fallback="No event" />
             </p>
+            {!isCardMetadataLoading ? (
+              <div className="deck-rarity-summary">
+                <RaritySummaryGroup label="Main" cards={enrichedMainboardCards} />
+                <RaritySummaryGroup label="Side" cards={enrichedSideboardCards} />
+              </div>
+            ) : null}
           </div>
           <div className="deck-detail-actions">
             <div className="tabs deck-view-toggle" role="group" aria-label="Deck display mode">
@@ -1078,6 +1130,7 @@ export function DeckDetailPage() {
                             <DeckCardPreviewName card={card} />
                             <span className="deck-card-mana">
                               <ManaCostDisplay manaCost={card.manaCost} />
+                              <RarityDot rarity={card.rarity} />
                             </span>
                           </li>
                         ))}
@@ -1110,6 +1163,7 @@ export function DeckDetailPage() {
                       <DeckCardPreviewName card={card} placementMode="force-right" />
                       <span className="deck-card-mana">
                         <ManaCostDisplay manaCost={card.manaCost} />
+                        <RarityDot rarity={card.rarity} />
                       </span>
                     </li>
                   ))}

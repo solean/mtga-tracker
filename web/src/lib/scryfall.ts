@@ -1,3 +1,5 @@
+export type CardRarity = "common" | "uncommon" | "rare" | "mythic";
+
 export type CardPreview = {
   name: string;
   imageUrl: string;
@@ -6,6 +8,7 @@ export type CardPreview = {
   manaCost?: string;
   manaValue?: number;
   typeLine?: string;
+  rarity?: CardRarity;
 };
 
 type ScryfallImageURIs = {
@@ -30,6 +33,7 @@ type ScryfallCard = {
   mana_cost?: string;
   cmc?: number;
   type_line?: string;
+  rarity?: string;
 };
 
 const SCRYFALL_BASE_URL = "https://api.scryfall.com";
@@ -103,6 +107,21 @@ function pickTypeLine(card: ScryfallCard): string {
   return faceTypes.join(" // ");
 }
 
+function normalizeRarity(value?: string): CardRarity | undefined {
+  switch (value?.trim().toLowerCase()) {
+    case "common":
+      return "common";
+    case "uncommon":
+      return "uncommon";
+    case "rare":
+      return "rare";
+    case "mythic":
+      return "mythic";
+    default:
+      return undefined;
+  }
+}
+
 async function fetchScryfallCard(path: string): Promise<ScryfallCard | null> {
   const response = await fetch(`${SCRYFALL_BASE_URL}${path}`, {
     headers: {
@@ -168,5 +187,6 @@ export async function fetchCardPreview(cardID: number, cardName?: string): Promi
     manaCost: pickManaCost(card),
     manaValue: typeof card.cmc === "number" && Number.isFinite(card.cmc) ? card.cmc : undefined,
     typeLine: pickTypeLine(card),
+    rarity: normalizeRarity(card.rarity),
   };
 }

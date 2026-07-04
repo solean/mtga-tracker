@@ -111,6 +111,11 @@
   --skeleton-base: rgba(255, 145, 64, 0.1);
   --skeleton-highlight: rgba(255, 138, 36, 0.22);
 
+  --rarity-common: #a39a91;
+  --rarity-uncommon: #9fb3c8;
+  --rarity-rare: #d9b95f;
+  --rarity-mythic: #ee5c2e;
+
   --card-trigger-hover: #ffd0a3;
   --popover-bg: rgba(12, 8, 6, 0.97);
   --popover-card-bg: rgba(20, 13, 9, 0.96);
@@ -222,6 +227,11 @@
   --deck-card-bg-b: rgba(236, 226, 216, 0.94);
   --skeleton-base: rgba(140, 62, 8, 0.1);
   --skeleton-highlight: rgba(197, 90, 17, 0.18);
+
+  --rarity-common: #7d726a;
+  --rarity-uncommon: #55788e;
+  --rarity-rare: #a8842c;
+  --rarity-mythic: #cf4a16;
 
   --card-trigger-hover: #6e2500;
   --popover-bg: rgba(250, 243, 236, 0.98);
@@ -4404,6 +4414,71 @@ button.match-replay-zonechip.is-button {
 .mana-symbol-fallback {
   font-size: 0.66rem;
   color: var(--muted);
+}
+
+.rarity-dot {
+  display: inline-block;
+  flex: none;
+  width: 0.44rem;
+  height: 0.44rem;
+  margin: 0 0.1rem;
+  transform: rotate(45deg);
+  border-radius: 1px;
+  background: var(--rarity-dot-color, transparent);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--rarity-dot-color, transparent) 45%, transparent);
+}
+
+.rarity-dot.is-unknown {
+  background: transparent;
+  box-shadow: none;
+}
+
+.rarity-common {
+  --rarity-dot-color: var(--rarity-common);
+}
+
+.rarity-uncommon {
+  --rarity-dot-color: var(--rarity-uncommon);
+}
+
+.rarity-rare {
+  --rarity-dot-color: var(--rarity-rare);
+}
+
+.rarity-mythic {
+  --rarity-dot-color: var(--rarity-mythic);
+}
+
+.deck-rarity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.1rem;
+  margin-top: 0.42rem;
+}
+
+.deck-rarity-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.deck-rarity-group-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.deck-rarity-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1;
+  color: var(--muted-strong);
 }
 
 .event-label {
