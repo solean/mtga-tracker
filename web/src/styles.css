@@ -1324,7 +1324,8 @@ body.has-wide-deck-curve .app-shell {
 }
 
 .settings-field > span,
-.settings-status-card > span {
+.settings-status-card > span,
+.settings-strip-item > span {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.76rem;
@@ -1523,6 +1524,41 @@ span.settings-status-pill {
     opacity: 0.55;
     box-shadow: 0 0 6px 1px currentColor;
   }
+}
+
+.settings-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2.4rem;
+  align-items: stretch;
+}
+
+.settings-strip-item {
+  display: grid;
+  gap: 0.42rem;
+  align-content: start;
+}
+
+.settings-strip-item small {
+  color: var(--muted-strong);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  align-self: center;
+}
+
+.settings-prevlog {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin: 0.75rem 0 0;
+  color: var(--muted-strong);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+}
+
+.settings-version {
+  margin-top: 0;
 }
 
 .settings-unsaved-chip {

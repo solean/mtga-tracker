@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigationType } from "react-router-dom";
 
 import { ThemeContext, type Theme } from "../lib/theme";
@@ -58,6 +58,7 @@ export function Layout() {
   const location = useLocation();
   const navigationType = useNavigationType();
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  const themeContextValue = useMemo(() => ({ theme, setTheme }), [theme]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -90,7 +91,7 @@ export function Layout() {
   }, [location.key, navigationType]);
 
   return (
-    <ThemeContext.Provider value={theme}>
+    <ThemeContext.Provider value={themeContextValue}>
       <>
         {ENABLE_BACKGROUND_ANIMATION ? (
           <div className="plasma-bg" aria-hidden="true">

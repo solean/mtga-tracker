@@ -1,6 +1,6 @@
 # Settings Page Improvements — Plan
 
-Status: Phases 1–2 implemented (2026-07-03); Phases 3–4 proposed
+Status: Phases 1–3 implemented (2026-07-04); Phase 4 proposed
 Scope: `web/src/pages/SettingsPage.tsx`, `web/src/styles.css`, `web/src/lib/{api,types}.ts`,
 `internal/appstate/service.go`, `internal/api/server.go`, `app.go` (desktop-only features)
 
@@ -113,25 +113,44 @@ Implementation notes (as built):
   flash appears and reverts after ~2s. Start-live chaining not exercised against the
   running app (would start the real poller); logic covered by review + typecheck.
 
-## Phase 3 — Information architecture
+## Phase 3 — Information architecture ✅ DONE (2026-07-04)
 
 Restructure the page into a status strip plus three purpose-named sections:
 
-1. **Status strip (top, replaces "Runtime Control").** One compact ribbon: live state
+1. ✅ **Status strip (top, replaces "Runtime Control").** One compact ribbon: live state
    pill, active log Found/Missing, last activity summary. Long paths move out of the
    hero position into the Data section. The panel-head subtitle slot goes back to being
    a *description* everywhere; status never lives there.
-2. **Tracking** — log path, poll interval, `includePrev` (with the Default Previous Log
+2. ✅ **Tracking** — log path, poll interval, `includePrev` (with the Default Previous Log
    path shown inline here, moved out of "Recent Activity"), Start/Stop Live button
    adjacent to the state it controls, Save/Discard for the form.
-3. **Data** — database path (+ size, Phase 4), config file path, Import Logs Now, and the
-   Last Import / Last Live Activity cards. Consider mirroring Recent Activity on the
+3. ✅ **Data** — database path (+ size, Phase 4), config file path, Import Logs Now, and
+   the Last Import / Last Live Activity cards. Consider mirroring Recent Activity on the
    Overview page later; not in scope here.
-4. **Application** — version, launch-at-login, update check, background-window note, and
-   a theme toggle mirror (nav toggle stays; Settings is where people look for it).
+4. ✅ **Application** — version, launch-at-login, update check, background-window note,
+   and a theme toggle mirror (nav toggle stays; Settings is where people look for it).
 
 Acceptance: no orphan cards in grids; every panel's subtitle is descriptive; tab order
 follows visual order.
+
+Implementation notes (as built):
+- Status strip is an unheaded `section.panel` with `aria-label="Runtime status"` holding
+  `.settings-strip` items (Live Tracking pill, Active Log pill, Last Activity relative
+  time via `formatRelativeTime`). The dismissable last-error card lives at the top of it.
+- Tracking's action row is Save / Discard / Start-Stop Live; Import moved to Data with
+  its resume-mode note (plus a hint when disabled because live tracking is running).
+  Default Previous Log renders as `.settings-prevlog` under the `includePrev` checkbox,
+  only when the default log location is in use; it swaps with the custom-path hint.
+- Data grid is four cards (Database, Config File, Last Import, Last Live Activity) — no
+  orphans. Application shows a version line, then theme / autostart checkboxes, update
+  check, and the background-window note.
+- Theme mirror required extending `ThemeContext` to `{ theme, setTheme }`
+  (`web/src/lib/theme.ts`); `useTheme()` kept its signature so `RankProgressPanel` was
+  untouched, and `useThemeControls()` exposes the setter. Layout memoizes the context
+  value.
+- Verified live: strip pills/labels, section structure via a11y snapshot, theme checkbox
+  flips the app theme and the nav toggle label both ways (localStorage persisted),
+  Overview page still renders with no console errors.
 
 ## Phase 4 — New capabilities (backend + frontend)
 

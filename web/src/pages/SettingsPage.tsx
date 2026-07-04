@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
-import { formatDateTime, shortenHomePath } from "../lib/format";
+import { formatDateTime, formatRelativeTime, shortenHomePath } from "../lib/format";
+import { useThemeControls } from "../lib/theme";
 import type { RuntimeConfig, RuntimeOperation, RuntimeStatus, UpdateCheck } from "../lib/types";
 
 function StatusPill({
@@ -91,6 +92,7 @@ function syncForm(status: RuntimeStatus): RuntimeConfig {
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
+  const { theme, setTheme } = useThemeControls();
   const { data, isLoading, error } = useQuery({
     queryKey: runtimeStatusKey,
     queryFn: api.runtimeStatus,
@@ -192,6 +194,15 @@ export function SettingsPage() {
     setHasLocalEdits(false);
   };
 
+  const importCompletedAt = data.lastImport?.completedAt ? Date.parse(data.lastImport.completedAt) : 0;
+  const liveCompletedAt = data.lastLiveActivity?.completedAt ? Date.parse(data.lastLiveActivity.completedAt) : 0;
+  const lastActivity =
+    importCompletedAt || liveCompletedAt
+      ? liveCompletedAt >= importCompletedAt
+        ? data.lastLiveActivity
+        : data.lastImport
+      : undefined;
+
   // Unsaved edits are saved before starting live tracking so the poller never
   // silently runs on stale config; a failed save aborts the start.
   const handleLiveToggle = async () => {
@@ -211,12 +222,7 @@ export function SettingsPage() {
 
   return (
     <div className="stack-lg">
-      <section className="panel">
-        <div className="panel-head">
-          <h3>Runtime Control</h3>
-          <p>{data.liveRunning ? "Live tracking active" : "Manual sync mode"}</p>
-        </div>
-
+      <section className="panel" aria-label="Runtime status">
         {data.lastError && data.lastError !== dismissedError ? (
           <div className="settings-last-error" role="alert">
             <span>Last runtime error</span>
@@ -227,41 +233,38 @@ export function SettingsPage() {
           </div>
         ) : null}
 
-        <div className="settings-status-grid" aria-label="Runtime status">
-          <article className="settings-status-card">
-            <span>Database</span>
-            <PathValue path={data.dbPath} />
-          </article>
-          <article className="settings-status-card">
-            <span>Active Log</span>
-            <PathValue path={data.activeLogPath} />
-            <StatusPill tone={data.activeLogPathExists ? "positive" : "negative"}>
-              {data.activeLogPathExists ? "Found" : "Missing"}
-            </StatusPill>
-          </article>
-          <article className="settings-status-card">
-            <span>Live State</span>
+        <div className="settings-strip">
+          <div className="settings-strip-item">
+            <span>Live Tracking</span>
             <StatusPill tone={data.liveRunning ? "positive" : "neutral"} pulsing={data.liveRunning}>
               {data.liveRunning ? "Running" : "Stopped"}
             </StatusPill>
+          </div>
+          <div className="settings-strip-item">
+            <span>Active Log</span>
+            <StatusPill tone={data.activeLogPathExists ? "positive" : "negative"}>
+              {data.activeLogPathExists ? "Found" : "Missing"}
+            </StatusPill>
+          </div>
+          <div className="settings-strip-item">
+            <span>Last Activity</span>
             <small>
-              {data.liveLastTickAt ? `Last update ${formatDateTime(data.liveLastTickAt)}` : "Waiting for first update"}
+              {data.liveRunning && data.liveLastTickAt
+                ? `Live update ${formatRelativeTime(data.liveLastTickAt)}`
+                : lastActivity?.completedAt
+                  ? `${lastActivity.kind === "import" ? "Import" : "Live"} ${formatRelativeTime(lastActivity.completedAt)}`
+                  : "No activity yet"}
             </small>
-          </article>
-          <article className="settings-status-card">
-            <span>Config File</span>
-            <PathValue path={data.configPath} />
-            <small title={data.supportDir}>{shortenHomePath(data.supportDir)}</small>
-          </article>
+          </div>
         </div>
       </section>
 
       <section className="panel">
         <div className="panel-head">
-          <h3>Tracking Settings</h3>
+          <h3>Tracking</h3>
           <p>
             {hasLocalEdits ? <span className="settings-unsaved-chip">Unsaved changes</span> : null}
-            Blank log path uses the default MTGA macOS location.
+            Where match data is read from and how often. Blank log path uses the default MTGA macOS location.
           </p>
         </div>
 
@@ -338,7 +341,14 @@ export function SettingsPage() {
         </label>
         {form.logPath.trim().length > 0 ? (
           <p className="settings-checkbox-hint">Disabled while a custom log path is set.</p>
-        ) : null}
+        ) : (
+          <p className="settings-prevlog">
+            Default previous log: <PathValue path={data.previousLogPath || data.defaultPrevLogPath} />{" "}
+            <StatusPill tone={data.previousLogPathExists ? "positive" : "negative"}>
+              {data.previousLogPathExists ? "Found" : "Missing"}
+            </StatusPill>
+          </p>
+        )}
 
         <div className="settings-action-row">
           <button
@@ -363,14 +373,6 @@ export function SettingsPage() {
           ) : null}
           <button
             type="button"
-            className="control-button"
-            onClick={() => importMutation.mutate()}
-            disabled={importDisabled}
-          >
-            {importMutation.isPending ? "Importing…" : "Import Logs Now"}
-          </button>
-          <button
-            type="button"
             className={`control-button${
               data.liveRunning ? " control-button--quiet" : hasLocalEdits ? "" : " control-button--primary"
             }`}
@@ -390,23 +392,25 @@ export function SettingsPage() {
         {saveMutation.error ? (
           <StatusMessage tone="error">Save failed: {(saveMutation.error as Error).message}</StatusMessage>
         ) : null}
-        {importMutation.error ? (
-          <StatusMessage tone="error">Import failed: {(importMutation.error as Error).message}</StatusMessage>
-        ) : null}
         {liveError ? <StatusMessage tone="error">Live tracking: {liveError.message}</StatusMessage> : null}
-
-        <p className="settings-note">
-          Manual import uses resume mode, so an empty database still gets full history and later runs only ingest new data.
-        </p>
       </section>
 
       <section className="panel">
         <div className="panel-head">
-          <h3>Recent Activity</h3>
-          <p>Import and live parser summaries.</p>
+          <h3>Data</h3>
+          <p>Local database, config file, and import history.</p>
         </div>
 
         <div className="settings-status-grid">
+          <article className="settings-status-card">
+            <span>Database</span>
+            <PathValue path={data.dbPath} />
+          </article>
+          <article className="settings-status-card">
+            <span>Config File</span>
+            <PathValue path={data.configPath} />
+            <small title={data.supportDir}>{shortenHomePath(data.supportDir)}</small>
+          </article>
           <article className="settings-status-card">
             <span>Last Import</span>
             <strong>{summarizeOperation(data.lastImport)}</strong>
@@ -423,21 +427,46 @@ export function SettingsPage() {
                 : "No live activity yet"}
             </small>
           </article>
-          <article className="settings-status-card">
-            <span>Default Previous Log</span>
-            <PathValue path={data.previousLogPath || data.defaultPrevLogPath} />
-            <StatusPill tone={data.previousLogPathExists ? "positive" : "negative"}>
-              {data.previousLogPathExists ? "Found" : "Missing"}
-            </StatusPill>
-          </article>
         </div>
+
+        <div className="settings-action-row">
+          <button
+            type="button"
+            className="control-button"
+            onClick={() => importMutation.mutate()}
+            disabled={importDisabled}
+            title={data.liveRunning ? "Stop live tracking before running a manual import." : undefined}
+          >
+            {importMutation.isPending ? "Importing…" : "Import Logs Now"}
+          </button>
+        </div>
+
+        {importMutation.error ? (
+          <StatusMessage tone="error">Import failed: {(importMutation.error as Error).message}</StatusMessage>
+        ) : null}
+
+        <p className="settings-note">
+          Manual import uses resume mode, so an empty database still gets full history and later runs only ingest new data.
+          {data.liveRunning ? " Importing is unavailable while live tracking runs." : ""}
+        </p>
       </section>
 
       <section className="panel">
         <div className="panel-head">
-          <h3>Desktop</h3>
-          <p>App version {data.version || "unknown"}</p>
+          <h3>Application</h3>
+          <p>Appearance, startup behavior, and updates.</p>
         </div>
+
+        <p className="settings-note settings-version">Version {data.version || "unknown"}</p>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={theme === "light"}
+            onChange={(event) => setTheme(event.target.checked ? "light" : "dark")}
+          />
+          <span>Use light theme.</span>
+        </label>
 
         {autostartMutation.error ? (
           <StatusMessage tone="error">{(autostartMutation.error as Error).message}</StatusMessage>
