@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
-import { formatDateTime, formatRelativeTime, shortenHomePath } from "../lib/format";
+import { formatBytes, formatDateTime, formatRelativeTime, shortenHomePath } from "../lib/format";
 import { useThemeControls, type ThemePreference } from "../lib/theme";
 import type { RuntimeConfig, RuntimeOperation, RuntimeStatus, UpdateCheck } from "../lib/types";
 
@@ -20,11 +20,77 @@ function StatusPill({
   return <span className={`settings-status-pill${toneClass}${pulsing ? " is-pulsing" : ""}`}>{children}</span>;
 }
 
-function PathValue({ path }: { path: string }) {
+function CopyIcon() {
   return (
-    <code className="settings-path" title={path}>
-      {shortenHomePath(path)}
-    </code>
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
+      <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path d="M2.8 8.6 6.2 12l7-8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) {
+      return;
+    }
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const copy = async (event: React.MouseEvent) => {
+    // Stop label-wrapped instances from re-focusing their input.
+    event.preventDefault();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // Clipboard API can be unavailable in older webviews; fall back.
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        if (document.execCommand("copy")) {
+          setCopied(true);
+        }
+      } finally {
+        textarea.remove();
+      }
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={`settings-copy-button${copied ? " is-copied" : ""}`}
+      onClick={(event) => void copy(event)}
+      aria-label={copied ? "Copied" : `Copy ${label}`}
+      title={copied ? "Copied" : `Copy ${label}`}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
+function PathValue({ path, copyLabel = "path" }: { path: string; copyLabel?: string }) {
+  return (
+    <span className="settings-path-row">
+      <code className="settings-path" title={path}>
+        {shortenHomePath(path)}
+      </code>
+      <CopyButton text={path} label={copyLabel} />
+    </span>
   );
 }
 
@@ -329,8 +395,9 @@ export function SettingsPage() {
               placeholder={data.defaultLogPath}
               spellCheck={false}
             />
-            <small title={effectiveActivePath}>
+            <small className="settings-path-row" title={effectiveActivePath}>
               Current effective path: {shortenHomePath(effectiveActivePath)}
+              <CopyButton text={effectiveActivePath} label="log path" />
             </small>
           </label>
 
@@ -375,7 +442,8 @@ export function SettingsPage() {
           <p className="settings-checkbox-hint">Disabled while a custom log path is set.</p>
         ) : (
           <p className="settings-prevlog">
-            Default previous log: <PathValue path={data.previousLogPath || data.defaultPrevLogPath} />{" "}
+            Default previous log:{" "}
+            <PathValue path={data.previousLogPath || data.defaultPrevLogPath} copyLabel="previous log path" />{" "}
             <StatusPill tone={data.previousLogPathExists ? "positive" : "negative"}>
               {data.previousLogPathExists ? "Found" : "Missing"}
             </StatusPill>
@@ -436,11 +504,12 @@ export function SettingsPage() {
         <div className="settings-status-grid">
           <article className="settings-status-card">
             <span>Database</span>
-            <PathValue path={data.dbPath} />
+            <PathValue path={data.dbPath} copyLabel="database path" />
+            <small>{data.dbSizeBytes > 0 ? `${formatBytes(data.dbSizeBytes)} on disk` : "Not created yet"}</small>
           </article>
           <article className="settings-status-card">
             <span>Config File</span>
-            <PathValue path={data.configPath} />
+            <PathValue path={data.configPath} copyLabel="config path" />
             <small title={data.supportDir}>{shortenHomePath(data.supportDir)}</small>
           </article>
           <article className="settings-status-card">

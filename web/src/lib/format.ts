@@ -75,3 +75,17 @@ export function pct(v: number): string {
 export function shortenHomePath(path: string): string {
   return path.replace(/^\/Users\/[^/]+(?=\/)/, "~");
 }
+
+/** Human-readable byte count: 1536 → "1.5 KB". */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "-";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = unit === 0 || value >= 10 ? Math.round(value).toString() : value.toFixed(1);
+  return `${rounded} ${units[unit]}`;
+}

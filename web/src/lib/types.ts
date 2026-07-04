@@ -238,6 +238,7 @@ export type RuntimeOperation = {
 export type RuntimeStatus = {
   version: string;
   dbPath: string;
+  dbSizeBytes: number;
   supportDir: string;
   configPath: string;
   defaultLogPath: string;

@@ -1,6 +1,8 @@
 # Settings Page Improvements — Plan
 
-Status: Phases 1–3 implemented (2026-07-04); Phase 4 proposed
+Status: Phases 1–3 implemented (2026-07-04); Phase 4 in progress — items 1 (copyable
+paths) and 5 (database size) done 2026-07-04, plus a three-way dark/light/system theme
+control replacing both the settings checkbox and the navbar toggle
 Scope: `web/src/pages/SettingsPage.tsx`, `web/src/styles.css`, `web/src/lib/{api,types}.ts`,
 `internal/appstate/service.go`, `internal/api/server.go`, `app.go` (desktop-only features)
 
@@ -156,8 +158,10 @@ Implementation notes (as built):
 
 Each item is independent; ordered by value/effort.
 
-1. **Copyable paths.** Frontend-only: copy-to-clipboard button on DB, config, and log
-   path rows (clipboard API, "Copied" tooltip feedback).
+1. ✅ **Copyable paths.** (2026-07-04) `CopyButton` + `PathValue` wrapper in
+   `SettingsPage.tsx`: clipboard API with `execCommand` fallback, icon flips to a green
+   check for 1.5s on success only (no false feedback if the write is denied). Buttons on
+   database, config, effective log, and previous log paths.
 2. **Capabilities in RuntimeStatus.** Add `capabilities: { pickFile: bool, reveal: bool }`
    to the status payload (`internal/appstate/service.go` Status struct + `web/src/lib/types.ts`).
    Desktop sets both true; serve mode false. Gates the two features below.
@@ -168,8 +172,11 @@ Each item is independent; ordered by value/effort.
 4. **Reveal in Finder.** `POST /api/runtime/reveal {path}` — desktop uses Wails/`open -R`;
    restrict to the known paths from status (db, config, logs), never arbitrary client
    input. Hidden when capability is false.
-5. **Database size.** Add `dbSizeBytes` to Status (stat the file in `Status()`, include
-   -wal/-shm) and display it next to the DB path. Backend + display only; cheap.
+5. ✅ **Database size.** (2026-07-04) `databaseSize()` in
+   `internal/appstate/service.go` sums the db file + `-wal` + `-shm`; `dbSizeBytes` on
+   Status, rendered via new `formatBytes()` (unit-tested in `web/test/format.test.ts`)
+   in the Database card ("8.8 MB on disk"; "Not created yet" when absent). Verified
+   against `ls -la` byte counts.
 6. **Auto-start live tracking on launch.** New `Config.autoStartLive bool` (default
    false). Desktop `startup()` and serve-mode startup call `StartLive()` when set and the
    log path exists. Checkbox in the Tracking section. Saved config keeps working for old

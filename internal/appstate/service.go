@@ -53,6 +53,7 @@ type OperationResult struct {
 type Status struct {
 	Version               string           `json:"version"`
 	DBPath                string           `json:"dbPath"`
+	DBSizeBytes           int64            `json:"dbSizeBytes"`
 	SupportDir            string           `json:"supportDir"`
 	ConfigPath            string           `json:"configPath"`
 	DefaultLogPath        string           `json:"defaultLogPath"`
@@ -179,6 +180,7 @@ func (s *Service) Status() Status {
 	return Status{
 		Version:               version.Version,
 		DBPath:                s.dbPath,
+		DBSizeBytes:           databaseSize(s.dbPath),
 		SupportDir:            s.supportDir,
 		ConfigPath:            s.configPath,
 		DefaultLogPath:        s.defaultLogPath,
@@ -469,6 +471,21 @@ func cloneOperationResult(result *OperationResult) *OperationResult {
 	cloned := *result
 	cloned.Files = append([]string(nil), result.Files...)
 	return &cloned
+}
+
+// databaseSize totals the SQLite database file plus its -wal/-shm sidecars.
+func databaseSize(dbPath string) int64 {
+	dbPath = strings.TrimSpace(dbPath)
+	if dbPath == "" {
+		return 0
+	}
+	var total int64
+	for _, path := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			total += info.Size()
+		}
+	}
+	return total
 }
 
 func fileExists(path string) bool {

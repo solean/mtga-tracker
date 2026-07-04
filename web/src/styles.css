@@ -1406,6 +1406,60 @@ body.has-wide-deck-curve .app-shell {
   word-break: break-all;
 }
 
+/* Wrapper pairing a path (or path-like text) with its copy button. The
+   element selector keeps parity with `.settings-status-card > span` so the
+   uppercase label styling never wins on direct-child instances. */
+span.settings-path-row,
+small.settings-path-row,
+.settings-path-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.settings-path-row .settings-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-copy-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.settings-copy-button:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.settings-copy-button.is-copied {
+  color: var(--pill-win-text);
+  border-color: var(--pill-win-border);
+}
+
+.settings-copy-button svg {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
 span.settings-status-pill {
   display: inline-flex;
   align-items: center;
