@@ -103,6 +103,8 @@ export function SettingsPage() {
     includePrev: true,
   });
   const [hasLocalEdits, setHasLocalEdits] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [dismissedError, setDismissedError] = useState("");
 
   useEffect(() => {
     if (!data || hasLocalEdits) {
@@ -111,12 +113,21 @@ export function SettingsPage() {
     setForm(syncForm(data));
   }, [data, hasLocalEdits]);
 
+  useEffect(() => {
+    if (!savedFlash) {
+      return;
+    }
+    const timer = window.setTimeout(() => setSavedFlash(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [savedFlash]);
+
   const saveMutation = useMutation({
     mutationFn: () => api.saveRuntimeConfig(form),
     onSuccess: (status) => {
       queryClient.setQueryData(runtimeStatusKey, status);
       setForm(syncForm(status));
       setHasLocalEdits(false);
+      setSavedFlash(true);
     },
   });
 
@@ -158,22 +169,13 @@ export function SettingsPage() {
     mutationFn: api.checkForUpdate,
   });
 
-  const currentError = useMemo(() => {
-    return (
-      (saveMutation.error as Error | null)?.message ||
-      (importMutation.error as Error | null)?.message ||
-      (startLiveMutation.error as Error | null)?.message ||
-      (stopLiveMutation.error as Error | null)?.message ||
-      data?.lastError ||
-      ""
-    );
-  }, [
-    data?.lastError,
-    importMutation.error,
-    saveMutation.error,
-    startLiveMutation.error,
-    stopLiveMutation.error,
-  ]);
+  const pollOptions = useMemo(() => {
+    const base = [1, 2, 5, 10];
+    if (!base.includes(form.pollIntervalSeconds)) {
+      base.push(form.pollIntervalSeconds);
+    }
+    return base.sort((a, b) => a - b);
+  }, [form.pollIntervalSeconds]);
 
   if (isLoading) return <StatusMessage>Loading runtime settings…</StatusMessage>;
   if (error) return <StatusMessage tone="error">{(error as Error).message}</StatusMessage>;
@@ -183,6 +185,29 @@ export function SettingsPage() {
   const saveDisabled = saveMutation.isPending || !hasLocalEdits;
   const liveMutationPending = startLiveMutation.isPending || stopLiveMutation.isPending;
   const importDisabled = importMutation.isPending || data.liveRunning;
+  const liveError = (startLiveMutation.error || stopLiveMutation.error) as Error | null;
+
+  const discardEdits = () => {
+    setForm(syncForm(data));
+    setHasLocalEdits(false);
+  };
+
+  // Unsaved edits are saved before starting live tracking so the poller never
+  // silently runs on stale config; a failed save aborts the start.
+  const handleLiveToggle = async () => {
+    if (data.liveRunning) {
+      stopLiveMutation.mutate();
+      return;
+    }
+    if (hasLocalEdits) {
+      try {
+        await saveMutation.mutateAsync();
+      } catch {
+        return;
+      }
+    }
+    startLiveMutation.mutate();
+  };
 
   return (
     <div className="stack-lg">
@@ -192,7 +217,15 @@ export function SettingsPage() {
           <p>{data.liveRunning ? "Live tracking active" : "Manual sync mode"}</p>
         </div>
 
-        {currentError ? <StatusMessage tone="error">{currentError}</StatusMessage> : null}
+        {data.lastError && data.lastError !== dismissedError ? (
+          <div className="settings-last-error" role="alert">
+            <span>Last runtime error</span>
+            <p>{data.lastError}</p>
+            <button type="button" onClick={() => setDismissedError(data.lastError ?? "")}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         <div className="settings-status-grid" aria-label="Runtime status">
           <article className="settings-status-card">
@@ -226,12 +259,30 @@ export function SettingsPage() {
       <section className="panel">
         <div className="panel-head">
           <h3>Tracking Settings</h3>
-          <p>Blank log path uses the default MTGA macOS location.</p>
+          <p>
+            {hasLocalEdits ? <span className="settings-unsaved-chip">Unsaved changes</span> : null}
+            Blank log path uses the default MTGA macOS location.
+          </p>
         </div>
 
         <div className="settings-grid">
           <label className="settings-field">
-            <span>Custom Log Path</span>
+            <span>
+              Custom Log Path
+              {form.logPath.trim() ? (
+                <button
+                  type="button"
+                  className="settings-text-button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setForm((current) => ({ ...current, logPath: "" }));
+                    setHasLocalEdits(true);
+                  }}
+                >
+                  Use default
+                </button>
+              ) : null}
+            </span>
             <input
               className="settings-input"
               type="text"
@@ -249,12 +300,9 @@ export function SettingsPage() {
           </label>
 
           <label className="settings-field">
-            <span>Live Poll Interval (seconds)</span>
-            <input
+            <span>Live Poll Interval</span>
+            <select
               className="settings-input"
-              type="number"
-              min={1}
-              step={1}
               value={String(form.pollIntervalSeconds)}
               onChange={(event) => {
                 setForm((current) => ({
@@ -263,7 +311,13 @@ export function SettingsPage() {
                 }));
                 setHasLocalEdits(true);
               }}
-            />
+            >
+              {pollOptions.map((seconds) => (
+                <option key={seconds} value={String(seconds)}>
+                  {seconds === 1 ? "1 second" : `${seconds} seconds`}
+                </option>
+              ))}
+            </select>
             <small>Lower values update faster but keep the parser busier.</small>
           </label>
         </div>
@@ -289,12 +343,24 @@ export function SettingsPage() {
         <div className="settings-action-row">
           <button
             type="button"
-            className={`control-button${hasLocalEdits ? " control-button--primary" : ""}`}
+            className={`control-button${hasLocalEdits ? " control-button--primary" : ""}${
+              savedFlash ? " is-flash" : ""
+            }`}
             onClick={() => saveMutation.mutate()}
             disabled={saveDisabled}
           >
-            {saveMutation.isPending ? "Saving…" : "Save Settings"}
+            {saveMutation.isPending ? "Saving…" : savedFlash ? "Saved ✓" : "Save Settings"}
           </button>
+          {hasLocalEdits ? (
+            <button
+              type="button"
+              className="control-button control-button--quiet"
+              onClick={discardEdits}
+              disabled={saveMutation.isPending}
+            >
+              Discard
+            </button>
+          ) : null}
           <button
             type="button"
             className="control-button"
@@ -308,8 +374,8 @@ export function SettingsPage() {
             className={`control-button${
               data.liveRunning ? " control-button--quiet" : hasLocalEdits ? "" : " control-button--primary"
             }`}
-            onClick={() => (data.liveRunning ? stopLiveMutation.mutate() : startLiveMutation.mutate())}
-            disabled={liveMutationPending}
+            onClick={() => void handleLiveToggle()}
+            disabled={liveMutationPending || saveMutation.isPending}
           >
             {liveMutationPending
               ? data.liveRunning
@@ -320,6 +386,14 @@ export function SettingsPage() {
                 : "Start Live Tracking"}
           </button>
         </div>
+
+        {saveMutation.error ? (
+          <StatusMessage tone="error">Save failed: {(saveMutation.error as Error).message}</StatusMessage>
+        ) : null}
+        {importMutation.error ? (
+          <StatusMessage tone="error">Import failed: {(importMutation.error as Error).message}</StatusMessage>
+        ) : null}
+        {liveError ? <StatusMessage tone="error">Live tracking: {liveError.message}</StatusMessage> : null}
 
         <p className="settings-note">
           Manual import uses resume mode, so an empty database still gets full history and later runs only ingest new data.

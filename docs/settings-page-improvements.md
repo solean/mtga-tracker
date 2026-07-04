@@ -1,6 +1,6 @@
 # Settings Page Improvements — Plan
 
-Status: Phase 1 implemented (2026-07-03); Phases 2–4 proposed
+Status: Phases 1–2 implemented (2026-07-03); Phases 3–4 proposed
 Scope: `web/src/pages/SettingsPage.tsx`, `web/src/styles.css`, `web/src/lib/{api,types}.ts`,
 `internal/appstate/service.go`, `internal/api/server.go`, `app.go` (desktop-only features)
 
@@ -69,30 +69,49 @@ Implementation notes (as built):
 - Verified in the running app in both themes (computed styles + dirty/clean button-state
   transitions); `bun test` (60 pass) and `tsc -b` clean.
 
-## Phase 2 — Form correctness & feedback (frontend only)
+## Phase 2 — Form correctness & feedback (frontend only) ✅ DONE (2026-07-03)
 
-1. **Kill the unsaved-edits trap.** When `hasLocalEdits` is true and the user clicks
+1. ✅ **Kill the unsaved-edits trap.** When `hasLocalEdits` is true and the user clicks
    Start Live Tracking, save first, then start (chain the mutations), surfacing any save
    error at the button. Alternative considered and rejected: a confirm dialog — extra
    friction for the common "I meant both" case.
-2. **Unsaved-changes indicator + reset.** Show a small "Unsaved changes" chip in the
+2. ✅ **Unsaved-changes indicator + reset.** Show a small "Unsaved changes" chip in the
    Tracking panel head while dirty, and a "Discard" text button that re-syncs the form
    from `runtimeStatus` (`syncForm`). Add "Use default" next to Custom Log Path to clear
    it explicitly.
-3. **Save confirmation.** Transient "Saved ✓" state on the Save button (~2s) after a
+3. ✅ **Save confirmation.** Transient "Saved ✓" state on the Save button (~2s) after a
    successful mutation.
-4. **Localize errors to their action.** Replace the merged `currentError` banner with:
+4. ✅ **Localize errors to their action.** Replace the merged `currentError` banner with:
    - mutation errors rendered directly under the action row that triggered them;
-   - `data.lastError` shown as its own labeled status item ("Last runtime error") with
-     the tick/operation timestamp, visually distinct from a just-failed action, and
-     dismissable (client-side hide until the message changes).
-5. **Poll interval as presets.** Replace the free number input with a select
+   - `data.lastError` shown as its own labeled status item ("Last runtime error"),
+     visually distinct from a just-failed action, and dismissable (client-side hide
+     until the message changes). Note: no timestamp — the status payload doesn't carry
+     one for `lastError`; add server-side if it proves confusing.
+5. ✅ **Poll interval as presets.** Replace the free number input with a select
    (1s / 2s / 5s / 10s). Removes the `min={1}` vs `normalizePollInterval` → 2 mismatch;
    keep the normalizer for config loaded from disk.
 
 Acceptance: edit poll interval → click Start Live → new interval is active (verify via
 runtime status); failed save shows error at the button; dirty chip appears/disappears
 correctly.
+
+Implementation notes (as built):
+- `handleLiveToggle` in `SettingsPage.tsx` chains `saveMutation.mutateAsync()` before
+  `startLive` when dirty and aborts on save failure; the live button is also disabled
+  while a save is pending. Discard is a quiet button next to Save, only visible dirty.
+- Save flash uses `savedFlash` state + `.control-button.is-flash:disabled` (full opacity,
+  win-color border) so the disabled flash state doesn't look dimmed.
+- Mutation errors render as `StatusMessage` lines under the action row, prefixed
+  ("Save failed:", "Import failed:", "Live tracking:"); `.settings-action-row ~ .state`
+  adds spacing. `data.lastError` renders as `.settings-last-error` (loss-tokens card)
+  with a Dismiss button; dismissal is per-message client state.
+- If a saved config has a non-preset interval (e.g. 3s), it's injected into the select
+  options so the control never misrepresents saved state.
+- New CSS: `.settings-unsaved-chip`, `.settings-text-button`, `.settings-last-error`,
+  `.control-button.is-flash`. Verified live: chip/discard/use-default flows, select
+  options, real save roundtrip (5s → verified via /api/runtime/status → restored 2s),
+  flash appears and reverts after ~2s. Start-live chaining not exercised against the
+  running app (would start the real poller); logic covered by review + typecheck.
 
 ## Phase 3 — Information architecture
 

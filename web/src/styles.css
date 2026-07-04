@@ -1525,6 +1525,100 @@ span.settings-status-pill {
   }
 }
 
+.settings-unsaved-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.6rem;
+  border: 1px solid var(--tab-active-border);
+  border-radius: 3px;
+  padding: 0.16rem 0.5rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.settings-text-button {
+  appearance: none;
+  margin-left: 0.6rem;
+  border: none;
+  padding: 0;
+  background: none;
+  color: var(--link);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.settings-text-button:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+}
+
+.settings-last-error {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.8rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--pill-loss-border);
+  border-radius: 3px;
+  padding: 0.7rem 0.85rem;
+  background: var(--pill-loss-bg);
+}
+
+.settings-last-error span {
+  color: var(--pill-loss-text);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.settings-last-error p {
+  grid-column: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.settings-last-error button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: start;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.3rem 0.6rem;
+  background: none;
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.settings-last-error button:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.settings-action-row ~ .state {
+  margin-top: 0.7rem;
+}
+
+.control-button.is-flash:disabled {
+  opacity: 1;
+  border-color: var(--pill-win-border);
+  color: var(--pill-win-text);
+}
+
 .settings-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
