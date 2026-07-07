@@ -3,8 +3,8 @@
 Status: Phases 1–3 implemented (2026-07-04); Phase 4 in progress — items 1 (copyable
 paths), 2 (capabilities), 3 (file picker), 4 (reveal), and 5 (database size) done
 2026-07-04, plus a three-way dark/light/system theme control replacing both the settings
-checkbox and the navbar toggle. Remaining: 6 (auto-start live), 7 (auto-check updates),
-8 (data management, needs spec)
+checkbox and the navbar toggle; item 6 (auto-start live) done 2026-07-07. Remaining:
+7 (auto-check updates), 8 (data management, needs spec)
 Scope: `web/src/pages/SettingsPage.tsx`, `web/src/styles.css`, `web/src/lib/{api,types}.ts`,
 `internal/appstate/service.go`, `internal/api/server.go`, `app.go` (desktop-only features)
 
@@ -183,10 +183,13 @@ Each item is independent; ordered by value/effort.
    Status, rendered via new `formatBytes()` (unit-tested in `web/test/format.test.ts`)
    in the Database card ("8.8 MB on disk"; "Not created yet" when absent). Verified
    against `ls -la` byte counts.
-6. **Auto-start live tracking on launch.** New `Config.autoStartLive bool` (default
-   false). Desktop `startup()` and serve-mode startup call `StartLive()` when set and the
-   log path exists. Checkbox in the Tracking section. Saved config keeps working for old
-   configs (zero-value = off).
+6. ✅ **Auto-start live tracking on launch.** (2026-07-07) `Config.autoStartLive`
+   (default false) + `Service.MaybeAutoStartLive()` — starts the poller only when
+   enabled, not already running, and the active log exists; failures are logged, never
+   abort startup. Called from both desktop `startup()` and serve mode. Checkbox in the
+   Tracking section (part of the saved form). Verified end-to-end with an isolated
+   scratch HOME: config with the flag auto-starts and logs "live tracking auto-started";
+   legacy config without the key stays stopped.
 7. **Auto-check for updates.** New `Config.autoCheckUpdates bool` (default true?). On
    launch (and at most once per 24h), run the existing update check; surface result as a
    dismissable note in the Application panel and persist the last result in Status so it

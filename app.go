@@ -185,6 +185,12 @@ func (a *App) startup(ctx context.Context) {
 
 	server := api.NewServer(store, "", runtimeService)
 	server.SetDesktop(a)
+
+	if started, err := runtimeService.MaybeAutoStartLive(); err != nil {
+		log.Printf("auto-start live tracking failed: %v", err)
+	} else if started {
+		log.Printf("live tracking auto-started")
+	}
 	// The dev API listener below serves the whole app to a plain browser, so
 	// give it the embedded frontend; deep links fall back to index.html there.
 	server.SetStaticAssets(a.staticAssets)

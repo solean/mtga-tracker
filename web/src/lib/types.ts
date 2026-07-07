@@ -217,6 +217,7 @@ export type RuntimeConfig = {
   logPath: string;
   pollIntervalSeconds: number;
   includePrev: boolean;
+  autoStartLive: boolean;
 };
 
 export type RuntimeOperation = {

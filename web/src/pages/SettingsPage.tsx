@@ -222,6 +222,7 @@ function syncForm(status: RuntimeStatus): RuntimeConfig {
     logPath: status.config.logPath ?? "",
     pollIntervalSeconds: status.config.pollIntervalSeconds,
     includePrev: status.config.includePrev,
+    autoStartLive: status.config.autoStartLive ?? false,
   };
 }
 
@@ -238,6 +239,7 @@ export function SettingsPage() {
     logPath: "",
     pollIntervalSeconds: 2,
     includePrev: true,
+    autoStartLive: false,
   });
   const [hasLocalEdits, setHasLocalEdits] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -518,6 +520,18 @@ export function SettingsPage() {
             </StatusPill>
           </p>
         )}
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={form.autoStartLive}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, autoStartLive: event.target.checked }));
+              setHasLocalEdits(true);
+            }}
+          />
+          <span>Start live tracking automatically when the app launches.</span>
+        </label>
 
         <div className="settings-action-row">
           <button

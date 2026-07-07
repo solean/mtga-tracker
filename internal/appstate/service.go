@@ -40,6 +40,7 @@ type Config struct {
 	LogPath             string `json:"logPath"`
 	PollIntervalSeconds int    `json:"pollIntervalSeconds"`
 	IncludePrev         bool   `json:"includePrev"`
+	AutoStartLive       bool   `json:"autoStartLive"`
 }
 
 type OperationResult struct {
@@ -209,6 +210,31 @@ func (s *Service) Status() Status {
 		LastError:             lastError,
 		Capabilities:          s.capabilities,
 	}
+}
+
+// MaybeAutoStartLive starts the live poller when the saved config asks for it
+// and the active log exists. Called once at app launch; a failure should be
+// logged by the caller, not abort startup.
+func (s *Service) MaybeAutoStartLive() (bool, error) {
+	s.mu.RLock()
+	cfg := s.config
+	running := s.liveRunning
+	s.mu.RUnlock()
+
+	if !cfg.AutoStartLive || running {
+		return false, nil
+	}
+	activeLogPath := strings.TrimSpace(cfg.LogPath)
+	if activeLogPath == "" {
+		activeLogPath = s.defaultLogPath
+	}
+	if !fileExists(activeLogPath) {
+		return false, nil
+	}
+	if _, err := s.StartLive(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // RevealablePaths lists the filesystem paths the UI displays; the desktop

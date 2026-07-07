@@ -297,6 +297,12 @@ func runServe(ctx context.Context, args []string) error {
 
 	go compactReplays(ctx, store)
 
+	if started, err := runtimeService.MaybeAutoStartLive(); err != nil {
+		log.Printf("auto-start live tracking failed: %v", err)
+	} else if started {
+		log.Printf("live tracking auto-started")
+	}
+
 	server := api.NewServer(store, staticDir, runtimeService)
 	return server.Run(ctx, *addr)
 }
