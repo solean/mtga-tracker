@@ -5,7 +5,30 @@ import { EventLabel } from "../components/EventLabel";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { pct } from "../lib/format";
-import { useEventSets } from "../lib/useEventSets";
+import { useEventSets, type SetLookup } from "../lib/useEventSets";
+import { useRowLink } from "../lib/useRowLink";
+import type { DeckSummary } from "../lib/types";
+
+function DeckRow({ deck, setLookup }: { deck: DeckSummary; setLookup: SetLookup }) {
+  const rowLink = useRowLink(`/decks/${deck.deckId}`);
+  return (
+    <tr {...rowLink}>
+      <td>
+        <Link to={`/decks/${deck.deckId}`} className="text-link">
+          {deck.deckName || `Deck ${deck.deckId}`}
+        </Link>
+      </td>
+      <td>{deck.format || "-"}</td>
+      <td>
+        <EventLabel eventName={deck.eventName} lookup={setLookup} />
+      </td>
+      <td>{deck.matches}</td>
+      <td>{deck.wins}</td>
+      <td>{deck.losses}</td>
+      <td>{pct(deck.winRate)}</td>
+    </tr>
+  );
+}
 
 export function DecksPage() {
   const { data, isLoading, error } = useQuery({
@@ -39,21 +62,7 @@ export function DecksPage() {
           </thead>
           <tbody>
             {(data ?? []).map((deck) => (
-              <tr key={deck.deckId}>
-                <td>
-                  <Link to={`/decks/${deck.deckId}`} className="text-link">
-                    {deck.deckName || `Deck ${deck.deckId}`}
-                  </Link>
-                </td>
-                <td>{deck.format || "-"}</td>
-                <td>
-                  <EventLabel eventName={deck.eventName} lookup={setLookup} />
-                </td>
-                <td>{deck.matches}</td>
-                <td>{deck.wins}</td>
-                <td>{deck.losses}</td>
-                <td>{pct(deck.winRate)}</td>
-              </tr>
+              <DeckRow key={deck.deckId} deck={deck} setLookup={setLookup} />
             ))}
           </tbody>
         </table>

@@ -9,6 +9,7 @@ import { parseEventName } from "../lib/events";
 import { pct } from "../lib/format";
 import type { DeckSummary, DraftSession } from "../lib/types";
 import { useEventSets, type SetLookup } from "../lib/useEventSets";
+import { useRowLink } from "../lib/useRowLink";
 
 function parseDateValue(timestamp?: string | null): number | null {
   if (!timestamp) {
@@ -91,6 +92,48 @@ function formatDraftDeckDate(deck: DeckSummary): string {
   }).format(date);
 }
 
+function DraftSessionRow({ draft, setLookup }: { draft: DraftSession; setLookup: SetLookup }) {
+  const rowLink = useRowLink(`/drafts/${draft.id}`);
+  return (
+    <tr {...rowLink}>
+      <td>
+        <Link to={`/drafts/${draft.id}`} className="text-link">
+          {draft.id}
+        </Link>
+      </td>
+      <td>{formatDraftSessionDate(draft)}</td>
+      <td>{formatDraftSessionType(draft)}</td>
+      <td>
+        <DraftSessionSet draft={draft} lookup={setLookup} />
+      </td>
+      <td>{draft.wins ?? "-"}</td>
+      <td>{draft.losses ?? "-"}</td>
+    </tr>
+  );
+}
+
+function DraftDeckRow({ deck, setLookup }: { deck: DeckSummary; setLookup: SetLookup }) {
+  const rowLink = useRowLink(`/decks/${deck.deckId}`);
+  return (
+    <tr {...rowLink}>
+      <td>{formatDraftDeckDate(deck)}</td>
+      <td>
+        <Link to={`/decks/${deck.deckId}`} className="text-link">
+          {deck.deckName || `Deck ${deck.deckId}`}
+        </Link>
+      </td>
+      <td>{deck.format || "-"}</td>
+      <td>
+        <EventLabel eventName={deck.eventName} lookup={setLookup} />
+      </td>
+      <td>{deck.matches}</td>
+      <td>{deck.wins}</td>
+      <td>{deck.losses}</td>
+      <td>{pct(deck.winRate)}</td>
+    </tr>
+  );
+}
+
 export function DraftsPage() {
   const draftsQuery = useQuery({
     queryKey: ["drafts"],
@@ -165,20 +208,7 @@ export function DraftsPage() {
             </thead>
             <tbody>
               {drafts.map((draft) => (
-                <tr key={draft.id}>
-                  <td>
-                    <Link to={`/drafts/${draft.id}`} className="text-link">
-                      {draft.id}
-                    </Link>
-                  </td>
-                  <td>{formatDraftSessionDate(draft)}</td>
-                  <td>{formatDraftSessionType(draft)}</td>
-                  <td>
-                    <DraftSessionSet draft={draft} lookup={setLookup} />
-                  </td>
-                  <td>{draft.wins ?? "-"}</td>
-                  <td>{draft.losses ?? "-"}</td>
-                </tr>
+                <DraftSessionRow key={draft.id} draft={draft} setLookup={setLookup} />
               ))}
             </tbody>
           </table>
@@ -206,22 +236,7 @@ export function DraftsPage() {
             </thead>
             <tbody>
               {draftDecks.map((deck) => (
-                <tr key={deck.deckId}>
-                  <td>{formatDraftDeckDate(deck)}</td>
-                  <td>
-                    <Link to={`/decks/${deck.deckId}`} className="text-link">
-                      {deck.deckName || `Deck ${deck.deckId}`}
-                    </Link>
-                  </td>
-                  <td>{deck.format || "-"}</td>
-                  <td>
-                    <EventLabel eventName={deck.eventName} lookup={setLookup} />
-                  </td>
-                  <td>{deck.matches}</td>
-                  <td>{deck.wins}</td>
-                  <td>{deck.losses}</td>
-                  <td>{pct(deck.winRate)}</td>
-                </tr>
+                <DraftDeckRow key={deck.deckId} deck={deck} setLookup={setLookup} />
               ))}
             </tbody>
           </table>
