@@ -195,6 +195,7 @@ func (a *App) startup(ctx context.Context) {
 	// give it the embedded frontend; deep links fall back to index.html there.
 	server.SetStaticAssets(a.staticAssets)
 	bgCtx, cancel := context.WithCancel(context.Background())
+	server.StartUpdateChecker(bgCtx)
 
 	a.database = database
 	a.cancel = cancel

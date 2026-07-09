@@ -304,5 +304,6 @@ func runServe(ctx context.Context, args []string) error {
 	}
 
 	server := api.NewServer(store, staticDir, runtimeService)
+	server.StartUpdateChecker(ctx)
 	return server.Run(ctx, *addr)
 }

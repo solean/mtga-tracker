@@ -41,6 +41,18 @@ type Config struct {
 	PollIntervalSeconds int    `json:"pollIntervalSeconds"`
 	IncludePrev         bool   `json:"includePrev"`
 	AutoStartLive       bool   `json:"autoStartLive"`
+	AutoCheckUpdates    bool   `json:"autoCheckUpdates"`
+}
+
+// UpdateCheck is the outcome of a GitHub release check. CheckedAt lets the UI
+// show how fresh the result is.
+type UpdateCheck struct {
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReleaseURL      string `json:"releaseUrl,omitempty"`
+	Note            string `json:"note,omitempty"`
+	CheckedAt       string `json:"checkedAt,omitempty"`
 }
 
 type OperationResult struct {
@@ -79,6 +91,7 @@ type Status struct {
 	LastLiveActivity      *OperationResult `json:"lastLiveActivity,omitempty"`
 	LastError             string           `json:"lastError,omitempty"`
 	Capabilities          Capabilities     `json:"capabilities"`
+	UpdateCheck           *UpdateCheck     `json:"updateCheck,omitempty"`
 }
 
 type Service struct {
@@ -101,6 +114,7 @@ type Service struct {
 	lastImport       *OperationResult
 	lastLiveActivity *OperationResult
 	lastError        string
+	lastUpdateCheck  *UpdateCheck
 }
 
 func NewService(opts Options) (*Service, error) {
@@ -144,6 +158,7 @@ func NewService(opts Options) (*Service, error) {
 	cfg := Config{
 		PollIntervalSeconds: max(1, int(poll.Round(time.Second)/time.Second)),
 		IncludePrev:         true,
+		AutoCheckUpdates:    true,
 	}
 
 	if raw, err := os.ReadFile(configPath); err == nil {
@@ -177,6 +192,11 @@ func (s *Service) Status() Status {
 	lastImport := cloneOperationResult(s.lastImport)
 	lastLiveActivity := cloneOperationResult(s.lastLiveActivity)
 	lastError := s.lastError
+	var lastUpdateCheck *UpdateCheck
+	if s.lastUpdateCheck != nil {
+		cloned := *s.lastUpdateCheck
+		lastUpdateCheck = &cloned
+	}
 	s.mu.RUnlock()
 
 	activeLogPath := strings.TrimSpace(cfg.LogPath)
@@ -209,7 +229,16 @@ func (s *Service) Status() Status {
 		LastLiveActivity:      lastLiveActivity,
 		LastError:             lastError,
 		Capabilities:          s.capabilities,
+		UpdateCheck:           lastUpdateCheck,
 	}
+}
+
+// SetUpdateCheck records the latest release-check result so it rides along on
+// the status payload instead of vanishing when the settings page unmounts.
+func (s *Service) SetUpdateCheck(result UpdateCheck) {
+	s.mu.Lock()
+	s.lastUpdateCheck = &result
+	s.mu.Unlock()
 }
 
 // MaybeAutoStartLive starts the live poller when the saved config asks for it

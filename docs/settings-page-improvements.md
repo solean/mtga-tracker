@@ -3,8 +3,8 @@
 Status: Phases 1–3 implemented (2026-07-04); Phase 4 in progress — items 1 (copyable
 paths), 2 (capabilities), 3 (file picker), 4 (reveal), and 5 (database size) done
 2026-07-04, plus a three-way dark/light/system theme control replacing both the settings
-checkbox and the navbar toggle; item 6 (auto-start live) done 2026-07-07. Remaining:
-7 (auto-check updates), 8 (data management, needs spec)
+checkbox and the navbar toggle; item 6 (auto-start live) done 2026-07-07; item 7
+(auto-check updates) done 2026-07-09. Remaining: 8 (data management, needs spec)
 Scope: `web/src/pages/SettingsPage.tsx`, `web/src/styles.css`, `web/src/lib/{api,types}.ts`,
 `internal/appstate/service.go`, `internal/api/server.go`, `app.go` (desktop-only features)
 
@@ -190,10 +190,16 @@ Each item is independent; ordered by value/effort.
    Tracking section (part of the saved form). Verified end-to-end with an isolated
    scratch HOME: config with the flag auto-starts and logs "live tracking auto-started";
    legacy config without the key stays stopped.
-7. **Auto-check for updates.** New `Config.autoCheckUpdates bool` (default true?). On
-   launch (and at most once per 24h), run the existing update check; surface result as a
-   dismissable note in the Application panel and persist the last result in Status so it
-   survives navigation (today the result vanishes when leaving the page).
+7. ✅ **Auto-check for updates.** (2026-07-09) `Config.autoCheckUpdates` — true for
+   fresh installs, false when an existing config lacks the key (same migration pattern
+   as other flags). `Server.StartUpdateChecker` (both entry points) checks at launch and
+   every 24h while running, re-reading the config each cycle; results are stored via
+   `Service.SetUpdateCheck` and ride the status payload as `updateCheck` (+`checkedAt`),
+   so they survive navigation. Manual checks persist the same way. The Application-panel
+   checkbox auto-saves (like launch-at-login) and fires an immediate check when first
+   enabled. Deviations from the sketch: no cross-restart 24h throttle (launch checks are
+   cheap; ticker covers long-running sessions) and the note is not dismissable — it's
+   informational with a "Checked X ago" stamp rather than an alert.
 8. **Data management (stretch).** "Back up database" (copy to user-chosen location via
    save dialog, desktop-only) and "Rebuild from logs" (dangerous: delete + full re-import,
    requires typed confirmation). Spec separately before building; listed here so the Data

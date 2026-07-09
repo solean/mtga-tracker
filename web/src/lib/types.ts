@@ -218,6 +218,7 @@ export type RuntimeConfig = {
   pollIntervalSeconds: number;
   includePrev: boolean;
   autoStartLive: boolean;
+  autoCheckUpdates: boolean;
 };
 
 export type RuntimeOperation = {
@@ -256,6 +257,7 @@ export type RuntimeStatus = {
   lastLiveActivity?: RuntimeOperation;
   lastError?: string;
   capabilities?: RuntimeCapabilities;
+  updateCheck?: UpdateCheck;
 };
 
 export type RuntimeCapabilities = {
@@ -277,4 +279,5 @@ export type UpdateCheck = {
   updateAvailable: boolean;
   releaseUrl?: string;
   note?: string;
+  checkedAt?: string;
 };

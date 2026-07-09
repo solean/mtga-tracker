@@ -392,47 +392,37 @@ func (s *Server) handleRuntimeAutostart(w http.ResponseWriter, r *http.Request) 
 
 const updateCheckRepo = "solean/mtga-tracker"
 
-type updateCheckResponse struct {
-	CurrentVersion  string `json:"currentVersion"`
-	LatestVersion   string `json:"latestVersion,omitempty"`
-	UpdateAvailable bool   `json:"updateAvailable"`
-	ReleaseURL      string `json:"releaseUrl,omitempty"`
-	Note            string `json:"note,omitempty"`
-}
-
-func (s *Server) handleRuntimeUpdateCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+// runUpdateCheck queries GitHub for the latest release. Failures are reported
+// in the result's Note rather than as errors so callers can always store and
+// display the outcome.
+func (s *Server) runUpdateCheck(ctx context.Context) appstate.UpdateCheck {
+	out := appstate.UpdateCheck{
+		CurrentVersion: version.Version,
+		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
 
-	out := updateCheckResponse{CurrentVersion: version.Version}
-
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"https://api.github.com/repos/"+updateCheckRepo+"/releases/latest", nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		out.Note = fmt.Sprintf("update check failed: %v", err)
+		return out
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		out.Note = fmt.Sprintf("update check failed: %v", err)
-		writeJSON(w, http.StatusOK, out)
-		return
+		return out
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
 		out.Note = "no releases published yet"
-		writeJSON(w, http.StatusOK, out)
-		return
+		return out
 	}
 	if resp.StatusCode != http.StatusOK {
 		out.Note = fmt.Sprintf("update check failed: GitHub returned %d", resp.StatusCode)
-		writeJSON(w, http.StatusOK, out)
-		return
+		return out
 	}
 
 	release := struct {
@@ -441,14 +431,53 @@ func (s *Server) handleRuntimeUpdateCheck(w http.ResponseWriter, r *http.Request
 	}{}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
 		out.Note = fmt.Sprintf("update check failed: %v", err)
-		writeJSON(w, http.StatusOK, out)
-		return
+		return out
 	}
 
 	out.LatestVersion = strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
 	out.ReleaseURL = release.HTMLURL
 	out.UpdateAvailable = isNewerVersion(out.LatestVersion, strings.TrimPrefix(out.CurrentVersion, "v"))
-	writeJSON(w, http.StatusOK, out)
+	return out
+}
+
+func (s *Server) handleRuntimeUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	result := s.runUpdateCheck(r.Context())
+	if s.appState != nil {
+		s.appState.SetUpdateCheck(result)
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// StartUpdateChecker checks for updates at launch and then daily, whenever the
+// saved config enables it. The config is re-read every cycle so toggling the
+// setting takes effect without a restart.
+func (s *Server) StartUpdateChecker(ctx context.Context) {
+	if s.appState == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			if s.appState.Status().Config.AutoCheckUpdates {
+				result := s.runUpdateCheck(ctx)
+				s.appState.SetUpdateCheck(result)
+				if result.UpdateAvailable {
+					log.Printf("update available: %s (current %s)", result.LatestVersion, result.CurrentVersion)
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 }
 
 // isNewerVersion compares dotted numeric versions; non-numeric segments fall

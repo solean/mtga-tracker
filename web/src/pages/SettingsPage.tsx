@@ -223,6 +223,7 @@ function syncForm(status: RuntimeStatus): RuntimeConfig {
     pollIntervalSeconds: status.config.pollIntervalSeconds,
     includePrev: status.config.includePrev,
     autoStartLive: status.config.autoStartLive ?? false,
+    autoCheckUpdates: status.config.autoCheckUpdates ?? false,
   };
 }
 
@@ -240,6 +241,7 @@ export function SettingsPage() {
     pollIntervalSeconds: 2,
     includePrev: true,
     autoStartLive: false,
+    autoCheckUpdates: false,
   });
   const [hasLocalEdits, setHasLocalEdits] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -306,6 +308,33 @@ export function SettingsPage() {
 
   const updateCheckMutation = useMutation({
     mutationFn: api.checkForUpdate,
+    onSuccess: () => {
+      // The backend stores the result on the status payload; refresh it so the
+      // displayed result and its timestamp come from one source.
+      void queryClient.invalidateQueries({ queryKey: runtimeStatusKey });
+    },
+  });
+
+  // Saves immediately (like launch-at-login) rather than through the form's
+  // Save button, since it lives in the Application panel away from the form.
+  const autoCheckUpdatesMutation = useMutation({
+    mutationFn: (enabled: boolean) => {
+      const saved = queryClient.getQueryData<RuntimeStatus>(runtimeStatusKey);
+      if (!saved) {
+        return Promise.reject(new Error("runtime status not loaded yet"));
+      }
+      return api.saveRuntimeConfig({ ...saved.config, autoCheckUpdates: enabled });
+    },
+    onSuccess: (status) => {
+      queryClient.setQueryData(runtimeStatusKey, status);
+      // Keep a dirty form consistent so a later Save doesn't revert the toggle.
+      setForm((current) => ({ ...current, autoCheckUpdates: status.config.autoCheckUpdates ?? false }));
+      // The background checker only wakes daily, so run one check right away
+      // when the setting is switched on.
+      if (status.config.autoCheckUpdates && !data?.updateCheck) {
+        updateCheckMutation.mutate();
+      }
+    },
   });
 
   const pickLogMutation = useMutation({
@@ -333,6 +362,7 @@ export function SettingsPage() {
   const effectiveActivePath = form.logPath.trim() || data.defaultLogPath;
   const canPickFile = Boolean(data.capabilities?.pickFile);
   const canReveal = Boolean(data.capabilities?.reveal);
+  const updateResult = data.updateCheck ?? updateCheckMutation.data;
   const saveDisabled = saveMutation.isPending || !hasLocalEdits;
   const liveMutationPending = startLiveMutation.isPending || stopLiveMutation.isPending;
   const importDisabled = importMutation.isPending || data.liveRunning;
@@ -689,6 +719,19 @@ export function SettingsPage() {
           <p className="settings-note">{autostartQuery.data.note}</p>
         ) : null}
 
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={data.config.autoCheckUpdates ?? false}
+            onChange={(event) => autoCheckUpdatesMutation.mutate(event.target.checked)}
+            disabled={autoCheckUpdatesMutation.isPending}
+          />
+          <span>Check for updates automatically once a day.</span>
+        </label>
+        {autoCheckUpdatesMutation.error ? (
+          <StatusMessage tone="error">{(autoCheckUpdatesMutation.error as Error).message}</StatusMessage>
+        ) : null}
+
         <div className="settings-action-row">
           <button
             type="button"
@@ -702,17 +745,18 @@ export function SettingsPage() {
         {updateCheckMutation.error ? (
           <StatusMessage tone="error">{(updateCheckMutation.error as Error).message}</StatusMessage>
         ) : null}
-        {updateCheckMutation.data ? (
+        {updateResult ? (
           <p className="settings-note">
-            {summarizeUpdateCheck(updateCheckMutation.data)}
-            {updateCheckMutation.data.updateAvailable && updateCheckMutation.data.releaseUrl ? (
+            {summarizeUpdateCheck(updateResult)}
+            {updateResult.updateAvailable && updateResult.releaseUrl ? (
               <>
                 {" "}
-                <a href={updateCheckMutation.data.releaseUrl} target="_blank" rel="noreferrer">
+                <a href={updateResult.releaseUrl} target="_blank" rel="noreferrer">
                   View release
                 </a>
               </>
             ) : null}
+            {updateResult.checkedAt ? ` · Checked ${formatRelativeTime(updateResult.checkedAt)}` : null}
           </p>
         ) : null}
         <p className="settings-note">
