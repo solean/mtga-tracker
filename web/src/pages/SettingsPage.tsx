@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatBytes, formatDateTime, formatRelativeTime, shortenHomePath } from "../lib/format";
-import { useThemeControls, type ThemePreference } from "../lib/theme";
+import { useThemeControls, type ColorScheme, type ModePreference } from "../lib/theme";
 import type { RuntimeConfig, RuntimeOperation, RuntimeStatus, UpdateCheck } from "../lib/types";
 
 function StatusPill({
@@ -157,10 +157,44 @@ function MonitorIcon() {
   );
 }
 
-const themeOptions: Array<{ value: ThemePreference; label: string; icon: () => JSX.Element }> = [
+function FlameIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <path
+        d="M8 1.8c.4 2.2-2.9 3.6-2.9 6.6a2.9 2.9 0 0 0 5.8 0c0-.9-.4-1.7-.9-2.4-.1 1-.5 1.6-1.2 1.9.5-2.3-.1-4.6-.8-6.1Z"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DropIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <path d="M8 1.8S3.6 7 3.6 10a4.4 4.4 0 0 0 8.8 0C12.4 7 8 1.8 8 1.8Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function HexIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <path d="M8 1.6 13.6 4.8v6.4L8 14.4 2.4 11.2V4.8L8 1.6Z" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="1.6" />
+    </svg>
+  );
+}
+
+const modeOptions: Array<{ value: ModePreference; label: string; icon: () => JSX.Element }> = [
   { value: "dark", label: "Dark", icon: MoonIcon },
   { value: "light", label: "Light", icon: SunIcon },
   { value: "system", label: "System", icon: MonitorIcon },
+];
+
+const schemeOptions: Array<{ value: ColorScheme; label: string; icon: () => JSX.Element }> = [
+  { value: "ember", label: "Ember", icon: FlameIcon },
+  { value: "dimir", label: "Dimir Ink", icon: DropIcon },
+  { value: "steel", label: "Cold Steel", icon: HexIcon },
 ];
 
 const runtimeStatusKey = ["runtime-status"] as const;
@@ -229,7 +263,7 @@ function syncForm(status: RuntimeStatus): RuntimeConfig {
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const { preference, setPreference } = useThemeControls();
+  const { modePreference, setModePreference, scheme, setScheme } = useThemeControls();
   const { data, isLoading, error } = useQuery({
     queryKey: runtimeStatusKey,
     queryFn: api.runtimeStatus,
@@ -677,18 +711,40 @@ export function SettingsPage() {
         <p className="settings-note settings-version">Version {data.version || "unknown"}</p>
 
         <div className="settings-field settings-theme-field">
-          <span id="settings-theme-label">Theme</span>
-          <div className="settings-segmented" role="radiogroup" aria-labelledby="settings-theme-label">
-            {themeOptions.map((option) => {
+          <span id="settings-mode-label">Appearance</span>
+          <div className="settings-segmented" role="radiogroup" aria-labelledby="settings-mode-label">
+            {modeOptions.map((option) => {
               const Icon = option.icon;
               return (
                 <button
                   key={option.value}
                   type="button"
                   role="radio"
-                  aria-checked={preference === option.value}
-                  className={`settings-segment${preference === option.value ? " is-active" : ""}`}
-                  onClick={() => setPreference(option.value)}
+                  aria-checked={modePreference === option.value}
+                  className={`settings-segment${modePreference === option.value ? " is-active" : ""}`}
+                  onClick={() => setModePreference(option.value)}
+                >
+                  <Icon />
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="settings-field settings-theme-field">
+          <span id="settings-scheme-label">Color Scheme</span>
+          <div className="settings-segmented" role="radiogroup" aria-labelledby="settings-scheme-label">
+            {schemeOptions.map((option) => {
+              const Icon = option.icon;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={scheme === option.value}
+                  className={`settings-segment${scheme === option.value ? " is-active" : ""}`}
+                  onClick={() => setScheme(option.value)}
                 >
                   <Icon />
                   {option.label}

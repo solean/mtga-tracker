@@ -1,24 +1,35 @@
 import { createContext, useContext } from "react";
 
-export type Theme = "dark" | "light";
-export type ThemePreference = Theme | "system";
+/** Light/dark appearance, orthogonal to the color scheme. */
+export type ThemeMode = "dark" | "light";
+export type ModePreference = ThemeMode | "system";
+
+/** Palette identity applied on top of the mode. */
+export type ColorScheme = "ember" | "dimir" | "steel";
+
+export const COLOR_SCHEMES: readonly ColorScheme[] = ["ember", "dimir", "steel"];
 
 export type ThemeContextValue = {
-  /** Resolved theme actually applied to the document. */
-  theme: Theme;
-  /** Stored preference; "system" follows prefers-color-scheme. */
-  preference: ThemePreference;
-  setPreference: (preference: ThemePreference) => void;
+  /** Resolved appearance actually applied to the document. */
+  mode: ThemeMode;
+  /** Stored appearance preference; "system" follows prefers-color-scheme. */
+  modePreference: ModePreference;
+  setModePreference: (preference: ModePreference) => void;
+  scheme: ColorScheme;
+  setScheme: (scheme: ColorScheme) => void;
 };
 
 export const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
-  preference: "dark",
-  setPreference: () => {},
+  mode: "dark",
+  modePreference: "dark",
+  setModePreference: () => {},
+  scheme: "ember",
+  setScheme: () => {},
 });
 
-export function useTheme(): Theme {
-  return useContext(ThemeContext).theme;
+export function useTheme(): { mode: ThemeMode; scheme: ColorScheme } {
+  const { mode, scheme } = useContext(ThemeContext);
+  return { mode, scheme };
 }
 
 export function useThemeControls(): ThemeContextValue {

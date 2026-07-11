@@ -15,7 +15,7 @@ import {
   type RankProgressSeries,
   type SeasonView,
 } from "../lib/rankProgress";
-import { useTheme, type Theme } from "../lib/theme";
+import { useTheme, type ColorScheme, type ThemeMode } from "../lib/theme";
 
 type ChartThemeTokens = {
   accent: string;
@@ -32,8 +32,8 @@ type ChartThemeTokens = {
   tooltipText: string;
 };
 
-const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
-  dark: {
+const CHART_THEME_TOKENS: Record<`${ColorScheme}-${ThemeMode}`, ChartThemeTokens> = {
+  "ember-dark": {
     accent: "#ff8a24",
     accentFaint: "rgba(255, 138, 36, 0.02)",
     accentGlow: "rgba(255, 138, 36, 0.24)",
@@ -47,7 +47,35 @@ const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
     tooltipBorder: "rgba(255, 168, 90, 0.3)",
     tooltipText: "#f2e6db",
   },
-  light: {
+  "dimir-dark": {
+    accent: "#37b7e0",
+    accentFaint: "rgba(55, 183, 224, 0.02)",
+    accentGlow: "rgba(55, 183, 224, 0.24)",
+    accentSoft: "rgba(55, 183, 224, 0.12)",
+    axisLine: "rgba(90, 185, 220, 0.16)",
+    axisText: "#93b2c4",
+    hoverBorder: "#e3edf4",
+    pointBorder: "rgba(10, 18, 24, 0.94)",
+    splitLine: "rgba(55, 183, 224, 0.03)",
+    tooltipBackground: "rgba(5, 10, 15, 0.97)",
+    tooltipBorder: "rgba(90, 190, 226, 0.3)",
+    tooltipText: "#e3edf4",
+  },
+  "steel-dark": {
+    accent: "#8ab2dd",
+    accentFaint: "rgba(138, 178, 221, 0.02)",
+    accentGlow: "rgba(138, 178, 221, 0.22)",
+    accentSoft: "rgba(138, 178, 221, 0.12)",
+    axisLine: "rgba(150, 172, 198, 0.16)",
+    axisText: "#a9b4c1",
+    hoverBorder: "#e6eaef",
+    pointBorder: "rgba(13, 17, 22, 0.94)",
+    splitLine: "rgba(138, 178, 221, 0.03)",
+    tooltipBackground: "rgba(7, 10, 14, 0.97)",
+    tooltipBorder: "rgba(150, 182, 216, 0.3)",
+    tooltipText: "#e6eaef",
+  },
+  "ember-light": {
     accent: "#c55a11",
     accentFaint: "rgba(197, 90, 17, 0.02)",
     accentGlow: "rgba(197, 90, 17, 0.15)",
@@ -60,6 +88,34 @@ const CHART_THEME_TOKENS: Record<Theme, ChartThemeTokens> = {
     tooltipBackground: "rgba(250, 243, 236, 0.98)",
     tooltipBorder: "rgba(140, 62, 8, 0.28)",
     tooltipText: "#24150b",
+  },
+  "dimir-light": {
+    accent: "#0f7fb2",
+    accentFaint: "rgba(15, 127, 178, 0.02)",
+    accentGlow: "rgba(15, 127, 178, 0.15)",
+    accentSoft: "rgba(15, 127, 178, 0.1)",
+    axisLine: "rgba(30, 90, 125, 0.14)",
+    axisText: "#46647a",
+    hoverBorder: "#fbfcfd",
+    pointBorder: "rgba(247, 249, 250, 0.96)",
+    splitLine: "rgba(15, 127, 178, 0.02)",
+    tooltipBackground: "rgba(250, 252, 253, 0.98)",
+    tooltipBorder: "rgba(30, 90, 125, 0.28)",
+    tooltipText: "#101c26",
+  },
+  "steel-light": {
+    accent: "#3f699b",
+    accentFaint: "rgba(63, 105, 155, 0.02)",
+    accentGlow: "rgba(63, 105, 155, 0.15)",
+    accentSoft: "rgba(63, 105, 155, 0.1)",
+    axisLine: "rgba(70, 90, 115, 0.14)",
+    axisText: "#55606e",
+    hoverBorder: "#f7f9fb",
+    pointBorder: "rgba(238, 241, 244, 0.96)",
+    splitLine: "rgba(63, 105, 155, 0.02)",
+    tooltipBackground: "rgba(242, 244, 247, 0.98)",
+    tooltipBorder: "rgba(70, 90, 115, 0.28)",
+    tooltipText: "#171b21",
   },
 };
 
@@ -138,7 +194,7 @@ function emptyStateMessage(seasonView: SeasonView): string {
 
 export function RankProgressPanel() {
   const tabBaseId = useId();
-  const theme = useTheme();
+  const { mode, scheme } = useTheme();
   const [ladder, setLadder] = useState<Ladder>("constructed");
   const [seasonView, setSeasonView] = useState<SeasonView>("current");
   const { data, isLoading, error } = useQuery({
@@ -169,7 +225,7 @@ export function RankProgressPanel() {
   const currentRank = latestPoint ? latestPoint.rankLabel : "Unranked";
   const currentRecord = series?.record ? `${series.record.wins}W-${series.record.losses}L` : null;
   const rankMoved = firstPoint != null && latestPoint != null && firstPoint.rankLabel !== latestPoint.rankLabel;
-  const chartTheme = CHART_THEME_TOKENS[theme];
+  const chartTheme = CHART_THEME_TOKENS[`${scheme}-${mode}`];
 
   // Current standing on the ladder that is not selected, so both ranks are
   // visible without toggling.
@@ -430,7 +486,7 @@ export function RankProgressPanel() {
         ) : null}
         {readyState && hasChartableTrend ? (
           <ReactECharts
-            key={`${ladder}-${seasonView}-${theme}`}
+            key={`${ladder}-${seasonView}-${scheme}-${mode}`}
             option={readyState.chartOption}
             style={{ height: 320 }}
           />

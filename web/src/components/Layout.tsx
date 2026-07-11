@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigationType } from "react-router-dom";
 
-import { ThemeContext, type Theme, type ThemePreference } from "../lib/theme";
+import {
+  COLOR_SCHEMES,
+  ThemeContext,
+  type ColorScheme,
+  type ModePreference,
+  type ThemeMode,
+} from "../lib/theme";
 import { AppErrorFallback, ErrorBoundary } from "./ErrorBoundary";
 import { LiveMatchBanner } from "./LiveMatchBanner";
 import { Plasma } from "./Plasma";
@@ -14,7 +20,8 @@ const tabs = [
   { to: "/settings", label: "Settings" },
 ];
 
-const THEME_STORAGE_KEY = "mtgdata.theme";
+const MODE_STORAGE_KEY = "mtgdata.theme";
+const SCHEME_STORAGE_KEY = "mtgdata.scheme";
 // Temporary kill switch while investigating frontend jank from the fixed WebGL background.
 const ENABLE_BACKGROUND_ANIMATION = false;
 const scrollPositions = new Map<string, number>();
@@ -31,7 +38,7 @@ function pageTitle(pathname: string): string {
   return "MTGData Control Room";
 }
 
-function applyThemeColorMeta(theme: Theme) {
+function applyThemeColorMeta(mode: ThemeMode, scheme: ColorScheme) {
   const head = document.head;
   if (!head) return;
 
@@ -42,20 +49,42 @@ function applyThemeColorMeta(theme: Theme) {
     head.appendChild(metaThemeColor);
   }
 
-  metaThemeColor.setAttribute("content", theme === "dark" ? "#050302" : "#f4ece1");
+  const themeColors: Record<ColorScheme, Record<ThemeMode, string>> = {
+    ember: { dark: "#050302", light: "#f4ece1" },
+    dimir: { dark: "#020507", light: "#f7f9fa" },
+    steel: { dark: "#040608", light: "#eef0f3" },
+  };
+  metaThemeColor.setAttribute("content", themeColors[scheme][mode]);
 }
 
-function readStoredPreference(): ThemePreference {
+/** Legacy single-key values "dimir"/"steel" migrate to mode=dark + that scheme. */
+function readStoredModePreference(): ModePreference {
   if (typeof window === "undefined") return "dark";
   try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return stored === "light" || stored === "system" ? stored : "dark";
+    const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
+    if (stored === "light" || stored === "system") return stored;
+    return "dark";
   } catch {
     return "dark";
   }
 }
 
-function readSystemTheme(): Theme {
+function readStoredScheme(): ColorScheme {
+  if (typeof window === "undefined") return "ember";
+  try {
+    const stored = window.localStorage.getItem(SCHEME_STORAGE_KEY);
+    if ((COLOR_SCHEMES as readonly string[]).includes(stored ?? "")) {
+      return stored as ColorScheme;
+    }
+    const legacy = window.localStorage.getItem(MODE_STORAGE_KEY);
+    if (legacy === "dimir" || legacy === "steel") return legacy;
+    return "ember";
+  } catch {
+    return "ember";
+  }
+}
+
+function readSystemTheme(): ThemeMode {
   if (typeof window === "undefined" || !window.matchMedia) return "dark";
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
@@ -63,10 +92,14 @@ function readSystemTheme(): Theme {
 export function Layout() {
   const location = useLocation();
   const navigationType = useNavigationType();
-  const [preference, setPreference] = useState<ThemePreference>(readStoredPreference);
-  const [systemTheme, setSystemTheme] = useState<Theme>(readSystemTheme);
-  const theme: Theme = preference === "system" ? systemTheme : preference;
-  const themeContextValue = useMemo(() => ({ theme, preference, setPreference }), [theme, preference]);
+  const [modePreference, setModePreference] = useState<ModePreference>(readStoredModePreference);
+  const [scheme, setScheme] = useState<ColorScheme>(readStoredScheme);
+  const [systemTheme, setSystemTheme] = useState<ThemeMode>(readSystemTheme);
+  const mode: ThemeMode = modePreference === "system" ? systemTheme : modePreference;
+  const themeContextValue = useMemo(
+    () => ({ mode, modePreference, setModePreference, scheme, setScheme }),
+    [mode, modePreference, scheme],
+  );
 
   useEffect(() => {
     if (!window.matchMedia) return;
@@ -77,14 +110,16 @@ export function Layout() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    applyThemeColorMeta(theme);
+    document.documentElement.dataset.theme = mode;
+    document.documentElement.dataset.scheme = scheme;
+    applyThemeColorMeta(mode, scheme);
     try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, preference);
+      window.localStorage.setItem(MODE_STORAGE_KEY, modePreference);
+      window.localStorage.setItem(SCHEME_STORAGE_KEY, scheme);
     } catch {
       // Ignore storage failures and keep the in-memory theme.
     }
-  }, [theme, preference]);
+  }, [mode, modePreference, scheme]);
 
   useEffect(() => {
     const context = pageTitle(location.pathname);
