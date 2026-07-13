@@ -1,4 +1,4 @@
-# MTGData MVP
+# Ponder
 
 Local MTG Arena log parser + viewer.
 
