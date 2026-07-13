@@ -41,12 +41,12 @@ import {
   boardZoneLabel,
   buildReplayBeat,
   buildReplayBoardCensus,
+  buildReplayGameGroups,
   buildReplayLifeSeries,
   buildReplayTickKinds,
   buildReplayTurnBoundaries,
   cardDisplayName,
   cardFallbackHref,
-  filterMeaningfulReplayFrames,
   findReplayKeyMoments,
   groupBattlefieldCardStacks,
   isInspectableZoneKind,
@@ -73,7 +73,6 @@ import {
   sortBattlefieldSectionObjects,
   sortReplayObjects,
   summarizeReplayFrameZones,
-  summarizeReplayGame,
   summarizeReplayZones,
   timelinePhaseLabel,
   timelinePlayerLabel,
@@ -3282,36 +3281,14 @@ export function MatchDetailPage() {
   );
   const timelineRows = timelineQuery.data ?? query.data?.cardPlays ?? [];
   const replayFrames = replayQuery.data ?? [];
-  const replayGroups = useMemo<ReplayGameGroup[]>(() => {
-    const byGame = new Map<number, MatchReplayFrame[]>();
-    for (const frame of replayFrames) {
-      const gameNumber =
-        frame.gameNumber && frame.gameNumber > 0 ? frame.gameNumber : 1;
-      const rows = byGame.get(gameNumber);
-      if (rows) {
-        rows.push(frame);
-      } else {
-        byGame.set(gameNumber, [frame]);
-      }
-    }
-
-    const groups = Array.from(byGame.entries())
-      .map(([gameNumber, frames]) => ({
-        gameNumber,
-        frames: filterMeaningfulReplayFrames(frames),
-      }))
-      .filter((group) => group.frames.length > 0)
-      .sort((a, b) => a.gameNumber - b.gameNumber);
-    const finalGameNumber = groups[groups.length - 1]?.gameNumber ?? null;
-
-    return groups.map((group) => ({
-      ...group,
-      summary: summarizeReplayGame(group.frames, {
-        isFinalGame: group.gameNumber === finalGameNumber,
-        matchResult: query.data?.match.result ?? "unknown",
-      }),
-    }));
-  }, [query.data?.match.result, replayFrames]);
+  const replayGroups = useMemo<ReplayGameGroup[]>(
+    () =>
+      buildReplayGameGroups(
+        replayFrames,
+        query.data?.match.result ?? "unknown",
+      ),
+    [query.data?.match.result, replayFrames],
+  );
   const visibleReplayFrames = useMemo(
     () => replayGroups.flatMap((group) => group.frames),
     [replayGroups],

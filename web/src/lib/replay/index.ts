@@ -1006,6 +1006,48 @@ export function summarizeReplayGame(
   return { result, detail };
 }
 
+export function buildReplayGameGroups(
+  replayFrames: MatchReplayFrame[],
+  matchResult: ReplayGameSummaryOptions["matchResult"] = "unknown",
+): ReplayGameGroup[] {
+  const framesByGame = new Map<number, MatchReplayFrame[]>();
+  for (const frame of replayFrames) {
+    const gameNumber =
+      frame.gameNumber && frame.gameNumber > 0 ? frame.gameNumber : 1;
+    const frames = framesByGame.get(gameNumber);
+    if (frames) {
+      frames.push(frame);
+    } else {
+      framesByGame.set(gameNumber, [frame]);
+    }
+  }
+
+  const games = Array.from(framesByGame.entries()).sort(
+    ([leftGameNumber], [rightGameNumber]) =>
+      leftGameNumber - rightGameNumber,
+  );
+  const finalGameNumber = games[games.length - 1]?.[0] ?? null;
+
+  return games.map(([gameNumber, rawFrames]) => {
+    const frames = filterMeaningfulReplayFrames(rawFrames);
+    const visibleFrames = new Set(frames);
+    const summaryFrames = rawFrames.filter(
+      (frame) =>
+        visibleFrames.has(frame) ||
+        (frame.gameStage ?? "").trim().toLowerCase() === "gameover",
+    );
+
+    return {
+      gameNumber,
+      frames,
+      summary: summarizeReplayGame(summaryFrames, {
+        isFinalGame: gameNumber === finalGameNumber,
+        matchResult,
+      }),
+    };
+  });
+}
+
 export function preferredReplayFrameIndex(frames: MatchReplayFrame[]): number {
   if (frames.length === 0) {
     return 0;

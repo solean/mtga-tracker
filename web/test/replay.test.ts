@@ -6,6 +6,7 @@ import {
   boardZoneLabel,
   buildReplayBeat,
   buildReplayBoardCensus,
+  buildReplayGameGroups,
   buildReplayLifeSeries,
   buildReplayTickKinds,
   buildReplayTurnBoundaries,
@@ -572,6 +573,111 @@ describe("game result inference", () => {
       }),
     ]);
     expect(summary).toEqual({ result: "win", detail: "Opponent conceded." });
+  });
+
+  test("preserves concession results when terminal frames are filtered from display", () => {
+    const groups = buildReplayGameGroups(
+      [
+        frame({
+          id: 1,
+          gameNumber: 1,
+          selfLifeTotal: 13,
+          opponentLifeTotal: 14,
+          changes: [change({ action: "tap" })],
+        }),
+        frame({
+          id: 2,
+          gameNumber: 1,
+          gameStage: "gameover",
+          selfLifeTotal: 13,
+          opponentLifeTotal: 14,
+          winningPlayerSide: "opponent",
+          winReason: "ResultReason_Concede",
+        }),
+        frame({
+          id: 3,
+          gameNumber: 2,
+          selfLifeTotal: 16,
+          opponentLifeTotal: 11,
+          changes: [change({ action: "tap" })],
+        }),
+        frame({
+          id: 4,
+          gameNumber: 2,
+          gameStage: "gameover",
+          selfLifeTotal: 16,
+          opponentLifeTotal: 11,
+          winningPlayerSide: "self",
+          winReason: "ResultReason_Concede",
+        }),
+      ],
+      "win",
+    );
+
+    expect(
+      groups.map(({ gameNumber, frames, summary }) => ({
+        gameNumber,
+        frameIDs: frames.map(({ id }) => id),
+        summary,
+      })),
+    ).toEqual([
+      {
+        gameNumber: 1,
+        frameIDs: [1],
+        summary: { result: "loss", detail: "You conceded." },
+      },
+      {
+        gameNumber: 2,
+        frameIDs: [3],
+        summary: { result: "win", detail: "Opponent conceded." },
+      },
+    ]);
+  });
+
+  test("ignores stale result metadata inherited by a later game", () => {
+    const groups = buildReplayGameGroups(
+      [
+        frame({
+          id: 1,
+          gameNumber: 1,
+          gameStage: "gameover",
+          winningPlayerSide: "self",
+          winReason: "ResultReason_Concede",
+        }),
+        frame({
+          id: 2,
+          gameNumber: 2,
+          gameStage: "start",
+          winningPlayerSide: "self",
+          winReason: "ResultReason_Concede",
+        }),
+        frame({
+          id: 3,
+          gameNumber: 2,
+          changes: [change({ action: "tap" })],
+        }),
+        frame({
+          id: 4,
+          gameNumber: 3,
+          gameStage: "gameover",
+          winningPlayerSide: "self",
+          winReason: "ResultReason_Concede",
+        }),
+      ],
+      "win",
+    );
+
+    expect(groups[1]).toEqual({
+      gameNumber: 2,
+      frames: [
+        frame({
+          id: 3,
+          gameNumber: 2,
+          changes: [change({ action: "tap" })],
+        }),
+      ],
+      summary: { result: "unknown", detail: "Game result recorded." },
+    });
   });
 
   test("lets a known match result override an ambiguous final game", () => {
