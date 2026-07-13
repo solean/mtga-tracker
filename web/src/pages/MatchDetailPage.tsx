@@ -2163,16 +2163,27 @@ function MatchReplayMoveList({
       ),
     [frames],
   );
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest" });
+    const scrollElement = scrollRef.current;
+    const activeElement = activeRef.current;
+    if (!scrollElement || !activeElement) return;
+
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const activeRect = activeElement.getBoundingClientRect();
+    if (activeRect.top < scrollRect.top) {
+      scrollElement.scrollTop -= scrollRect.top - activeRect.top;
+    } else if (activeRect.bottom > scrollRect.bottom) {
+      scrollElement.scrollTop += activeRect.bottom - scrollRect.bottom;
+    }
   }, [currentIndex]);
 
   return (
     <aside className="match-replay-movelist" aria-label="Play-by-play">
       <p className="match-replay-movelist-title">Play-by-play</p>
-      <div className="match-replay-movelist-scroll">
+      <div ref={scrollRef} className="match-replay-movelist-scroll">
         {turnBoundaries.map((boundary) => (
           <div
             className="match-replay-movelist-turn"
