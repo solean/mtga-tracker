@@ -805,6 +805,29 @@ export function filterMeaningfulReplayFrames(
   return lastFrame ? [lastFrame] : [];
 }
 
+/**
+ * Arena can begin a later game with a setup snapshot that still carries the
+ * previous game's final turn number. Keep ordinary pre-game snapshots, but
+ * discard that inherited-turn prefix once the new game reaches turn 1.
+ */
+export function trimInheritedReplayTurnPrefix(
+  frames: MatchReplayFrame[],
+): MatchReplayFrame[] {
+  const turnOnePlayIndex = frames.findIndex(
+    (frame) =>
+      frame.turnNumber === 1 &&
+      (frame.gameStage ?? "").trim().toLowerCase() === "play",
+  );
+  if (turnOnePlayIndex <= 0) {
+    return frames;
+  }
+
+  const hasInheritedTurn = frames
+    .slice(0, turnOnePlayIndex)
+    .some((frame) => replayTurnValue(frame.turnNumber) > 1);
+  return hasInheritedTurn ? frames.slice(turnOnePlayIndex) : frames;
+}
+
 export function summarizeReplayFrameZones(
   objects: MatchReplayFrameObject[],
 ): Map<BoardZoneKind, number> {
@@ -1029,7 +1052,8 @@ export function buildReplayGameGroups(
   const finalGameNumber = games[games.length - 1]?.[0] ?? null;
 
   return games.map(([gameNumber, rawFrames]) => {
-    const frames = filterMeaningfulReplayFrames(rawFrames);
+    const gameFrames = trimInheritedReplayTurnPrefix(rawFrames);
+    const frames = filterMeaningfulReplayFrames(gameFrames);
     const visibleFrames = new Set(frames);
     const summaryFrames = rawFrames.filter(
       (frame) =>

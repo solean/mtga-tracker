@@ -277,6 +277,55 @@ describe("meaningful frame filtering", () => {
   });
 });
 
+describe("replay game grouping", () => {
+  test("drops a later game's setup frames when they inherit the prior turn", () => {
+    const staleReveal = frame({
+      id: 1,
+      gameNumber: 2,
+      gameStage: "start",
+      turnNumber: 15,
+      changes: [change({ action: "enter_public", cardName: "Island" })],
+    });
+    const turnOneStart = frame({
+      id: 2,
+      gameNumber: 2,
+      gameStage: "play",
+      turnNumber: 1,
+      changes: [change({ action: "leave_public", cardName: "Island" })],
+    });
+    const firstPlay = frame({
+      id: 3,
+      gameNumber: 2,
+      turnNumber: 1,
+      changes: [change({ action: "tap", cardName: "Mountain" })],
+    });
+
+    expect(buildReplayGameGroups([staleReveal, turnOneStart, firstPlay])[0]?.frames)
+      .toEqual([turnOneStart, firstPlay]);
+  });
+
+  test("preserves genuine pre-game frames without an inherited turn", () => {
+    const preGame = frame({
+      id: 1,
+      gameNumber: 1,
+      gameStage: "start",
+      changes: [change({ action: "enter_public", cardName: "Island" })],
+    });
+    const turnOne = frame({
+      id: 2,
+      gameNumber: 1,
+      gameStage: "play",
+      turnNumber: 1,
+      changes: [change({ action: "tap", cardName: "Island" })],
+    });
+
+    expect(buildReplayGameGroups([preGame, turnOne])[0]?.frames).toEqual([
+      preGame,
+      turnOne,
+    ]);
+  });
+});
+
 describe("life series", () => {
   test("carries the last known life total forward across gaps", () => {
     const series = buildReplayLifeSeries([
