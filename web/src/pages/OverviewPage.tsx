@@ -23,6 +23,7 @@ import {
   recordWinRate,
   sortMatchesDesc,
   splitRecords,
+  type DailyActivity,
   type WinLossRecord,
 } from "../lib/overviewStats";
 import type { DraftSession, RuntimeStatus } from "../lib/types";
@@ -30,7 +31,7 @@ import { useEventSets } from "../lib/useEventSets";
 
 const RECENT_MATCH_COUNT = 8;
 const FORM_WINDOW = 10;
-const ACTIVITY_DAYS = 30;
+const ACTIVITY_DAYS = 365;
 
 type Tone = "positive" | "negative" | "neutral";
 
@@ -61,6 +62,86 @@ function SplitRow({ label, record }: { label: string; record: WinLossRecord }) {
         {rate != null ? (
           <span className="split-bar-fill" style={{ width: `${Math.max(rate * 100, 2)}%` }} />
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ActivityGraph({
+  activity,
+  total,
+}: {
+  activity: DailyActivity[];
+  total: number;
+}) {
+  const firstDate = new Date(`${activity[0]?.date}T00:00:00`);
+  const firstWeekday = Number.isNaN(firstDate.getTime()) ? 0 : firstDate.getDay();
+  const weekCount = Math.ceil((firstWeekday + activity.length) / 7);
+  const maxCount = Math.max(...activity.map((day) => day.count), 1);
+  const gridColumns = `repeat(${weekCount}, minmax(11px, 1fr))`;
+  const monthFormatter = new Intl.DateTimeFormat(undefined, { month: "short" });
+  const monthLabels = activity.flatMap((day, index) => {
+    const date = new Date(`${day.date}T00:00:00`);
+    if (Number.isNaN(date.getTime()) || date.getDate() !== 1) return [];
+    return [{
+      column: Math.floor((firstWeekday + index) / 7) + 1,
+      label: monthFormatter.format(date),
+    }];
+  });
+
+  return (
+    <div className="activity-frame">
+      <div
+        className="activity-heatmap"
+        role="img"
+        aria-label={`${total} match${total === 1 ? "" : "es"} played over the last ${ACTIVITY_DAYS} days`}
+      >
+        <div className="activity-months" style={{ gridTemplateColumns: gridColumns }} aria-hidden="true">
+          {monthLabels.map((month) => (
+            <span key={`${month.column}-${month.label}`} style={{ gridColumn: month.column }}>
+              {month.label}
+            </span>
+          ))}
+        </div>
+        <div className="activity-chart">
+          <div className="activity-weekdays" aria-hidden="true">
+            <span style={{ gridRow: 2 }}>Mon</span>
+            <span style={{ gridRow: 4 }}>Wed</span>
+            <span style={{ gridRow: 6 }}>Fri</span>
+          </div>
+          <div
+            className="activity-grid"
+            style={{ gridTemplateColumns: gridColumns, aspectRatio: `${weekCount} / 7` }}
+            aria-hidden="true"
+          >
+            {activity.map((day, index) => {
+              const level = day.count === 0 ? 0 : Math.max(1, Math.ceil((day.count / maxCount) * 4));
+              const position = firstWeekday + index;
+              return (
+                <span
+                  key={day.date}
+                  className={`activity-cell activity-cell--${level}`}
+                  style={{
+                    gridColumn: Math.floor(position / 7) + 1,
+                    gridRow: (position % 7) + 1,
+                  }}
+                  title={`${day.label}: ${day.count} match${day.count === 1 ? "" : "es"}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="activity-footer">
+        <span>{activity[0]?.label}</span>
+        <div className="activity-legend" aria-label="Activity intensity from less to more">
+          <span>Less</span>
+          {[0, 1, 2, 3, 4].map((level) => (
+            <span key={level} className={`activity-cell activity-cell--${level}`} aria-hidden="true" />
+          ))}
+          <span>More</span>
+        </div>
+        <span>Today</span>
       </div>
     </div>
   );
@@ -196,7 +277,6 @@ export function OverviewPage() {
   const averages = matchAverages(allMatches);
 
   const activityTotal = activity.reduce((sum, day) => sum + day.count, 0);
-  const activityMax = Math.max(...activity.map((day) => day.count), 1);
   const lastPlayedAt = allMatches[0]?.startedAt;
 
   const topDecks = [...(decksQuery.data ?? [])]
@@ -265,38 +345,13 @@ export function OverviewPage() {
             {activityTotal} match{activityTotal === 1 ? "" : "es"} · last {ACTIVITY_DAYS} days
           </p>
         </div>
-        {activityTotal > 0 ? (
-          <div className="activity-frame">
-            <div
-              className="activity-bars"
-              role="img"
-              aria-label={`Matches per day over the last ${ACTIVITY_DAYS} days`}
-            >
-              {activity.map((day) => (
-                <span
-                  key={day.date}
-                  className={`activity-bar ${day.count === 0 ? "is-empty" : ""}`}
-                  style={
-                    day.count > 0
-                      ? { height: `${Math.max((day.count / activityMax) * 100, 14)}%` }
-                      : undefined
-                  }
-                  title={`${day.label}: ${day.count} match${day.count === 1 ? "" : "es"}`}
-                />
-              ))}
-            </div>
-            <div className="activity-axis" aria-hidden="true">
-              <span>{activity[0]?.label}</span>
-              <span>{activity[Math.floor(activity.length / 2)]?.label}</span>
-              <span>Today</span>
-            </div>
-          </div>
-        ) : (
+        <ActivityGraph activity={activity} total={activityTotal} />
+        {activityTotal === 0 ? (
           <p className="state activity-empty">
             No matches in the last {ACTIVITY_DAYS} days
             {lastPlayedAt ? ` — last played ${formatRelativeTime(lastPlayedAt)}` : ""}.
           </p>
-        )}
+        ) : null}
       </section>
 
       <RankProgressPanel />
