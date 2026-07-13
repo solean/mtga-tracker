@@ -504,6 +504,63 @@ describe("play-by-play beats", () => {
       note: "tapped",
     });
   });
+
+  test("narrates a triggered power boost instead of repeating the spell cast", () => {
+    const f = frame({
+      id: 2,
+      changes: [
+        change({
+          action: "move_public",
+          instanceId: 8,
+          cardName: "Burst Lightning",
+          fromZoneType: "Stack",
+          toZoneType: "Stack",
+        }),
+        change({
+          action: "stat_change",
+          instanceId: 7,
+          cardName: "Slickshot Show-Off",
+          toZoneType: "Battlefield",
+        }),
+      ],
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 10,
+            affectedIds: [10],
+            type: ["AnnotationType_ResolutionStart"],
+          },
+          {
+            affectorId: 10,
+            affectedIds: [7],
+            type: ["AnnotationType_PowerToughnessModCreated"],
+            details: [
+              { key: "power", valueInt32: [2] },
+              { key: "toughness", valueInt32: [0] },
+            ],
+          },
+          {
+            affectorId: 7,
+            affectedIds: [10],
+            type: ["AnnotationType_AbilityInstanceDeleted"],
+          },
+        ],
+      }),
+      objects: [
+        object({
+          instanceId: 7,
+          cardName: "Slickshot Show-Off",
+          power: 3,
+          toughness: 2,
+        }),
+      ],
+    });
+
+    expect(buildReplayBeat(f, null)).toEqual({
+      text: "Slickshot Show-Off's ability gives it +2/+0",
+    });
+    expect(replayFrameTickKind(f, null)).toBe("other");
+  });
 });
 
 describe("key moments", () => {

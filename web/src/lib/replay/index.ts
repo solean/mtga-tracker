@@ -765,6 +765,16 @@ export function replayChangeIsNoiseMove(change: MatchReplayChange): boolean {
   );
 }
 
+function replayChangeIsCast(change: MatchReplayChange): boolean {
+  if (change.action !== "enter_public" && change.action !== "move_public") {
+    return false;
+  }
+  return (
+    boardZoneKind(change.toZoneType ?? "") === "stack" &&
+    boardZoneKind(change.fromZoneType ?? "") !== "stack"
+  );
+}
+
 function replayFrameHasNarratableChange(frame: MatchReplayFrame): boolean {
   return (frame.changes ?? []).some(
     (change) => !replayChangeIsNoiseMove(change),
@@ -1419,13 +1429,7 @@ export function replayFrameTickKind(
   ) {
     return "combat";
   }
-  if (
-    changes.some(
-      (change) =>
-        (change.action === "enter_public" || change.action === "move_public") &&
-        boardZoneKind(change.toZoneType ?? "") === "stack",
-    )
-  ) {
+  if (changes.some(replayChangeIsCast)) {
     return "spell";
   }
   return "other";
@@ -1461,6 +1465,82 @@ function replayObjectPTSuffix(
 
 function replayChangeName(change: MatchReplayChange): string {
   return cardDisplayName({ cardId: change.cardId, cardName: change.cardName });
+}
+
+function replaySignedStatModifier(value: number): string {
+  return value >= 0 ? `+${value}` : `${value}`;
+}
+
+function replayPowerToughnessAbilityBeat(
+  frame: MatchReplayFrame,
+): ReplayBeat | null {
+  const annotations = replayFrameAnnotations(frame);
+  const resolutions = annotations.filter((annotation) =>
+    replayAnnotationHasType(annotation, "AnnotationType_ResolutionStart"),
+  );
+
+  for (const resolution of resolutions) {
+    const abilityId = resolution.affectorId;
+    if (typeof abilityId !== "number") {
+      continue;
+    }
+
+    const modifier = annotations.find(
+      (annotation) =>
+        annotation.affectorId === abilityId &&
+        replayAnnotationHasType(
+          annotation,
+          "AnnotationType_PowerToughnessModCreated",
+        ),
+    );
+    const targetId = modifier?.affectedIds?.find(
+      (candidate): candidate is number => typeof candidate === "number",
+    );
+    const power = modifier
+      ? replayAnnotationDetailIntValue(modifier, "power")
+      : undefined;
+    const toughness = modifier
+      ? replayAnnotationDetailIntValue(modifier, "toughness")
+      : undefined;
+    if (
+      typeof targetId !== "number" ||
+      typeof power !== "number" ||
+      typeof toughness !== "number"
+    ) {
+      continue;
+    }
+
+    const targetChange = (frame.changes ?? []).find(
+      (change) =>
+        change.instanceId === targetId && change.action === "stat_change",
+    );
+    if (!targetChange) {
+      continue;
+    }
+
+    const abilityDeleted = annotations.find(
+      (annotation) =>
+        replayAnnotationHasType(
+          annotation,
+          "AnnotationType_AbilityInstanceDeleted",
+        ) && annotation.affectedIds?.includes(abilityId),
+    );
+    const sourceId = abilityDeleted?.affectorId;
+    const sourceObject = (frame.objects ?? []).find(
+      (object) => object.instanceId === sourceId,
+    );
+    const sourceName = sourceObject
+      ? cardDisplayName(sourceObject)
+      : replayChangeName(targetChange);
+    const targetName = replayChangeName(targetChange);
+    const recipient = sourceId === targetId ? "it" : targetName;
+
+    return {
+      text: `${sourceName}'s ability gives ${recipient} ${replaySignedStatModifier(power)}/${replaySignedStatModifier(toughness)}`,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -1513,16 +1593,17 @@ export function buildReplayBeat(
     };
   }
 
-  const casts = changes.filter(
-    (change) =>
-      (change.action === "enter_public" || change.action === "move_public") &&
-      boardZoneKind(change.toZoneType ?? "") === "stack",
-  );
+  const casts = changes.filter(replayChangeIsCast);
   if (casts.length > 0) {
     const lead = casts[0]!;
     return {
       text: `${replayActorVerb(lead.playerSide, "cast")} ${replayChangeName(lead)}`,
     };
+  }
+
+  const powerToughnessAbility = replayPowerToughnessAbilityBeat(frame);
+  if (powerToughnessAbility) {
+    return powerToughnessAbility;
   }
 
   const enters = changes.filter((change) => {
