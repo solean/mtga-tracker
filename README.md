@@ -10,14 +10,12 @@ This MVP includes:
 
 ## Project Layout
 
-- `/Users/cschnabel/dev/mtgdata/cmd/mtgdata` - CLI entrypoint (`parse`, `tail`, `serve`)
-- `/Users/cschnabel/dev/mtgdata/internal` - backend packages (db, ingest, api)
-- `/Users/cschnabel/dev/mtgdata/web` - frontend app
-- `/Users/cschnabel/dev/mtgdata/spec.md` - planning/spec document
+- `cmd/mtgdata` - CLI entrypoint (`parse`, `tail`, `serve`)
+- `internal` - backend packages (db, ingest, api)
+- `web` - frontend app
+- `spec.md` - planning/spec document
 
 ## Root Scripts
-
-From `/Users/cschnabel/dev/mtgdata`:
 
 ```bash
 ./scripts/start-backend.sh      # go run ./cmd/mtgdata serve
@@ -37,7 +35,6 @@ Requirements:
 Commands:
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata
 go mod tidy
 go build ./...
 ```
@@ -49,7 +46,6 @@ Default (recommended on macOS):
 - Then parses `~/Library/Logs/Wizards Of The Coast/MTGA/Player.log`
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata
 go run ./cmd/mtgdata parse -db data/mtgdata.db -resume=false
 ```
 
@@ -70,7 +66,6 @@ go run ./cmd/mtgdata parse -db data/mtgdata.db -log /absolute/path/to/Player.log
 Default (recommended on macOS): tails `~/Library/Logs/Wizards Of The Coast/MTGA/Player.log`
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata
 go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s
 ```
 
@@ -91,7 +86,6 @@ go run ./cmd/mtgdata tail -db data/mtgdata.db -log /absolute/path/to/Player.log 
 ## Run API Server
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata
 go run ./cmd/mtgdata serve -db data/mtgdata.db -addr :8080
 ```
 
@@ -131,7 +125,7 @@ Requirements:
 Commands:
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata/web
+cd web
 bun install
 bun run dev
 ```
@@ -141,7 +135,7 @@ Vite dev server runs at `http://127.0.0.1:5173` and proxies `/api` to `http://12
 Production build:
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata/web
+cd web
 bun run build
 ```
 
@@ -152,7 +146,6 @@ When `web/dist` exists, backend `serve` will also host built assets from `/`.
 This repo now includes an initial Wails desktop scaffold at the repo root:
 
 ```bash
-cd /Users/cschnabel/dev/mtgdata
 go run github.com/wailsapp/wails/v2/cmd/wails@latest dev
 ```
 
