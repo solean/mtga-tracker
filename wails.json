@@ -1,7 +1,7 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "mtgdata",
-  "outputfilename": "MTGData",
+  "name": "ponder",
+  "outputfilename": "Ponder",
   "frontend:dir": "web",
   "frontend:install": "bun install",
   "frontend:build": "bun run build:desktop",

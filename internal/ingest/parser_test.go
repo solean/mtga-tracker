@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cschnabel/mtgdata/internal/db"
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/db"
+	"github.com/solean/ponder/internal/model"
 )
 
 func TestChooseGameResultUsesLastMatchingScope(t *testing.T) {
@@ -147,7 +147,7 @@ func TestParserStoresMatchRankSnapshotAcrossFiles(t *testing.T) {
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "mtgdata.db")
+	dbPath := filepath.Join(tempDir, "ponder.db")
 
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -314,7 +314,7 @@ func TestParserIgnoresRankSnapshotWithoutCompletedMatch(t *testing.T) {
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "mtgdata.db")
+	dbPath := filepath.Join(tempDir, "ponder.db")
 
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -353,7 +353,7 @@ func TestParserBackfillsRankSnapshotForExistingCompletedMatch(t *testing.T) {
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "mtgdata.db")
+	dbPath := filepath.Join(tempDir, "ponder.db")
 
 	database, err := db.Open(dbPath)
 	if err != nil {

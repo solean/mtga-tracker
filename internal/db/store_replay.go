@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 func (s *Store) ReplaceMatchReplayFrame(

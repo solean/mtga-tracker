@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/cschnabel/mtgdata/internal/db"
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/db"
+	"github.com/solean/ponder/internal/model"
 )
 
 func (p *Parser) enqueueCompletedMatch(arenaMatchID string) {

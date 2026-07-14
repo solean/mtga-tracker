@@ -13,7 +13,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 // Replay frames are written as relational rows while a match is live so the

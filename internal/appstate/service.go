@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/db"
-	"github.com/cschnabel/mtgdata/internal/ingest"
-	"github.com/cschnabel/mtgdata/internal/model"
-	"github.com/cschnabel/mtgdata/internal/version"
+	"github.com/solean/ponder/internal/db"
+	"github.com/solean/ponder/internal/ingest"
+	"github.com/solean/ponder/internal/model"
+	"github.com/solean/ponder/internal/version"
 )
 
 const defaultPollInterval = 2 * time.Second
@@ -494,7 +494,7 @@ func resolveSupportDir(explicit string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user config dir: %w", err)
 	}
-	return filepath.Join(base, "mtgdata"), nil
+	return filepath.Join(base, "ponder"), nil
 }
 
 func normalizeConfig(cfg Config, poll time.Duration) Config {

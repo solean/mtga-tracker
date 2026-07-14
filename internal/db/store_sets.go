@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 // LookupSets returns cached set metadata for the given lowercase set codes.

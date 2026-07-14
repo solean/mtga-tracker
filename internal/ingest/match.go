@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 type logBusinessEvent struct {

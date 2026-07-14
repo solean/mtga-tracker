@@ -40,7 +40,7 @@ func main() {
 		// stand-in for a tray icon, which needs Wails v3.
 		HideWindowOnClose: true,
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               "dev.ixianlabs.mtgdata",
+			UniqueId:               "dev.ixianlabs.ponder",
 			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
 		},
 		OnStartup: app.startup,

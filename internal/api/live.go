@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 // openingHandSize is subtracted from the deck total when estimating how many

@@ -28,7 +28,7 @@ describe("shortenHomePath", () => {
   });
 
   test("leaves other paths untouched", () => {
-    expect(shortenHomePath("data/mtgdata.db")).toBe("data/mtgdata.db");
+    expect(shortenHomePath("data/ponder.db")).toBe("data/ponder.db");
     expect(shortenHomePath("/var/log/system.log")).toBe("/var/log/system.log");
     expect(shortenHomePath("/Users/chris")).toBe("/Users/chris");
   });

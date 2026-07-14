@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 const rawCardLookupBatchMax = 900
@@ -272,7 +272,7 @@ func (s *Server) fetchCardColorBatch(ctx context.Context, cardIDs []int64) (map[
 		return nil, fmt.Errorf("build scryfall color request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+	req.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
@@ -310,7 +310,7 @@ func (s *Server) fetchCardColorBatch(ctx context.Context, cardIDs []int64) (map[
 			return out, fmt.Errorf("build scryfall color next page request: %w", err)
 		}
 		nextReq.Header.Set("Accept", "application/json")
-		nextReq.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+		nextReq.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 		nextRes, err := s.httpClient.Do(nextReq)
 		if err != nil {

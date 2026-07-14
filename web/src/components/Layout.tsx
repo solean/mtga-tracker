@@ -21,8 +21,8 @@ const tabs = [
   { to: "/settings", label: "Settings" },
 ];
 
-const MODE_STORAGE_KEY = "mtgdata.theme";
-const SCHEME_STORAGE_KEY = "mtgdata.scheme";
+const MODE_STORAGE_KEY = "ponder.theme";
+const SCHEME_STORAGE_KEY = "ponder.scheme";
 // Temporary kill switch while investigating frontend jank from the fixed WebGL background.
 const ENABLE_BACKGROUND_ANIMATION = false;
 const scrollPositions = new Map<string, number>();

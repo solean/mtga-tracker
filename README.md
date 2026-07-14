@@ -10,7 +10,7 @@ This MVP includes:
 
 ## Project Layout
 
-- `cmd/mtgdata` - CLI entrypoint (`parse`, `tail`, `serve`)
+- `cmd/ponder` - CLI entrypoint (`parse`, `tail`, `serve`)
 - `internal` - backend packages (db, ingest, api)
 - `web` - frontend app
 - `spec.md` - planning/spec document
@@ -18,10 +18,10 @@ This MVP includes:
 ## Root Scripts
 
 ```bash
-./scripts/start-backend.sh      # go run ./cmd/mtgdata serve
+./scripts/start-backend.sh      # go run ./cmd/ponder serve
 ./scripts/start-backend-dev.sh  # serve with hot reload via air (go install github.com/air-verse/air@latest)
-./scripts/start-parse.sh        # go run ./cmd/mtgdata parse -resume=true
-./scripts/start-tail.sh         # go run ./cmd/mtgdata tail -interval=2s
+./scripts/start-parse.sh        # go run ./cmd/ponder parse -resume=true
+./scripts/start-tail.sh         # go run ./cmd/ponder tail -interval=2s
 ./scripts/start-web.sh          # bun run dev (in web/)
 ```
 
@@ -46,19 +46,19 @@ Default (recommended on macOS):
 - Then parses `~/Library/Logs/Wizards Of The Coast/MTGA/Player.log`
 
 ```bash
-go run ./cmd/mtgdata parse -db data/mtgdata.db -resume=false
+go run ./cmd/ponder parse -db data/ponder.db -resume=false
 ```
 
 Use `-resume=true` for incremental ingestion:
 
 ```bash
-go run ./cmd/mtgdata parse -db data/mtgdata.db -resume=true
+go run ./cmd/ponder parse -db data/ponder.db -resume=true
 ```
 
 Optional explicit log path:
 
 ```bash
-go run ./cmd/mtgdata parse -db data/mtgdata.db -log /absolute/path/to/Player.log -resume=true
+go run ./cmd/ponder parse -db data/ponder.db -log /absolute/path/to/Player.log -resume=true
 ```
 
 ## Tail a Live Log
@@ -66,7 +66,7 @@ go run ./cmd/mtgdata parse -db data/mtgdata.db -log /absolute/path/to/Player.log
 Default (recommended on macOS): tails `~/Library/Logs/Wizards Of The Coast/MTGA/Player.log`
 
 ```bash
-go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s
+go run ./cmd/ponder tail -db data/ponder.db -interval=2s
 ```
 
 `tail` now logs activity summaries whenever new log lines are ingested (for example when matches/decks/events are picked up).
@@ -74,19 +74,19 @@ go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s
 Enable idle heartbeat logs (every poll):
 
 ```bash
-go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s -verbose=true
+go run ./cmd/ponder tail -db data/ponder.db -interval=2s -verbose=true
 ```
 
 Optional explicit log path:
 
 ```bash
-go run ./cmd/mtgdata tail -db data/mtgdata.db -log /absolute/path/to/Player.log -interval=2s
+go run ./cmd/ponder tail -db data/ponder.db -log /absolute/path/to/Player.log -interval=2s
 ```
 
 ## Run API Server
 
 ```bash
-go run ./cmd/mtgdata serve -db data/mtgdata.db -addr :8080
+go run ./cmd/ponder serve -db data/ponder.db -addr :8080
 ```
 
 API endpoints:
@@ -114,7 +114,7 @@ by a `VACUUM` to shrink the database file.
 To compact an existing database manually:
 
 ```bash
-go run ./cmd/mtgdata compact -db data/mtgdata.db
+go run ./cmd/ponder compact -db data/ponder.db
 ```
 
 ## Frontend Setup
@@ -155,7 +155,7 @@ frontend reaches it same-origin — no listening port and no CORS exposure.
 `bun run build`.
 
 For browser-based frontend development against the desktop backend, launch the
-app with `MTGDATA_DEV_API=1` (or set it to a specific address) to also expose
+app with `PONDER_DEV_API=1` (or set it to a specific address) to also expose
 the API on `http://127.0.0.1:39123`, then run `bun run dev:desktop`.
 
 Desktop behaviors:
@@ -164,12 +164,12 @@ Desktop behaviors:
 - A second launch focuses the existing window instead of starting another
   instance.
 - Startup failures surface in a native error dialog and as a 503 from the API.
-- Settings has a "Launch MTGData at login" toggle (macOS LaunchAgent) and a
+- Settings has a "Launch Ponder at login" toggle (macOS LaunchAgent) and a
   "Check for Updates" button against GitHub releases. The app version comes
   from `internal/version` (override with
-  `-ldflags "-X github.com/cschnabel/mtgdata/internal/version.Version=x.y.z"`).
+  `-ldflags "-X github.com/solean/ponder/internal/version.Version=x.y.z"`).
 
-The desktop app stores its SQLite database and runtime config under `~/Library/Application Support/mtgdata/`.
+The desktop app stores its SQLite database and runtime config under `~/Library/Application Support/ponder/`.
 
 ## Notes
 

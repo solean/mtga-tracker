@@ -1,7 +1,7 @@
 # Performance Plan
 
 Findings from a performance investigation (2026-07-12), focused on database size,
-with query/runtime improvements included. Baseline: `data/mtgdata.db` is 8.6MB for
+with query/runtime improvements included. Baseline: `data/ponder.db` is 8.6MB for
 75 matches (~115KB/match), dominated by `match_replay_archives` (5.0MB, ~60%) and
 `events_raw` + indexes (2.5MB, ~30%).
 
@@ -108,7 +108,7 @@ table; it belongs after ingest, not on read.
 
 All items above are implemented and verified. The dev backend (air hot reload)
 picked up the new code and ran the first maintenance pass against
-`data/mtgdata.db`:
+`data/ponder.db`:
 
 - On-disk footprint: 8.6MB db + 8.7MB WAL → **5.4MB db + 0B WAL** (~69% smaller)
 - `events_raw`: 7,464 rows / 2.1MB → 360 rows / 332KB, and now capped by the
@@ -130,7 +130,7 @@ picked up the new code and ran the first maintenance pass against
 - **N+1 in `enrichDraftSessionsWithDeckResults`** — per-session queries; N is
   small today.
 - **Manual cleanup (not automated, user data):** `data/` holds ~1.7MB of old dev
-  DBs (`mtgdata-mvp*.db`, `mtgdata-fix-opponent*.db`, `-shm` files) and a 34MB
+  DBs (`ponder-mvp*.db`, `ponder-fix-opponent*.db`, `-shm` files) and a 34MB
   test log. Directory is gitignored; delete locally if unwanted.
 
 ## Non-findings (checked, already good)

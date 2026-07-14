@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -47,4 +50,35 @@ func TestSPAFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunUpdateCheckUsesPonderRepository(t *testing.T) {
+	var requestedURL string
+	server := NewServer(nil, "", nil)
+	server.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			requestedURL = req.URL.String()
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("")),
+				Request:    req,
+			}, nil
+		}),
+	}
+
+	result := server.runUpdateCheck(context.Background())
+	const wantURL = "https://api.github.com/repos/solean/ponder/releases/latest"
+	if requestedURL != wantURL {
+		t.Fatalf("update URL = %q, want %q", requestedURL, wantURL)
+	}
+	if result.Note != "no releases published yet" {
+		t.Fatalf("update note = %q, want %q", result.Note, "no releases published yet")
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

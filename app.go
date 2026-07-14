@@ -17,16 +17,16 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/cschnabel/mtgdata/internal/api"
-	"github.com/cschnabel/mtgdata/internal/appstate"
-	"github.com/cschnabel/mtgdata/internal/db"
+	"github.com/solean/ponder/internal/api"
+	"github.com/solean/ponder/internal/appstate"
+	"github.com/solean/ponder/internal/db"
 )
 
 // devAPIEnvVar optionally exposes the API on a localhost port for browser
 // development (`bun run dev:desktop`). Set to an address ("127.0.0.1:39123")
 // or "1" for that default. The desktop webview itself never needs it: the API
 // is mounted on the Wails asset server, same-origin.
-const devAPIEnvVar = "MTGDATA_DEV_API"
+const devAPIEnvVar = "PONDER_DEV_API"
 
 type App struct {
 	ctx          context.Context
@@ -146,13 +146,13 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
-	supportDir := filepath.Join(supportBase, "mtgdata")
+	supportDir := filepath.Join(supportBase, "ponder")
 	if err := os.MkdirAll(supportDir, 0o755); err != nil {
 		a.failStartup("create support dir", err)
 		return
 	}
 
-	dbPath := filepath.Join(supportDir, "mtgdata.db")
+	dbPath := filepath.Join(supportDir, "ponder.db")
 	database, err := db.Open(dbPath)
 	if err != nil {
 		a.failStartup("open database", err)

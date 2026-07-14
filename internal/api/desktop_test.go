@@ -3,12 +3,12 @@ package api
 import (
 	"testing"
 
-	"github.com/cschnabel/mtgdata/internal/appstate"
+	"github.com/solean/ponder/internal/appstate"
 )
 
 func TestRevealablePath(t *testing.T) {
 	status := appstate.Status{
-		DBPath:             "/support/mtgdata.db",
+		DBPath:             "/support/ponder.db",
 		SupportDir:         "/support",
 		ConfigPath:         "/support/config.json",
 		ActiveLogPath:      "/logs/Player.log",
@@ -17,7 +17,7 @@ func TestRevealablePath(t *testing.T) {
 	}
 
 	allowed := []string{
-		"/support/mtgdata.db",
+		"/support/ponder.db",
 		"/support",
 		"/support/",                     // trailing slash cleans to the allowed dir
 		"/logs/../logs/Player.log",      // cleans to an allowed path
@@ -35,8 +35,8 @@ func TestRevealablePath(t *testing.T) {
 		"   ",
 		"/etc/passwd",
 		"/support/other.db",
-		"/support/mtgdata.db-wal",
-		"support/mtgdata.db",       // relative form of an allowed path
+		"/support/ponder.db-wal",
+		"support/ponder.db",       // relative form of an allowed path
 		"/logs",                    // parent of an allowed file, not itself listed
 		"/support/../etc/passwd",   // cleans outside the allowed set
 	}
@@ -49,7 +49,7 @@ func TestRevealablePath(t *testing.T) {
 
 func TestRevealablePathIgnoresEmptyAllowedEntries(t *testing.T) {
 	// PreviousLogPath is often ""; an empty allowed entry must not match anything.
-	status := appstate.Status{DBPath: "/support/mtgdata.db"}
+	status := appstate.Status{DBPath: "/support/ponder.db"}
 	if revealablePath(status, "") {
 		t.Error("empty request must be rejected even when allowed list has empty entries")
 	}

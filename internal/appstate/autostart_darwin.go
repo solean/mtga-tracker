@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const launchAgentLabel = "dev.ixianlabs.mtgdata"
+const launchAgentLabel = "dev.ixianlabs.ponder"
 
 func launchAgentPath() (string, error) {
 	home, err := os.UserHomeDir()

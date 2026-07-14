@@ -1,5 +1,5 @@
 {
-  "name": "mtgdata-web",
+  "name": "ponder-web",
   "private": true,
   "version": "0.1.0",
   "packageManager": "bun@1.3.8",

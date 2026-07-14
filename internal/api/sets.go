@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 const scryfallSetURL = "https://api.scryfall.com/sets"
@@ -93,7 +93,7 @@ func (s *Server) fetchSetFromScryfall(ctx context.Context, code string) (*model.
 		return nil, fmt.Errorf("build scryfall set request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+	req.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {

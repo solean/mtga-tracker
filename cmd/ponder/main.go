@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/api"
-	"github.com/cschnabel/mtgdata/internal/appstate"
-	"github.com/cschnabel/mtgdata/internal/db"
-	"github.com/cschnabel/mtgdata/internal/ingest"
+	"github.com/solean/ponder/internal/api"
+	"github.com/solean/ponder/internal/appstate"
+	"github.com/solean/ponder/internal/db"
+	"github.com/solean/ponder/internal/ingest"
 )
 
 func main() {
@@ -54,7 +54,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("mtgdata commands:")
+	fmt.Println("ponder commands:")
 	fmt.Println("  parse -db <path> [-log <path>] [-include-prev=true] [-resume=true]")
 	fmt.Println("  tail  -db <path> [-log <path>] [-interval=2s] [-verbose=false]")
 	fmt.Println("  serve -db <path> [-addr=:8080] [-web-dist=<path>]")
@@ -67,7 +67,7 @@ func printUsage() {
 
 func runParse(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("parse", flag.ContinueOnError)
-	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
+	dbPath := fs.String("db", "data/ponder.db", "sqlite database path")
 	logPath := fs.String("log", "", "arena log path (optional; defaults to MTGA macOS path)")
 	includePrev := fs.Bool("include-prev", true, "when -log is omitted, parse Player-prev.log before Player.log")
 	resume := fs.Bool("resume", true, "resume from previous offset")
@@ -160,7 +160,7 @@ func compactReplays(ctx context.Context, store *db.Store) {
 
 func runCompact(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("compact", flag.ContinueOnError)
-	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
+	dbPath := fs.String("db", "data/ponder.db", "sqlite database path")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -181,7 +181,7 @@ func runCompact(ctx context.Context, args []string) error {
 
 func runTail(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("tail", flag.ContinueOnError)
-	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
+	dbPath := fs.String("db", "data/ponder.db", "sqlite database path")
 	logPath := fs.String("log", "", "arena log path (optional; defaults to MTGA macOS Player.log)")
 	interval := fs.Duration("interval", 2*time.Second, "poll interval")
 	verbose := fs.Bool("verbose", false, "log each poll, including idle polls")
@@ -256,7 +256,7 @@ func runTail(ctx context.Context, args []string) error {
 
 func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	dbPath := fs.String("db", "data/mtgdata.db", "sqlite database path")
+	dbPath := fs.String("db", "data/ponder.db", "sqlite database path")
 	addr := fs.String("addr", ":8080", "http listen address")
 	webDist := fs.String("web-dist", "", "path to built frontend dist")
 	if err := fs.Parse(args); err != nil {

@@ -1,4 +1,4 @@
-module github.com/cschnabel/mtgdata
+module github.com/solean/ponder
 
 go 1.25.0
 

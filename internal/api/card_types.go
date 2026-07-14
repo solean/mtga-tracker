@@ -130,7 +130,7 @@ func (s *Server) fetchCardTypeLineBatch(ctx context.Context, cardIDs []int64) (m
 		return nil, fmt.Errorf("build scryfall type request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+	req.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
@@ -168,7 +168,7 @@ func (s *Server) fetchCardTypeLineBatch(ctx context.Context, cardIDs []int64) (m
 			return out, fmt.Errorf("build scryfall type next page request: %w", err)
 		}
 		nextReq.Header.Set("Accept", "application/json")
-		nextReq.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+		nextReq.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 		nextRes, err := s.httpClient.Do(nextReq)
 		if err != nil {

@@ -1,4 +1,4 @@
-# MTGData — Code & Design Review
+# Ponder — Code & Design Review
 
 *Reviewed June 2026. Covers architecture, code quality, design (UI screenshots), and a feature roadmap.*
 
@@ -21,7 +21,7 @@ On the desktop question: **stay with Wails.** Electron buys nothing here except 
 
 ## Desktop shell (Wails)
 
-- ✅ **Wails bridge / hardcoded port** — was a localhost HTTP server on hardcoded `127.0.0.1:39123` (port collisions, silent failure on second instance). *Now the API is mounted on the Wails asset server as middleware — same-origin, no port. Dev builds (`wails dev`) additionally auto-start a localhost listener on 39123 for browser-based frontend dev (`MTGDATA_DEV_API` overrides).*
+- ✅ **Wails bridge / hardcoded port** — was a localhost HTTP server on hardcoded `127.0.0.1:39123` (port collisions, silent failure on second instance). *Now the API is mounted on the Wails asset server as middleware — same-origin, no port. Dev builds (`wails dev`) additionally auto-start a localhost listener on 39123 for browser-based frontend dev (`PONDER_DEV_API` overrides).*
 - ✅ **Security** — `withCORS` set `Access-Control-Allow-Origin: *` on an unauthenticated API serving match history and accepting config-changing POSTs. *Now CORS is only reflected for localhost dev origins, and the standalone listener rejects non-local Host headers (DNS-rebinding defense).*
 - ✅ **Silent startup failures** — every error path in `startup()` just logged and returned, leaving an eternally-loading UI. *Now failures show a native error dialog and the API middleware returns 503 with the real error.*
 - ✅ **Desktop niceties** — *added: single-instance lock (second launch focuses the window), hide-on-close (tailer keeps running; quit with Cmd+Q), launch-at-login via macOS LaunchAgent (Settings toggle), and a GitHub-releases update check with version display.*
@@ -35,7 +35,7 @@ The original design stored a **full denormalized board snapshot per frame** (row
 Implemented fix:
 - Frames still stream into row tables while a match is live (incremental parse/resume unchanged); on match completion they're serialized, zstd-compressed (consecutive frames are nearly identical), stored as one blob per match in `match_replay_archives`, and the rows are deleted.
 - Reads merge archive + any live rows; API response shape unchanged.
-- Startup compaction + `VACUUM` migrates existing databases; `mtgdata compact -db <path>` for manual runs.
+- Startup compaction + `VACUUM` migrates existing databases; `ponder compact -db <path>` for manual runs.
 - Dropped pretty-printed JSON and gzipped `/api/` responses (heaviest replay endpoint: 63.7MB → 3.9MB over the wire).
 - Verified byte-identical output on real data; fixed nondeterministic `changes` ordering found during verification.
 

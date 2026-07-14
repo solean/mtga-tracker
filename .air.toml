@@ -2,9 +2,9 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/mtgdata ./cmd/mtgdata"
-  bin = "./tmp/mtgdata"
-  args_bin = ["serve", "-db", "data/mtgdata.db", "-addr", "127.0.0.1:8080"]
+  cmd = "go build -o ./tmp/ponder ./cmd/ponder"
+  bin = "./tmp/ponder"
+  args_bin = ["serve", "-db", "data/ponder.db", "-addr", "127.0.0.1:8080"]
   include_ext = ["go"]
   exclude_dir = ["tmp", "web", "frontend", "build", "data", "docs"]
   delay = 200

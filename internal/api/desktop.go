@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cschnabel/mtgdata/internal/appstate"
+	"github.com/solean/ponder/internal/appstate"
 )
 
 // Desktop provides native-shell integrations (file dialogs, revealing files in

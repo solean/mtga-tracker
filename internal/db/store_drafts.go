@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 func (s *Store) EnsureDraftSession(ctx context.Context, tx *sql.Tx, eventName string, draftID *string, isBot bool, ts string) (int64, error) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/model"
+	"github.com/solean/ponder/internal/model"
 )
 
 func newReplayArchiveTestStore(t *testing.T) *Store {

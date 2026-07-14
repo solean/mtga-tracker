@@ -20,10 +20,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cschnabel/mtgdata/internal/appstate"
-	"github.com/cschnabel/mtgdata/internal/db"
-	"github.com/cschnabel/mtgdata/internal/model"
-	"github.com/cschnabel/mtgdata/internal/version"
+	"github.com/solean/ponder/internal/appstate"
+	"github.com/solean/ponder/internal/db"
+	"github.com/solean/ponder/internal/model"
+	"github.com/solean/ponder/internal/version"
 )
 
 type Server struct {
@@ -87,7 +87,7 @@ func (s *Server) routes() http.Handler {
 	} else if s.staticDir != "" {
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("mtgdata API is running. Frontend build not found."))
+			_, _ = w.Write([]byte("ponder API is running. Frontend build not found."))
 		})
 	}
 
@@ -390,7 +390,7 @@ func (s *Server) handleRuntimeAutostart(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-const updateCheckRepo = "solean/mtga-tracker"
+const updateCheckRepo = "solean/ponder"
 
 // runUpdateCheck queries GitHub for the latest release. Failures are reported
 // in the result's Note rather than as errors so callers can always store and
@@ -1380,7 +1380,7 @@ func (s *Server) fetchCardNameBatch(ctx context.Context, cardIDs []int64) (map[i
 		return nil, fmt.Errorf("build scryfall request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+	req.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
@@ -1419,7 +1419,7 @@ func (s *Server) fetchCardNameBatch(ctx context.Context, cardIDs []int64) (map[i
 			return names, fmt.Errorf("build scryfall next page request: %w", err)
 		}
 		nextReq.Header.Set("Accept", "application/json")
-		nextReq.Header.Set("User-Agent", "mtgdata/0.1 (local tracker)")
+		nextReq.Header.Set("User-Agent", "ponder/0.1 (local tracker)")
 
 		nextRes, err := s.httpClient.Do(nextReq)
 		if err != nil {

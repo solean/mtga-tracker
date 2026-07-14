@@ -4,4 +4,4 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$REPO_ROOT"
-exec go run ./cmd/mtgdata tail -db data/mtgdata.db -interval=2s "$@"
+exec go run ./cmd/ponder tail -db data/ponder.db -interval=2s "$@"
