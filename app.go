@@ -140,13 +140,11 @@ func (a *App) RevealPath(path string) error {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	supportBase, err := os.UserConfigDir()
+	supportDir, err := appstate.DefaultSupportDir()
 	if err != nil {
-		a.failStartup("resolve user config dir", err)
+		a.failStartup("resolve support dir", err)
 		return
 	}
-
-	supportDir := filepath.Join(supportBase, "ponder")
 	if err := os.MkdirAll(supportDir, 0o755); err != nil {
 		a.failStartup("create support dir", err)
 		return

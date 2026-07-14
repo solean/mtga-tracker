@@ -18,6 +18,8 @@ import (
 
 const defaultPollInterval = 2 * time.Second
 
+const supportDirName = "ponder"
+
 type Options struct {
 	Store               *db.Store
 	DBPath              string
@@ -490,11 +492,20 @@ func resolveSupportDir(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
+	return DefaultSupportDir()
+}
+
+// DefaultSupportDir resolves the Ponder application support directory.
+func DefaultSupportDir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user config dir: %w", err)
 	}
-	return filepath.Join(base, "ponder"), nil
+	return supportDirPath(base), nil
+}
+
+func supportDirPath(base string) string {
+	return filepath.Join(base, supportDirName)
 }
 
 func normalizeConfig(cfg Config, poll time.Duration) Config {
