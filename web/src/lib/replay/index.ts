@@ -34,17 +34,69 @@ export type ReplayCounterSummary = {
   label: string;
   count: number;
 };
-export type ReplayConnectionKind = "combat" | "spellTarget";
+export type ReplayConnectionKind =
+  | "combat"
+  | "spellTarget"
+  | "abilityTarget"
+  | "attackTarget"
+  | "attachment"
+  | "trigger"
+  | "damage"
+  | "crew";
 export type ReplayBoardConnection = {
   kind: ReplayConnectionKind;
   sourceId: number;
   targetId: number;
+  hiddenUnlessFocused?: boolean;
 };
 export type ReplayTarget = {
   targetId: number;
+  connectionId: number;
   label: string;
+  playerSide?: "self" | "opponent";
 };
 export type ReplayTargetLookup = Map<number, ReplayTarget[]>;
+export type ReplayTargetEvent = {
+  sourceId: number;
+  sourceLabel: string;
+  sourceKind: "spell" | "ability";
+  targets: ReplayTarget[];
+};
+export type ReplayDamageEvent = {
+  sourceId: number;
+  sourceLabel: string;
+  target: ReplayTarget;
+  amount: number;
+};
+export type ReplayTriggerEvent = {
+  sourceId: number;
+  sourceLabel: string;
+  triggeringId: number;
+  triggeringLabel: string;
+};
+export type ReplayAttachmentEvent = {
+  attachmentId: number;
+  attachmentLabel: string;
+  hostId: number;
+  hostLabel: string;
+};
+export type ReplayCrewEvent = {
+  vehicleId: number;
+  vehicleLabel: string;
+  crewIds: number[];
+  crewLabels: string[];
+};
+export type ReplayRelationshipIndex = {
+  objectsById: Map<number, MatchReplayFrameObject>;
+  playerSideBySeatId: Map<number, "self" | "opponent">;
+  abilitySourceIdByAbilityId: Map<number, number>;
+  spellTargetsBySourceId: ReplayTargetLookup;
+  targetEventsByFrameId: Map<number, ReplayTargetEvent[]>;
+  damageEventsByFrameId: Map<number, ReplayDamageEvent[]>;
+  triggerEventsByFrameId: Map<number, ReplayTriggerEvent[]>;
+};
+export const REPLAY_SELF_PLAYER_CONNECTION_ID = -1;
+export const REPLAY_OPPONENT_PLAYER_CONNECTION_ID = -2;
 export type ReplayAnnotationDetail = {
   key?: string;
   type?: string;
@@ -479,6 +531,18 @@ export function replayFrameHasTargetSpec(frame: MatchReplayFrame): boolean {
   );
 }
 
+export function replayFrameHasRelationshipEvent(frame: MatchReplayFrame): boolean {
+  return replayFrameAnnotations(frame).some((annotation) =>
+    [
+      "AnnotationType_TargetSpec",
+      "AnnotationType_DamageDealt",
+      "AnnotationType_TriggeringObject",
+      "AnnotationType_AttachmentCreated",
+      "AnnotationType_CrewedThisTurn",
+    ].some((type) => replayAnnotationHasType(annotation, type)),
+  );
+}
+
 export function replayAnnotationHasType(
   annotation: ReplayAnnotation,
   expectedType: string,
@@ -515,15 +579,159 @@ export function replayTargetListLabel(targets: ReplayTarget[]): string {
   return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 }
 
-export function buildReplayTargetLookup(
+export function replayPlayerConnectionId(
+  side: "self" | "opponent",
+): number {
+  return side === "self"
+    ? REPLAY_SELF_PLAYER_CONNECTION_ID
+    : REPLAY_OPPONENT_PLAYER_CONNECTION_ID;
+}
+
+export function replayRelationshipTargetForId(
+  relationships: ReplayRelationshipIndex,
+  targetId: number,
+): ReplayTarget {
+  return replayRelationshipTarget(
+    targetId,
+    relationships.objectsById,
+    relationships.playerSideBySeatId,
+  );
+}
+
+export function replayFrameAttachmentEvents(
+  frame: MatchReplayFrame | null,
+  relationships: ReplayRelationshipIndex,
+): ReplayAttachmentEvent[] {
+  const events: ReplayAttachmentEvent[] = [];
+  const seen = new Set<string>();
+  for (const annotation of replayFrameAnnotations(frame)) {
+    if (
+      !replayAnnotationHasType(annotation, "AnnotationType_Attachment") &&
+      !replayAnnotationHasType(annotation, "AnnotationType_AttachmentCreated")
+    ) {
+      continue;
+    }
+    if (typeof annotation.affectorId !== "number") continue;
+    const attachment = relationships.objectsById.get(annotation.affectorId);
+    if (!attachment) continue;
+    for (const hostId of annotation.affectedIds ?? []) {
+      if (typeof hostId !== "number") continue;
+      const host = relationships.objectsById.get(hostId);
+      if (!host) continue;
+      const key = `${annotation.affectorId}-${hostId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push({
+        attachmentId: annotation.affectorId,
+        attachmentLabel: cardDisplayName(attachment),
+        hostId,
+        hostLabel: cardDisplayName(host),
+      });
+    }
+  }
+  return events;
+}
+
+export function buildReplayAttachmentState(
   frames: MatchReplayFrame[],
-): ReplayTargetLookup {
-  const objectById = new Map<number, MatchReplayFrameObject>();
+  throughIndex: number,
+  relationships: ReplayRelationshipIndex,
+): ReplayAttachmentEvent[] {
+  const byAttachmentId = new Map<number, ReplayAttachmentEvent>();
+  const lastIndex = Math.min(throughIndex, frames.length - 1);
+  for (let index = 0; index <= lastIndex; index += 1) {
+    for (const event of replayFrameAttachmentEvents(
+      frames[index] ?? null,
+      relationships,
+    )) {
+      byAttachmentId.set(event.attachmentId, event);
+    }
+  }
+  return [...byAttachmentId.values()];
+}
+
+export function replayFrameCrewEvents(
+  frame: MatchReplayFrame | null,
+  relationships: ReplayRelationshipIndex,
+): ReplayCrewEvent[] {
+  const events: ReplayCrewEvent[] = [];
+  for (const annotation of replayFrameAnnotations(frame)) {
+    if (
+      !replayAnnotationHasType(annotation, "AnnotationType_CrewedThisTurn") ||
+      typeof annotation.affectorId !== "number"
+    ) {
+      continue;
+    }
+    const vehicle = relationships.objectsById.get(annotation.affectorId);
+    if (!vehicle) continue;
+    const crew = (annotation.affectedIds ?? [])
+      .filter((id): id is number => typeof id === "number")
+      .map((id) => ({ id, object: relationships.objectsById.get(id) }))
+      .filter(
+        (entry): entry is { id: number; object: MatchReplayFrameObject } =>
+          Boolean(entry.object),
+      );
+    if (crew.length === 0) continue;
+    events.push({
+      vehicleId: annotation.affectorId,
+      vehicleLabel: cardDisplayName(vehicle),
+      crewIds: crew.map((entry) => entry.id),
+      crewLabels: crew.map((entry) => cardDisplayName(entry.object)),
+    });
+  }
+  return events;
+}
+
+function replayMapPush<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const values = map.get(key);
+  if (values) {
+    values.push(value);
+  } else {
+    map.set(key, [value]);
+  }
+}
+
+function replayRelationshipTarget(
+  targetId: number,
+  objectsById: Map<number, MatchReplayFrameObject>,
+  playerSideBySeatId: Map<number, "self" | "opponent">,
+): ReplayTarget {
+  const object = objectsById.get(targetId);
+  if (object) {
+    return {
+      targetId,
+      connectionId: targetId,
+      label: cardDisplayName(object),
+    };
+  }
+
+  const playerSide = playerSideBySeatId.get(targetId);
+  if (playerSide) {
+    return {
+      targetId,
+      connectionId: replayPlayerConnectionId(playerSide),
+      label: playerSide === "self" ? "you" : "opponent",
+      playerSide,
+    };
+  }
+
+  return {
+    targetId,
+    connectionId: targetId,
+    label: `target ${targetId}`,
+  };
+}
+
+export function buildReplayRelationshipIndex(
+  frames: MatchReplayFrame[],
+): ReplayRelationshipIndex {
+  const objectsById = new Map<number, MatchReplayFrameObject>();
   const playerSideBySeatId = new Map<number, "self" | "opponent">();
+  const abilitySourceIdByAbilityId = new Map<number, number>();
 
   for (const frame of frames) {
     for (const object of frame.objects ?? []) {
-      objectById.set(object.instanceId, object);
+      objectsById.set(object.instanceId, object);
       if (object.playerSide !== "self" && object.playerSide !== "opponent") {
         continue;
       }
@@ -534,59 +742,156 @@ export function buildReplayTargetLookup(
         playerSideBySeatId.set(object.controllerSeatId, object.playerSide);
       }
     }
-  }
 
-  const targetIdsBySourceId = new Map<number, number[]>();
-  for (const frame of frames) {
     for (const annotation of replayFrameAnnotations(frame)) {
       if (
-        !replayAnnotationHasType(annotation, "AnnotationType_TargetSpec") ||
+        !replayAnnotationHasType(
+          annotation,
+          "AnnotationType_AbilityInstanceCreated",
+        ) ||
         typeof annotation.affectorId !== "number"
       ) {
         continue;
       }
-
-      let targetIds = targetIdsBySourceId.get(annotation.affectorId);
-      if (!targetIds) {
-        targetIds = [];
-        targetIdsBySourceId.set(annotation.affectorId, targetIds);
-      }
-      for (const targetId of annotation.affectedIds ?? []) {
-        if (typeof targetId === "number" && !targetIds.includes(targetId)) {
-          targetIds.push(targetId);
+      for (const abilityId of annotation.affectedIds ?? []) {
+        if (typeof abilityId === "number") {
+          abilitySourceIdByAbilityId.set(abilityId, annotation.affectorId);
         }
       }
     }
   }
 
-  const lookup: ReplayTargetLookup = new Map();
-  for (const [sourceId, targetIds] of targetIdsBySourceId) {
-    const targets = targetIds.map((targetId) => {
-      const object = objectById.get(targetId);
-      if (object) {
-        return {
-          targetId,
-          label: cardDisplayName(object),
+  const spellTargetsBySourceId: ReplayTargetLookup = new Map();
+  const targetEventsByFrameId = new Map<number, ReplayTargetEvent[]>();
+  const damageEventsByFrameId = new Map<number, ReplayDamageEvent[]>();
+  const triggerEventsByFrameId = new Map<number, ReplayTriggerEvent[]>();
+
+  for (const frame of frames) {
+    const annotations = replayFrameAnnotations(frame);
+    for (const annotation of annotations) {
+      if (
+        replayAnnotationHasType(annotation, "AnnotationType_TargetSpec") &&
+        typeof annotation.affectorId === "number"
+      ) {
+        const rawSourceId = annotation.affectorId;
+        const directSource = objectsById.get(rawSourceId);
+        const abilitySourceId = abilitySourceIdByAbilityId.get(rawSourceId);
+        const displaySourceId = directSource ? rawSourceId : abilitySourceId;
+        const displaySource =
+          typeof displaySourceId === "number"
+            ? objectsById.get(displaySourceId)
+            : undefined;
+        if (!displaySource || typeof displaySourceId !== "number") {
+          continue;
+        }
+
+        const targets = (annotation.affectedIds ?? [])
+          .filter((targetId): targetId is number => typeof targetId === "number")
+          .map((targetId) =>
+            replayRelationshipTarget(
+              targetId,
+              objectsById,
+              playerSideBySeatId,
+            ),
+          );
+        if (targets.length === 0) {
+          continue;
+        }
+
+        const sourceKind = directSource ? "spell" : "ability";
+        const event: ReplayTargetEvent = {
+          sourceId: displaySourceId,
+          sourceLabel: cardDisplayName(displaySource),
+          sourceKind,
+          targets,
         };
+        replayMapPush(targetEventsByFrameId, frame.id, event);
+
+        if (sourceKind === "spell") {
+          const existing = spellTargetsBySourceId.get(displaySourceId) ?? [];
+          for (const target of targets) {
+            if (!existing.some((candidate) => candidate.targetId === target.targetId)) {
+              existing.push(target);
+            }
+          }
+          spellTargetsBySourceId.set(displaySourceId, existing);
+        }
       }
 
-      const playerSide = playerSideBySeatId.get(targetId);
-      return {
-        targetId,
-        label:
-          playerSide === "self"
-            ? "you"
-            : playerSide === "opponent"
-              ? "opponent"
-              : `target ${targetId}`,
-      };
-    });
-    if (targets.length > 0) {
-      lookup.set(sourceId, targets);
+      if (
+        replayAnnotationHasType(annotation, "AnnotationType_DamageDealt") &&
+        typeof annotation.affectorId === "number"
+      ) {
+        const source = objectsById.get(annotation.affectorId);
+        const amount = replayAnnotationDetailIntValue(annotation, "damage");
+        if (!source || typeof amount !== "number" || amount <= 0) {
+          continue;
+        }
+        for (const targetId of annotation.affectedIds ?? []) {
+          if (typeof targetId !== "number") {
+            continue;
+          }
+          replayMapPush(damageEventsByFrameId, frame.id, {
+            sourceId: annotation.affectorId,
+            sourceLabel: cardDisplayName(source),
+            target: replayRelationshipTarget(
+              targetId,
+              objectsById,
+              playerSideBySeatId,
+            ),
+            amount,
+          });
+        }
+      }
+
+      if (
+        replayAnnotationHasType(annotation, "AnnotationType_TriggeringObject") &&
+        typeof annotation.affectorId === "number"
+      ) {
+        const sourceId = abilitySourceIdByAbilityId.get(annotation.affectorId);
+        const source =
+          typeof sourceId === "number" ? objectsById.get(sourceId) : undefined;
+        if (!source || typeof sourceId !== "number") {
+          continue;
+        }
+        for (const triggeringId of annotation.affectedIds ?? []) {
+          const triggeringObject =
+            typeof triggeringId === "number"
+              ? objectsById.get(triggeringId)
+              : undefined;
+          if (
+            !triggeringObject ||
+            typeof triggeringId !== "number" ||
+            triggeringId === sourceId
+          ) {
+            continue;
+          }
+          replayMapPush(triggerEventsByFrameId, frame.id, {
+            sourceId,
+            sourceLabel: cardDisplayName(source),
+            triggeringId,
+            triggeringLabel: cardDisplayName(triggeringObject),
+          });
+        }
+      }
     }
   }
 
-  return lookup;
+  return {
+    objectsById,
+    playerSideBySeatId,
+    abilitySourceIdByAbilityId,
+    spellTargetsBySourceId,
+    targetEventsByFrameId,
+    damageEventsByFrameId,
+    triggerEventsByFrameId,
+  };
+}
+
+export function buildReplayTargetLookup(
+  frames: MatchReplayFrame[],
+): ReplayTargetLookup {
+  return buildReplayRelationshipIndex(frames).spellTargetsBySourceId;
 }
 
 export function replayObjectStatePills(
@@ -880,7 +1185,7 @@ export function isMeaningfulReplayFrame(
 ): boolean {
   return (
     replayFrameHasNarratableChange(frame) ||
-    replayFrameHasTargetSpec(frame) ||
+    replayFrameHasRelationshipEvent(frame) ||
     replayFrameHasLifeDelta(previousFrame, frame)
   );
 }
@@ -1567,6 +1872,7 @@ function replaySignedStatModifier(value: number): string {
 
 function replayPowerToughnessAbilityBeat(
   frame: MatchReplayFrame,
+  relationships: ReplayRelationshipIndex,
 ): ReplayBeat | null {
   const annotations = replayFrameAnnotations(frame);
   const resolutions = annotations.filter((annotation) =>
@@ -1619,10 +1925,14 @@ function replayPowerToughnessAbilityBeat(
           "AnnotationType_AbilityInstanceDeleted",
         ) && annotation.affectedIds?.includes(abilityId),
     );
-    const sourceId = abilityDeleted?.affectorId;
-    const sourceObject = (frame.objects ?? []).find(
-      (object) => object.instanceId === sourceId,
-    );
+    const sourceId =
+      abilityDeleted?.affectorId ??
+      relationships.abilitySourceIdByAbilityId.get(abilityId);
+    const sourceObject =
+      (frame.objects ?? []).find((object) => object.instanceId === sourceId) ??
+      (typeof sourceId === "number"
+        ? relationships.objectsById.get(sourceId)
+        : undefined);
     const sourceName = sourceObject
       ? cardDisplayName(sourceObject)
       : replayChangeName(targetChange);
@@ -1637,20 +1947,84 @@ function replayPowerToughnessAbilityBeat(
   return null;
 }
 
-function replayTargetBeat(frame: MatchReplayFrame): ReplayBeat | null {
-  const targetsBySourceId = buildReplayTargetLookup([frame]);
-  for (const [sourceId, targets] of targetsBySourceId) {
-    const source = (frame.objects ?? []).find(
-      (object) => object.instanceId === sourceId,
-    );
-    if (!source) {
-      continue;
-    }
+function replayTargetBeat(
+  frame: MatchReplayFrame,
+  relationships: ReplayRelationshipIndex,
+): ReplayBeat | null {
+  for (const event of relationships.targetEventsByFrameId.get(frame.id) ?? []) {
     return {
-      text: `${cardDisplayName(source)} targets ${replayTargetListLabel(targets)}`,
+      text:
+        event.sourceKind === "ability"
+          ? `${event.sourceLabel}'s ability targets ${replayTargetListLabel(event.targets)}`
+          : `${event.sourceLabel} targets ${replayTargetListLabel(event.targets)}`,
     };
   }
   return null;
+}
+
+function replayDamageBeat(
+  frame: MatchReplayFrame,
+  relationships: ReplayRelationshipIndex,
+): ReplayBeat | null {
+  const events = relationships.damageEventsByFrameId.get(frame.id) ?? [];
+  const lead = events[0];
+  if (!lead) return null;
+  return {
+    text: `${lead.sourceLabel} deals ${lead.amount} damage to ${lead.target.label}`,
+    note:
+      events.length > 1
+        ? `${events.length - 1} more damage event${events.length === 2 ? "" : "s"}`
+        : undefined,
+  };
+}
+
+function replayTriggerBeat(
+  frame: MatchReplayFrame,
+  relationships: ReplayRelationshipIndex,
+): ReplayBeat | null {
+  const events = relationships.triggerEventsByFrameId.get(frame.id) ?? [];
+  const lead = events[0];
+  if (!lead) return null;
+  return {
+    text: `${lead.sourceLabel}'s ability triggers`,
+    note: `triggered by ${lead.triggeringLabel}`,
+  };
+}
+
+function replayTriggerSourceListLabel(events: ReplayTriggerEvent[]): string {
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    counts.set(event.sourceLabel, (counts.get(event.sourceLabel) ?? 0) + 1);
+  }
+  const labels = [...counts].map(([label, count]) =>
+    count > 1 ? `${count} ${label} abilities` : label,
+  );
+  if (labels.length <= 1) return labels[0] ?? "";
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
+function replayAttachmentBeat(
+  frame: MatchReplayFrame,
+  relationships: ReplayRelationshipIndex,
+): ReplayBeat | null {
+  const event = replayFrameAttachmentEvents(frame, relationships)[0];
+  return event
+    ? { text: `${event.attachmentLabel} becomes attached to ${event.hostLabel}` }
+    : null;
+}
+
+function replayCrewBeat(
+  frame: MatchReplayFrame,
+  relationships: ReplayRelationshipIndex,
+): ReplayBeat | null {
+  const event = replayFrameCrewEvents(frame, relationships)[0];
+  if (!event) return null;
+  const crewLabel =
+    event.crewLabels.length === 1
+      ? event.crewLabels[0]!
+      : `${event.crewLabels[0]} and ${event.crewLabels.length - 1} more`;
+  return { text: `${crewLabel} crews ${event.vehicleLabel}` };
 }
 
 /**
@@ -1673,6 +2047,7 @@ function replayActorVerb(playerSide: string | undefined, base: string): string {
 export function buildReplayBeat(
   frame: MatchReplayFrame,
   previousFrame: MatchReplayFrame | null,
+  relationships: ReplayRelationshipIndex = buildReplayRelationshipIndex([frame]),
 ): ReplayBeat {
   const changes = frame.changes ?? [];
   const withAction = (action: string) =>
@@ -1683,8 +2058,21 @@ export function buildReplayBeat(
   const attacks = withAction("attack");
   if (attacks.length > 0) {
     const lead = attacks[0]!;
+    const attacker =
+      (frame.objects ?? []).find(
+        (object) => object.instanceId === lead.instanceId,
+      ) ?? relationships.objectsById.get(lead.instanceId);
+    const destination =
+      typeof attacker?.attackTargetId === "number"
+        ? replayRelationshipTargetForId(relationships, attacker.attackTargetId)
+        : null;
+    const destinationNote =
+      destination && !destination.playerSide
+        ? `attacking ${destination.label}`
+        : undefined;
     return {
       text: `${replayActorVerb(lead.playerSide, "attack")} with ${replayChangeName(lead)}${replayObjectPTSuffix(frame, lead.instanceId)}${others(attacks.length)}`,
+      note: destinationNote,
     };
   }
 
@@ -1706,20 +2094,40 @@ export function buildReplayBeat(
   const casts = changes.filter(replayChangeIsCast);
   if (casts.length > 0) {
     const lead = casts[0]!;
+    const triggers = relationships.triggerEventsByFrameId.get(frame.id) ?? [];
     return {
       text: `${replayActorVerb(lead.playerSide, "cast")} ${replayChangeName(lead)}`,
+      note:
+        triggers.length > 0
+          ? `triggers ${replayTriggerSourceListLabel(triggers)}`
+          : undefined,
     };
   }
 
-  const target = replayTargetBeat(frame);
+  const target = replayTargetBeat(frame, relationships);
   if (target) {
     return target;
   }
 
-  const powerToughnessAbility = replayPowerToughnessAbilityBeat(frame);
+  const powerToughnessAbility = replayPowerToughnessAbilityBeat(
+    frame,
+    relationships,
+  );
   if (powerToughnessAbility) {
     return powerToughnessAbility;
   }
+
+  const damage = replayDamageBeat(frame, relationships);
+  if (damage) return damage;
+
+  const attachment = replayAttachmentBeat(frame, relationships);
+  if (attachment) return attachment;
+
+  const crew = replayCrewBeat(frame, relationships);
+  if (crew) return crew;
+
+  const trigger = replayTriggerBeat(frame, relationships);
+  if (trigger) return trigger;
 
   const enters = changes.filter((change) => {
     if (

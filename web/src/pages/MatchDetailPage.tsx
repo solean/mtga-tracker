@@ -40,10 +40,11 @@ import {
   boardZoneKind,
   boardZoneLabel,
   buildReplayBeat,
+  buildReplayAttachmentState,
   buildReplayBoardCensus,
   buildReplayGameGroups,
   buildReplayLifeSeries,
-  buildReplayTargetLookup,
+  buildReplayRelationshipIndex,
   buildReplayTickKinds,
   buildReplayTurnBoundaries,
   cardDisplayName,
@@ -56,6 +57,7 @@ import {
   replayAnnotationDetailIntValue,
   replayAnnotationHasType,
   replayFrameAnnotations,
+  replayFrameCrewEvents,
   replayFrameMomentLabel,
   replayLifeDelta,
   replayLifeSeriesDomain,
@@ -68,6 +70,8 @@ import {
   replayObjectPTLabel,
   replayObjectStatePills,
   replayObjectStatusText,
+  replayPlayerConnectionId,
+  replayRelationshipTargetForId,
   replayTurnLabel,
   replayTurnValue,
   replayTargetListLabel,
@@ -91,6 +95,7 @@ import {
   type ReplayGameSummary,
   type ReplayKeyMoment,
   type ReplayLifePoint,
+  type ReplayRelationshipIndex,
   type ReplayTickKind,
   type ReplayTargetLookup,
   type ReplayTurnBoundary,
@@ -466,6 +471,7 @@ function MatchReplayObjectCard({
   connectionHighlighted = false,
   onConnectionFocusChange,
   linkedExileObjects = [],
+  relationshipLabels = [],
 }: {
   object: MatchReplayFrameObject;
   preview: CardPreview | null;
@@ -477,6 +483,7 @@ function MatchReplayObjectCard({
   connectionHighlighted?: boolean;
   onConnectionFocusChange?: (instanceId: number | null) => void;
   linkedExileObjects?: MatchReplayFrameObject[];
+  relationshipLabels?: string[];
 }) {
   const card = { cardId: object.cardId, cardName: object.cardName };
   const name = preview?.name ?? cardDisplayName(card);
@@ -498,6 +505,7 @@ function MatchReplayObjectCard({
   const statusText = [
     replayObjectStatusText(object, preview),
     linkedExileSummary,
+    ...relationshipLabels,
   ]
     .filter((part): part is string => Boolean(part))
     .join(" • ");
@@ -641,7 +649,9 @@ function MatchReplayObjectCard({
         ) : null}
         {cardNode}
       </div>
-      {statePills.length > 0 || counterPills.length > 0 ? (
+      {statePills.length > 0 ||
+      counterPills.length > 0 ||
+      relationshipLabels.length > 0 ? (
         <div className="match-replay-card-statusrow">
           {statePills.map((pill) => (
             <span
@@ -659,6 +669,14 @@ function MatchReplayObjectCard({
               {counter.count > 1 ? `${counter.label} x${counter.count}` : counter.label}
             </span>
           ))}
+          {relationshipLabels.map((label) => (
+            <span
+              className="match-replay-state-pill is-relationship"
+              key={`${object.instanceId}-${label}`}
+            >
+              {label}
+            </span>
+          ))}
         </div>
       ) : null}
     </div>
@@ -672,7 +690,7 @@ function MatchReplayConnectionOverlay({
   focusedInstanceId,
 }: {
   surfaceRef: RefObject<HTMLDivElement | null>;
-  cardShellsRef: MutableRefObject<Map<number, HTMLDivElement>>;
+  cardShellsRef: MutableRefObject<Map<number, HTMLElement>>;
   connections: ReplayBoardConnection[];
   focusedInstanceId: number | null;
 }) {
@@ -718,7 +736,14 @@ function MatchReplayConnectionOverlay({
         return;
       }
 
-      const paths = connections.flatMap((connection) => {
+      const paths = connections.flatMap((connection, connectionIndex) => {
+        const highlighted =
+          focusedInstanceId !== null &&
+          (connection.sourceId === focusedInstanceId ||
+            connection.targetId === focusedInstanceId);
+        if (connection.hiddenUnlessFocused && !highlighted) {
+          return [];
+        }
         const sourceElement = cardShellsRef.current.get(connection.sourceId);
         const targetElement = cardShellsRef.current.get(connection.targetId);
         if (!sourceElement || !targetElement) {
@@ -734,7 +759,9 @@ function MatchReplayConnectionOverlay({
         const endX = targetRect.left + targetRect.width / 2 - surfaceRect.left;
         const endY = targetRect.top + targetRect.height / 2 - surfaceRect.top;
         const d =
-          connection.kind === "spellTarget"
+          connection.kind === "spellTarget" ||
+          connection.kind === "abilityTarget" ||
+          connection.kind === "trigger"
             ? (() => {
                 const deltaX = endX - startX;
                 const direction = deltaX >= 0 ? 1 : -1;
@@ -749,13 +776,10 @@ function MatchReplayConnectionOverlay({
 
         return [
           {
-            key: `${connection.kind}-${connection.sourceId}-${connection.targetId}`,
+            key: `${connection.kind}-${connection.sourceId}-${connection.targetId}-${connectionIndex}`,
             d,
             kind: connection.kind,
-            highlighted:
-              focusedInstanceId !== null &&
-              (connection.sourceId === focusedInstanceId ||
-                connection.targetId === focusedInstanceId),
+            highlighted,
           },
         ];
       });
@@ -842,9 +866,15 @@ function MatchReplayConnectionOverlay({
       {snapshot.paths.map((path) => (
         <path
           key={path.key}
-          className={`match-replay-connection-path is-${path.kind === "spellTarget" ? "spell-target" : "combat"} ${path.highlighted ? "is-highlighted" : ""}`}
+          className={`match-replay-connection-path is-${path.kind.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} ${path.highlighted ? "is-highlighted" : ""}`}
           d={path.d}
-          markerEnd={`url(#${path.kind === "spellTarget" ? spellTargetMarkerId : combatMarkerId})`}
+          markerEnd={
+            path.kind === "spellTarget" || path.kind === "abilityTarget"
+              ? `url(#${spellTargetMarkerId})`
+              : path.kind === "combat" || path.kind === "attackTarget"
+                ? `url(#${combatMarkerId})`
+                : undefined
+          }
         />
       ))}
     </svg>
@@ -1051,6 +1081,10 @@ function MatchReplayFrameSideSummary({
   includeHand = false,
   onOpenZone,
   variant = "box",
+  endpointId,
+  onRegisterEndpoint,
+  attackSummary,
+  relationshipTargeted = false,
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
@@ -1058,6 +1092,10 @@ function MatchReplayFrameSideSummary({
   includeHand?: boolean;
   onOpenZone?: (state: MatchReplayZoneDialogState) => void;
   variant?: "box" | "rail";
+  endpointId?: number;
+  onRegisterEndpoint?: (instanceId: number, element: HTMLElement | null) => void;
+  attackSummary?: { attackers: number; power: number } | null;
+  relationshipTargeted?: boolean;
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -1076,12 +1114,23 @@ function MatchReplayFrameSideSummary({
 
     return (
       <section
-        className={`match-replay-zonerail is-${side}`}
+        className={`match-replay-zonerail is-${side} ${attackSummary ? "is-under-attack" : ""} ${relationshipTargeted ? "is-targeted" : ""}`}
         aria-label={`${timelinePlayerLabel(side)} off-board zones`}
+        ref={
+          typeof endpointId === "number" && onRegisterEndpoint
+            ? (element) => onRegisterEndpoint(endpointId, element)
+            : undefined
+        }
       >
         <span className="match-replay-zonerail-label">
           {timelinePlayerLabel(side)}
         </span>
+        {attackSummary ? (
+          <span className="match-replay-zonerail-attack">
+            Under attack · {attackSummary.attackers} attacker
+            {attackSummary.attackers === 1 ? "" : "s"} · {attackSummary.power} power
+          </span>
+        ) : null}
         {visibleZones.length === 0 ? (
           <span className="match-replay-zonerail-empty">
             No graveyard, exile, or revealed cards
@@ -1221,6 +1270,7 @@ function MatchReplayFrameBattlefield({
   connectionInteractiveInstanceIDs,
   onConnectionFocusChange,
   linkedExileObjectsByParentId,
+  relationshipLabelsByObjectId,
 }: {
   side: "self" | "opponent";
   objects: MatchReplayFrameObject[];
@@ -1231,6 +1281,7 @@ function MatchReplayFrameBattlefield({
   connectionInteractiveInstanceIDs?: Set<number>;
   onConnectionFocusChange?: (instanceId: number | null) => void;
   linkedExileObjectsByParentId?: Map<number, MatchReplayFrameObject[]>;
+  relationshipLabelsByObjectId?: Map<number, string[]>;
 }) {
   const sideObjects = useMemo(
     () => objects.filter((object) => object.playerSide === side),
@@ -1330,6 +1381,7 @@ function MatchReplayFrameBattlefield({
                   }
                   onConnectionFocusChange={onConnectionFocusChange}
                   linkedExileObjectsByParentId={linkedExileObjectsByParentId}
+                  relationshipLabelsByObjectId={relationshipLabelsByObjectId}
                   stackEligible={
                     // Lands stack whenever identical; other permanents only
                     // consolidate duplicate tokens (e.g. a row of Mutagens).
@@ -1365,6 +1417,9 @@ function MatchReplayFrameBattlefield({
                         linkedExileObjectsByParentId?.get(object.instanceId) ??
                         []
                       }
+                      relationshipLabels={
+                        relationshipLabelsByObjectId?.get(object.instanceId) ?? []
+                      }
                     />
                   ))}
                 </div>
@@ -1388,6 +1443,7 @@ function MatchReplayCardStackRow({
   connectionInteractiveInstanceIDs,
   onConnectionFocusChange,
   linkedExileObjectsByParentId,
+  relationshipLabelsByObjectId,
   stackEligible,
 }: {
   objects: MatchReplayFrameObject[];
@@ -1398,6 +1454,7 @@ function MatchReplayCardStackRow({
   connectionInteractiveInstanceIDs?: Set<number>;
   onConnectionFocusChange?: (instanceId: number | null) => void;
   linkedExileObjectsByParentId?: Map<number, MatchReplayFrameObject[]>;
+  relationshipLabelsByObjectId?: Map<number, string[]>;
   stackEligible?: (object: MatchReplayFrameObject) => boolean;
 }) {
   const stacks = useMemo(
@@ -1434,6 +1491,9 @@ function MatchReplayCardStackRow({
       }
       linkedExileObjects={
         linkedExileObjectsByParentId?.get(object.instanceId) ?? []
+      }
+      relationshipLabels={
+        relationshipLabelsByObjectId?.get(object.instanceId) ?? []
       }
     />
   );
@@ -2162,11 +2222,13 @@ function MatchReplayHud({
 
 function MatchReplayMoveList({
   frames,
+  relationships,
   turnBoundaries,
   currentIndex,
   onSeek,
 }: {
   frames: MatchReplayFrame[];
+  relationships: ReplayRelationshipIndex;
   turnBoundaries: ReplayTurnBoundary[];
   currentIndex: number;
   onSeek: (index: number) => void;
@@ -2174,9 +2236,13 @@ function MatchReplayMoveList({
   const beats = useMemo(
     () =>
       frames.map((frame, index) =>
-        buildReplayBeat(frame, index > 0 ? frames[index - 1] ?? null : null),
+        buildReplayBeat(
+          frame,
+          index > 0 ? frames[index - 1] ?? null : null,
+          relationships,
+        ),
       ),
-    [frames],
+    [frames, relationships],
   );
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -2270,7 +2336,7 @@ function MatchReplayFrameBoard({
     number | null
   >(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-  const replayCardShellsRef = useRef(new Map<number, HTMLDivElement>());
+  const replayCardShellsRef = useRef(new Map<number, HTMLElement>());
 
   const currentFrame = frames[safeSelectedFrameIndex] ?? null;
   const previousFrame =
@@ -2281,10 +2347,11 @@ function MatchReplayFrameBoard({
   const lifeSeries = useMemo(() => buildReplayLifeSeries(frames), [frames]);
   const tickKinds = useMemo(() => buildReplayTickKinds(frames), [frames]);
   const keyMoments = useMemo(() => findReplayKeyMoments(frames), [frames]);
-  const targetsBySourceId = useMemo(
-    () => buildReplayTargetLookup(frames),
+  const relationships = useMemo(
+    () => buildReplayRelationshipIndex(frames),
     [frames],
   );
+  const targetsBySourceId = relationships.spellTargetsBySourceId;
 
   // Lazily-built, cached per index: users sweep the scrubber back and forth
   // over the same frames, so each snapshot is computed at most once.
@@ -2309,12 +2376,12 @@ function MatchReplayFrameBoard({
         selfLifeDelta: replayLifeDelta(prev, frame, "self"),
         opponentLifeDelta: replayLifeDelta(prev, frame, "opponent"),
         census: buildReplayBoardCensus(frame),
-        beat: buildReplayBeat(frame, prev),
+        beat: buildReplayBeat(frame, prev, relationships),
       };
       cache.set(frameIndex, snapshot);
       return snapshot;
     };
-  }, [frames, lifeSeries]);
+  }, [frames, lifeSeries, relationships]);
 
   const currentTurnBoundaryIndex = currentFrame
     ? turnBoundaries.findIndex(
@@ -2351,41 +2418,147 @@ function MatchReplayFrameBoard({
     }
     return next;
   }, [currentObjects]);
-  const spellTargetConnections = useMemo(() => {
-    const battlefieldByID = new Map<number, MatchReplayFrameObject>();
+  const relationshipPresentation = useMemo(() => {
+    const visibleIds = new Set<number>();
     const stackByID = new Set<number>();
     for (const object of currentObjects) {
       const kind = boardZoneKind(object.zoneType);
-      if (kind === "battlefield") {
-        battlefieldByID.set(object.instanceId, object);
-      }
+      if (kind === "battlefield") visibleIds.add(object.instanceId);
       if (kind === "stack") {
         stackByID.add(object.instanceId);
+        visibleIds.add(object.instanceId);
       }
     }
 
-    const next: ReplayBoardConnection[] = [];
+    const connections: ReplayBoardConnection[] = [];
+    const relationshipLabelsByObjectId = new Map<number, string[]>();
+    const targetedPlayerSides = new Set<"self" | "opponent">();
+    const attackSummaries = new Map<
+      "self" | "opponent",
+      { attackers: number; power: number }
+    >();
+    const addLabel = (id: number, label: string) => {
+      const labels = relationshipLabelsByObjectId.get(id) ?? [];
+      if (!labels.includes(label)) labels.push(label);
+      relationshipLabelsByObjectId.set(id, labels);
+    };
+
     for (const [sourceId, targets] of targetsBySourceId) {
       if (!stackByID.has(sourceId)) {
         continue;
       }
       for (const target of targets) {
-        if (!battlefieldByID.has(target.targetId)) {
-          continue;
-        }
-        next.push({
+        if (target.playerSide) targetedPlayerSides.add(target.playerSide);
+        connections.push({
           kind: "spellTarget",
           sourceId,
-          targetId: target.targetId,
+          targetId: target.connectionId,
         });
       }
     }
 
-    return next;
-  }, [currentObjects, targetsBySourceId]);
+    if (currentFrame) {
+      for (const event of relationships.targetEventsByFrameId.get(currentFrame.id) ?? []) {
+        if (event.sourceKind !== "ability" || !visibleIds.has(event.sourceId)) continue;
+        for (const target of event.targets) {
+          if (target.playerSide) targetedPlayerSides.add(target.playerSide);
+          connections.push({
+            kind: "abilityTarget",
+            sourceId: event.sourceId,
+            targetId: target.connectionId,
+          });
+        }
+      }
+
+      for (const event of relationships.damageEventsByFrameId.get(currentFrame.id) ?? []) {
+        if (event.target.playerSide) targetedPlayerSides.add(event.target.playerSide);
+        connections.push({
+          kind: "damage",
+          sourceId: event.sourceId,
+          targetId: event.target.connectionId,
+        });
+      }
+
+      for (const event of relationships.triggerEventsByFrameId.get(currentFrame.id) ?? []) {
+        connections.push({
+          kind: "trigger",
+          sourceId: event.triggeringId,
+          targetId: event.sourceId,
+        });
+      }
+
+      for (const event of buildReplayAttachmentState(
+        frames,
+        safeSelectedFrameIndex,
+        relationships,
+      )) {
+        if (!visibleIds.has(event.attachmentId) || !visibleIds.has(event.hostId)) continue;
+        connections.push({
+          kind: "attachment",
+          sourceId: event.attachmentId,
+          targetId: event.hostId,
+          hiddenUnlessFocused: true,
+        });
+        addLabel(event.attachmentId, `Attached to ${event.hostLabel}`);
+        addLabel(event.hostId, `Attached: ${event.attachmentLabel}`);
+      }
+
+      for (const event of replayFrameCrewEvents(currentFrame, relationships)) {
+        for (const crewId of event.crewIds) {
+          connections.push({
+            kind: "crew",
+            sourceId: crewId,
+            targetId: event.vehicleId,
+          });
+        }
+      }
+    }
+
+    for (const attacker of currentObjects) {
+      if (
+        !replayObjectIsAttacking(attacker) ||
+        typeof attacker.attackTargetId !== "number"
+      ) {
+        continue;
+      }
+      const target = replayRelationshipTargetForId(
+        relationships,
+        attacker.attackTargetId,
+      );
+      connections.push({
+        kind: "attackTarget",
+        sourceId: attacker.instanceId,
+        targetId: target.connectionId,
+        hiddenUnlessFocused: Boolean(target.playerSide),
+      });
+      if (target.playerSide) {
+        const summary = attackSummaries.get(target.playerSide) ?? {
+          attackers: 0,
+          power: 0,
+        };
+        summary.attackers += 1;
+        summary.power += attacker.power ?? 0;
+        attackSummaries.set(target.playerSide, summary);
+      }
+    }
+
+    return {
+      connections,
+      relationshipLabelsByObjectId,
+      targetedPlayerSides,
+      attackSummaries,
+    };
+  }, [
+    currentFrame,
+    currentObjects,
+    frames,
+    relationships,
+    safeSelectedFrameIndex,
+    targetsBySourceId,
+  ]);
   const overlayConnections = useMemo(
-    () => [...combatConnections, ...spellTargetConnections],
-    [combatConnections, spellTargetConnections],
+    () => [...combatConnections, ...relationshipPresentation.connections],
+    [combatConnections, relationshipPresentation.connections],
   );
   const linkedExileObjectsByParentId = useMemo(() => {
     const currentObjectsById = new Map<number, MatchReplayFrameObject>();
@@ -2497,7 +2670,7 @@ function MatchReplayFrameBoard({
     currentFrameChanges.map((change) => change.instanceId),
   );
   const currentBeat = currentFrame
-    ? buildReplayBeat(currentFrame, previousFrame)
+    ? buildReplayBeat(currentFrame, previousFrame, relationships)
     : { text: "" };
   const canStepBackward = safeSelectedFrameIndex > 0;
   const canStepForward = safeSelectedFrameIndex < lastFrameIndex;
@@ -2551,7 +2724,7 @@ function MatchReplayFrameBoard({
     setFocusedConnectionInstanceId(null);
   }, [currentFrame?.id]);
 
-  function registerCardShell(instanceId: number, element: HTMLDivElement | null) {
+  function registerCardShell(instanceId: number, element: HTMLElement | null) {
     if (element) {
       replayCardShellsRef.current.set(instanceId, element);
       return;
@@ -2693,6 +2866,14 @@ function MatchReplayFrameBoard({
               objects={currentObjects}
               variant="rail"
               onOpenZone={setZoneDialogState}
+              endpointId={replayPlayerConnectionId("opponent")}
+              onRegisterEndpoint={registerCardShell}
+              attackSummary={
+                relationshipPresentation.attackSummaries.get("opponent") ?? null
+              }
+              relationshipTargeted={
+                relationshipPresentation.targetedPlayerSides.has("opponent")
+              }
             />
             <div className="match-replay-arena-stack">
               <MatchReplayStack
@@ -2718,6 +2899,9 @@ function MatchReplayFrameBoard({
             connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
             onConnectionFocusChange={setFocusedConnectionInstanceId}
             linkedExileObjectsByParentId={linkedExileObjectsByParentId}
+            relationshipLabelsByObjectId={
+              relationshipPresentation.relationshipLabelsByObjectId
+            }
           />
 
           <MatchReplayFrameBattlefield
@@ -2730,6 +2914,9 @@ function MatchReplayFrameBoard({
             connectionInteractiveInstanceIDs={overlayInteractiveInstanceIDs}
             onConnectionFocusChange={setFocusedConnectionInstanceId}
             linkedExileObjectsByParentId={linkedExileObjectsByParentId}
+            relationshipLabelsByObjectId={
+              relationshipPresentation.relationshipLabelsByObjectId
+            }
           />
 
           <MatchReplayFrameSideSummary
@@ -2737,6 +2924,14 @@ function MatchReplayFrameBoard({
             objects={currentObjects}
             variant="rail"
             onOpenZone={setZoneDialogState}
+            endpointId={replayPlayerConnectionId("self")}
+            onRegisterEndpoint={registerCardShell}
+            attackSummary={
+              relationshipPresentation.attackSummaries.get("self") ?? null
+            }
+            relationshipTargeted={
+              relationshipPresentation.targetedPlayerSides.has("self")
+            }
           />
 
           <MatchReplayHand
@@ -2748,6 +2943,7 @@ function MatchReplayFrameBoard({
 
         <MatchReplayMoveList
           frames={frames}
+          relationships={relationships}
           turnBoundaries={turnBoundaries}
           currentIndex={safeSelectedFrameIndex}
           onSeek={(nextIndex) => {

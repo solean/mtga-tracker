@@ -5,9 +5,11 @@ import {
   boardZoneKind,
   boardZoneLabel,
   buildReplayBeat,
+  buildReplayAttachmentState,
   buildReplayBoardCensus,
   buildReplayGameGroups,
   buildReplayLifeSeries,
+  buildReplayRelationshipIndex,
   buildReplayTargetLookup,
   buildReplayTickKinds,
   buildReplayTurnBoundaries,
@@ -19,6 +21,8 @@ import {
   normalizeReplayWinReason,
   preferredReplayFrameIndex,
   replayFrameHasLifeDelta,
+  replayFrameAttachmentEvents,
+  replayFrameCrewEvents,
   replayFrameLifeTotalWinner,
   replayFrameTickKind,
   replayLifeDelta,
@@ -56,11 +60,16 @@ function object(
     instanceId: values.instanceId ?? 1,
     cardId: values.cardId ?? 100,
     cardName: values.cardName,
+    ownerSeatId: values.ownerSeatId,
+    controllerSeatId: values.controllerSeatId,
     playerSide: values.playerSide ?? "self",
     zoneType: values.zoneType ?? "Battlefield",
     power: values.power,
     toughness: values.toughness,
     attackState: values.attackState,
+    attackTargetId: values.attackTargetId,
+    blockState: values.blockState,
+    blockAttackerIdsJson: values.blockAttackerIdsJson,
     counterSummaryJson: values.counterSummaryJson,
     detailsJson: values.detailsJson,
     isToken: values.isToken ?? false,
@@ -592,8 +601,241 @@ describe("play-by-play beats", () => {
       text: "Burst Lightning targets Otter",
     });
     expect(buildReplayTargetLookup([targetFrame])).toEqual(
-      new Map([[8, [{ targetId: 7, label: "Otter" }]]]),
+      new Map([[8, [{ targetId: 7, connectionId: 7, label: "Otter" }]]]),
     );
+  });
+
+  test("resolves an ability-instance target back to its permanent", () => {
+    const abilityFrame = frame({
+      id: 1,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 7,
+            affectedIds: [10],
+            type: ["AnnotationType_AbilityInstanceCreated"],
+          },
+        ],
+      }),
+      objects: [object({ instanceId: 7, cardName: "Novel Nunchaku" })],
+    });
+    const targetFrame = frame({
+      id: 2,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 10,
+            affectedIds: [8],
+            type: ["AnnotationType_TargetSpec"],
+          },
+        ],
+      }),
+      objects: [object({ instanceId: 8, cardName: "Donatello" })],
+    });
+    const relationships = buildReplayRelationshipIndex([
+      abilityFrame,
+      targetFrame,
+    ]);
+
+    expect(buildReplayBeat(targetFrame, abilityFrame, relationships)).toEqual({
+      text: "Novel Nunchaku's ability targets Donatello",
+    });
+    expect(relationships.targetEventsByFrameId.get(2)?.[0]).toMatchObject({
+      sourceId: 7,
+      sourceKind: "ability",
+      targets: [{ targetId: 8, connectionId: 8, label: "Donatello" }],
+    });
+  });
+
+  test("maps player targets to a board endpoint", () => {
+    const targetFrame = frame({
+      id: 2,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 8,
+            affectedIds: [2],
+            type: ["AnnotationType_TargetSpec"],
+          },
+        ],
+      }),
+      objects: [
+        object({ instanceId: 8, cardName: "Burst Lightning", zoneType: "Stack" }),
+        object({ instanceId: 7, playerSide: "opponent", ownerSeatId: 2 }),
+      ],
+    });
+    const relationships = buildReplayRelationshipIndex([targetFrame]);
+    expect(relationships.spellTargetsBySourceId.get(8)).toEqual([
+      {
+        targetId: 2,
+        connectionId: -2,
+        label: "opponent",
+        playerSide: "opponent",
+      },
+    ]);
+    expect(buildReplayBeat(targetFrame, null, relationships)).toEqual({
+      text: "Burst Lightning targets opponent",
+    });
+  });
+
+  test("attributes a triggered ability to the spell that triggered it", () => {
+    const setup = frame({
+      id: 1,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 7,
+            affectedIds: [10],
+            type: ["AnnotationType_AbilityInstanceCreated"],
+          },
+        ],
+      }),
+      objects: [object({ instanceId: 7, cardName: "Slickshot Show-Off" })],
+    });
+    const castFrame = frame({
+      id: 2,
+      changes: [
+        change({
+          action: "move_public",
+          instanceId: 8,
+          cardName: "Burst Lightning",
+          fromZoneType: "Hand",
+          toZoneType: "Stack",
+        }),
+      ],
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 10,
+            affectedIds: [8],
+            type: ["AnnotationType_TriggeringObject"],
+          },
+        ],
+      }),
+      objects: [
+        object({ instanceId: 7, cardName: "Slickshot Show-Off" }),
+        object({ instanceId: 8, cardName: "Burst Lightning", zoneType: "Stack" }),
+      ],
+    });
+    const relationships = buildReplayRelationshipIndex([setup, castFrame]);
+    expect(buildReplayBeat(castFrame, setup, relationships)).toEqual({
+      text: "You cast Burst Lightning",
+      note: "triggers Slickshot Show-Off",
+    });
+  });
+
+  test("narrates damage, attachments, and crew metadata", () => {
+    const damageFrame = frame({
+      id: 1,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 8,
+            affectedIds: [7],
+            type: ["AnnotationType_DamageDealt"],
+            details: [{ key: "damage", valueInt32: [2] }],
+          },
+        ],
+      }),
+      objects: [
+        object({ instanceId: 8, cardName: "Burst Lightning" }),
+        object({ instanceId: 7, cardName: "Otter" }),
+      ],
+    });
+    const attachmentFrame = frame({
+      id: 2,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 11,
+            affectedIds: [12],
+            type: ["AnnotationType_AttachmentCreated"],
+          },
+        ],
+      }),
+      objects: [
+        object({ instanceId: 11, cardName: "Novel Nunchaku" }),
+        object({ instanceId: 12, cardName: "Donatello" }),
+      ],
+    });
+    const crewFrame = frame({
+      id: 3,
+      annotationsJson: JSON.stringify({
+        annotations: [
+          {
+            affectorId: 20,
+            affectedIds: [21],
+            type: ["AnnotationType_CrewedThisTurn"],
+          },
+        ],
+      }),
+      objects: [
+        object({ instanceId: 20, cardName: "Turtle Van" }),
+        object({ instanceId: 21, cardName: "Putrid Pals" }),
+      ],
+    });
+    const relationships = buildReplayRelationshipIndex([
+      damageFrame,
+      attachmentFrame,
+      crewFrame,
+    ]);
+
+    expect(buildReplayBeat(damageFrame, null, relationships)).toEqual({
+      text: "Burst Lightning deals 2 damage to Otter",
+    });
+    expect(buildReplayBeat(attachmentFrame, damageFrame, relationships)).toEqual({
+      text: "Novel Nunchaku becomes attached to Donatello",
+    });
+    expect(replayFrameAttachmentEvents(attachmentFrame, relationships)).toHaveLength(1);
+    expect(
+      buildReplayAttachmentState(
+        [attachmentFrame, frame({ id: 4 })],
+        1,
+        relationships,
+      ),
+    ).toEqual([
+      {
+        attachmentId: 11,
+        attachmentLabel: "Novel Nunchaku",
+        hostId: 12,
+        hostLabel: "Donatello",
+      },
+    ]);
+    expect(buildReplayBeat(crewFrame, attachmentFrame, relationships)).toEqual({
+      text: "Putrid Pals crews Turtle Van",
+    });
+    expect(replayFrameCrewEvents(crewFrame, relationships)).toHaveLength(1);
+  });
+
+  test("names a non-player attack destination", () => {
+    const attackFrame = frame({
+      id: 2,
+      changes: [
+        change({
+          action: "attack",
+          instanceId: 7,
+          cardName: "Otter",
+          playerSide: "opponent",
+        }),
+      ],
+      objects: [
+        object({
+          instanceId: 7,
+          cardName: "Otter",
+          playerSide: "opponent",
+          power: 2,
+          toughness: 2,
+          attackState: "attacking",
+          attackTargetId: 9,
+        }),
+        object({ instanceId: 9, cardName: "Kaito" }),
+      ],
+    });
+    const relationships = buildReplayRelationshipIndex([attackFrame]);
+    expect(buildReplayBeat(attackFrame, null, relationships)).toEqual({
+      text: "Opponent attacks with Otter (2/2)",
+      note: "attacking Kaito",
+    });
   });
 });
 

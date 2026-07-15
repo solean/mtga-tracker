@@ -3414,6 +3414,35 @@ span.settings-status-pill {
   flex-wrap: wrap;
   gap: 0.4rem 0.6rem;
   padding: 0.18rem 0.1rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: border-color 140ms ease, background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.match-replay-zonerail.is-targeted {
+  border-color: var(--spell-target-connection-line);
+  background: rgba(255, 138, 36, 0.07);
+  box-shadow: 0 0 14px var(--spell-target-connection-glow);
+}
+
+.match-replay-zonerail.is-under-attack {
+  border-color: var(--combat-attack-border);
+  background: rgba(255, 82, 82, 0.07);
+  box-shadow: 0 0 14px var(--combat-attack-glow);
+}
+
+.match-replay-zonerail-attack {
+  padding: 0.18rem 0.44rem;
+  border: 1px solid var(--pill-loss-border);
+  border-radius: 999px;
+  background: var(--pill-loss-bg);
+  color: var(--pill-loss-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--track-sm);
+  text-transform: uppercase;
 }
 
 .match-replay-zonerail-label {
@@ -3515,6 +3544,42 @@ button.match-replay-zonechip.is-button {
   filter: drop-shadow(0 0 8px var(--spell-target-connection-glow));
 }
 
+.match-replay-connection-path.is-ability-target {
+  stroke: var(--spell-target-connection-line);
+  stroke-dasharray: 7 5;
+  filter: drop-shadow(0 0 8px var(--spell-target-connection-glow));
+}
+
+.match-replay-connection-path.is-attack-target {
+  stroke: var(--combat-connection-line);
+  filter: drop-shadow(0 0 8px var(--combat-connection-glow));
+}
+
+.match-replay-connection-path.is-attachment {
+  stroke: var(--muted-strong);
+  stroke-width: 2;
+  stroke-dasharray: 3 4;
+}
+
+.match-replay-connection-path.is-trigger {
+  stroke: var(--win);
+  stroke-dasharray: 8 5;
+  filter: drop-shadow(0 0 7px rgba(0, 230, 118, 0.3));
+}
+
+.match-replay-connection-path.is-damage {
+  stroke: var(--loss);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 9px rgba(255, 82, 82, 0.42));
+  animation: match-replay-damage-pulse 720ms ease-out both;
+}
+
+.match-replay-connection-path.is-crew {
+  stroke: #7fc8ff;
+  stroke-dasharray: 5 4;
+  filter: drop-shadow(0 0 7px rgba(127, 200, 255, 0.28));
+}
+
 .match-replay-connection-path.is-highlighted {
   opacity: 1;
   stroke-width: 4;
@@ -3526,6 +3591,12 @@ button.match-replay-zonechip.is-button {
 
 .match-replay-connection-path.is-spell-target.is-highlighted {
   filter: drop-shadow(0 0 10px var(--spell-target-connection-glow));
+}
+
+@keyframes match-replay-damage-pulse {
+  0% { opacity: 0.25; stroke-width: 2; }
+  35% { opacity: 1; stroke-width: 6; }
+  100% { opacity: 0.78; stroke-width: 4; }
 }
 
 .match-replay-lane.is-hand {
@@ -4003,6 +4074,13 @@ button.match-replay-zonechip.is-button {
   color: var(--text-soft);
 }
 
+.match-replay-state-pill.is-relationship {
+  background: rgba(127, 200, 255, 0.1);
+  border-color: rgba(127, 200, 255, 0.38);
+  color: #b9dcf6;
+  text-transform: none;
+}
+
 .match-replay-centerline {
   display: grid;
   gap: 0.3rem;
@@ -4261,7 +4339,8 @@ button.match-replay-zonechip.is-button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .match-replay-hud-delta {
+  .match-replay-hud-delta,
+  .match-replay-connection-path.is-damage {
     animation: none;
   }
 }
