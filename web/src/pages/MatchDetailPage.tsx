@@ -1126,17 +1126,36 @@ function MatchReplayFrameSideSummary({
           {timelinePlayerLabel(side)}
         </span>
         {attackSummary ? (
-          <span className="match-replay-zonerail-attack">
-            Under attack · {attackSummary.attackers} attacker
-            {attackSummary.attackers === 1 ? "" : "s"} · {attackSummary.power} power
+          <span
+            className="match-replay-zonerail-attack"
+            aria-label={`Under attack, ${attackSummary.attackers} attacker${attackSummary.attackers === 1 ? "" : "s"}, ${attackSummary.power} power`}
+          >
+            <span
+              className="match-replay-zonerail-attack-icon"
+              aria-hidden="true"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              >
+                <path d="M8 1.5 13 3.3v4.1c0 3.1-2 5.6-5 7.1-3-1.5-5-4-5-7.1V3.3L8 1.5Z" />
+                <path d="M8 4.5v4.1" />
+                <circle cx="8" cy="11.1" r="0.6" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <strong>Under attack</strong>
+            <span className="match-replay-zonerail-attack-meta">
+              {attackSummary.attackers} attacker
+              {attackSummary.attackers === 1 ? "" : "s"}
+              <span aria-hidden="true"> · </span>
+              {attackSummary.power} power
+            </span>
           </span>
         ) : null}
-        {visibleZones.length === 0 ? (
-          <span className="match-replay-zonerail-empty">
-            No graveyard, exile, or revealed cards
-          </span>
-        ) : (
-          visibleZones.map((kind) => {
+        <div className="match-replay-zonerail-zones">
+          {visibleZones.map((kind) => {
             const count = zoneCounts.get(kind) ?? 0;
             const canOpen = isInspectableZoneKind(kind) && onOpenZone;
             const inner = (
@@ -1177,8 +1196,8 @@ function MatchReplayFrameSideSummary({
                 {inner}
               </span>
             );
-          })
-        )}
+          })}
+        </div>
       </section>
     );
   }
