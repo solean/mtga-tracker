@@ -134,6 +134,38 @@ export type Overview = {
   recent: Match[];
 };
 
+export type WildcardBalance = {
+  common: number;
+  uncommon: number;
+  rare: number;
+  mythic: number;
+};
+
+export type EconomyBoosterCount = {
+  setCode: string;
+  count: number;
+};
+
+export type EconomySnapshot = {
+  id: number;
+  observedAt: string;
+  sequenceId: number;
+  gold: number;
+  gems: number;
+  vaultProgress: number;
+  wildcardTrackPosition: number;
+  wildcards: WildcardBalance;
+  customTokens: Record<string, number>;
+  boosters: EconomyBoosterCount[];
+  vouchers: Record<string, number>;
+  changeSources: string[];
+};
+
+export type EconomyHistory = {
+  latest: EconomySnapshot | null;
+  history: EconomySnapshot[];
+};
+
 export type RankState = {
   seasonOrdinal?: number | null;
   rankClass: string;
@@ -229,6 +261,7 @@ export type RuntimeOperation = {
   rawEventsStored: number;
   matchesUpserted: number;
   rankSnapshots: number;
+  economySnapshots: number;
   decksUpserted: number;
   draftPicksAdded: number;
   startedAt: string;

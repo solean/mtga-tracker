@@ -18,6 +18,7 @@ const tabs = [
   { to: "/matches", label: "Matches" },
   { to: "/decks", label: "Decks" },
   { to: "/drafts", label: "Drafts" },
+  { to: "/economy", label: "Economy" },
   { to: "/settings", label: "Settings" },
 ];
 
@@ -35,6 +36,7 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith("/decks/")) return "Deck Detail";
   if (pathname === "/drafts") return "Drafts";
   if (pathname.startsWith("/drafts/")) return "Draft Detail";
+  if (pathname === "/economy") return "Economy";
   if (pathname === "/settings") return "Settings";
   return APP_NAME;
 }

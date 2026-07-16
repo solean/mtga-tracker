@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { DeckDetailPage } from "./pages/DeckDetailPage";
 import { DecksPage } from "./pages/DecksPage";
 import { DraftDetailPage } from "./pages/DraftDetailPage";
+import { EconomyPage } from "./pages/EconomyPage";
 import { DraftsPage } from "./pages/DraftsPage";
 import { MatchDetailPage } from "./pages/MatchDetailPage";
 import { MatchesPage } from "./pages/MatchesPage";
@@ -18,6 +19,7 @@ export function App() {
         <Route path="matches" element={<MatchesPage />} />
         <Route path="matches/:matchId" element={<MatchDetailPage />} />
         <Route path="decks" element={<DecksPage />} />
+        <Route path="economy" element={<EconomyPage />} />
         <Route path="decks/:deckId" element={<DeckDetailPage />} />
         <Route path="drafts" element={<DraftsPage />} />
         <Route path="drafts/:draftId" element={<DraftDetailPage />} />

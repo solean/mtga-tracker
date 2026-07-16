@@ -58,19 +58,20 @@ type UpdateCheck struct {
 }
 
 type OperationResult struct {
-	Kind            string   `json:"kind"`
-	Files           []string `json:"files"`
-	LinesRead       int64    `json:"linesRead"`
-	BytesRead       int64    `json:"bytesRead"`
-	RawEventsStored int64    `json:"rawEventsStored"`
-	MatchesUpserted int64    `json:"matchesUpserted"`
-	RankSnapshots   int64    `json:"rankSnapshots"`
-	DecksUpserted   int64    `json:"decksUpserted"`
-	DraftPicksAdded int64    `json:"draftPicksAdded"`
-	StartedAt       string   `json:"startedAt"`
-	CompletedAt     string   `json:"completedAt"`
-	DurationMs      int64    `json:"durationMs"`
-	HasActivity     bool     `json:"hasActivity"`
+	Kind             string   `json:"kind"`
+	Files            []string `json:"files"`
+	LinesRead        int64    `json:"linesRead"`
+	BytesRead        int64    `json:"bytesRead"`
+	RawEventsStored  int64    `json:"rawEventsStored"`
+	MatchesUpserted  int64    `json:"matchesUpserted"`
+	RankSnapshots    int64    `json:"rankSnapshots"`
+	EconomySnapshots int64    `json:"economySnapshots"`
+	DecksUpserted    int64    `json:"decksUpserted"`
+	DraftPicksAdded  int64    `json:"draftPicksAdded"`
+	StartedAt        string   `json:"startedAt"`
+	CompletedAt      string   `json:"completedAt"`
+	DurationMs       int64    `json:"durationMs"`
+	HasActivity      bool     `json:"hasActivity"`
 }
 
 type Status struct {
@@ -542,6 +543,7 @@ func summarizeOperation(kind string, paths []string, stats []model.ParseStats) O
 		out.RawEventsStored += item.RawEventsStored
 		out.MatchesUpserted += item.MatchesUpserted
 		out.RankSnapshots += item.RankSnapshots
+		out.EconomySnapshots += item.EconomySnapshots
 		out.DecksUpserted += item.DecksUpserted
 		out.DraftPicksAdded += item.DraftPicksAdded
 	}
@@ -551,6 +553,7 @@ func summarizeOperation(kind string, paths []string, stats []model.ParseStats) O
 	out.HasActivity = out.LinesRead > 0 ||
 		out.RawEventsStored > 0 ||
 		out.MatchesUpserted > 0 ||
+		out.EconomySnapshots > 0 ||
 		out.DecksUpserted > 0 ||
 		out.DraftPicksAdded > 0
 	return out
@@ -593,6 +596,7 @@ func hasActivity(stats model.ParseStats) bool {
 	return stats.LinesRead > 0 ||
 		stats.RawEventsStored > 0 ||
 		stats.MatchesUpserted > 0 ||
+		stats.EconomySnapshots > 0 ||
 		stats.DecksUpserted > 0 ||
 		stats.DraftPicksAdded > 0
 }

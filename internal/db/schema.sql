@@ -263,6 +263,30 @@ CREATE TABLE IF NOT EXISTS match_rank_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_match_rank_snapshots_observed_at ON match_rank_snapshots(observed_at);
 
+CREATE TABLE IF NOT EXISTS economy_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  log_path TEXT NOT NULL,
+  line_no INTEGER NOT NULL,
+  observed_at TEXT,
+  sequence_id INTEGER NOT NULL DEFAULT 0,
+  gold INTEGER NOT NULL DEFAULT 0,
+  gems INTEGER NOT NULL DEFAULT 0,
+  vault_progress INTEGER NOT NULL DEFAULT 0,
+  wildcard_track_position INTEGER NOT NULL DEFAULT 0,
+  wildcard_commons INTEGER NOT NULL DEFAULT 0,
+  wildcard_uncommons INTEGER NOT NULL DEFAULT 0,
+  wildcard_rares INTEGER NOT NULL DEFAULT 0,
+  wildcard_mythics INTEGER NOT NULL DEFAULT 0,
+  custom_tokens_json TEXT NOT NULL DEFAULT '{}',
+  boosters_json TEXT NOT NULL DEFAULT '[]',
+  vouchers_json TEXT NOT NULL DEFAULT '{}',
+  changes_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  UNIQUE(log_path, line_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_economy_snapshots_observed_at ON economy_snapshots(observed_at);
+
 CREATE TABLE IF NOT EXISTS draft_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_name TEXT,

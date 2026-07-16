@@ -4,6 +4,7 @@ import type {
   DeckSummary,
   DraftPick,
   DraftSession,
+  EconomyHistory,
   Match,
   MatchCardPlay,
   MatchDetail,
@@ -47,6 +48,7 @@ async function postJSON<T>(path: string, body?: unknown): Promise<T> {
 export const api = {
   overview: () => getJSON<Overview>("/api/overview"),
   rankHistory: () => getJSON<RankHistoryPoint[]>("/api/rank-history"),
+  economy: () => getJSON<EconomyHistory>("/api/economy"),
   matches: (limit = 500) => getJSON<Match[]>(`/api/matches?limit=${limit}`),
   matchDetail: (matchId: number) => getJSON<MatchDetail>(`/api/matches/${matchId}`),
   matchTimeline: (matchId: number) => getJSON<MatchCardPlay[]>(`/api/matches/${matchId}/timeline`),

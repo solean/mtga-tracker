@@ -561,6 +561,13 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 		}
 	}
 
+	if strings.HasPrefix(line, "{") && strings.Contains(line, "\"InventoryInfo\"") {
+		if err := p.handleEconomyJSON(ctx, tx, stats, state, logPath, lineNo, line); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	if state.pendingResponseMethod != "" && strings.HasPrefix(line, "{") {
 		if err := p.handleMethodResponse(ctx, tx, stats, state, logPath, lineNo, byteOffset, line); err != nil {
 			return err

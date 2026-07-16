@@ -4,9 +4,9 @@ Local MTG Arena log parser + viewer.
 
 This MVP includes:
 - Go backend parser for `Player.log` / `Player-prev.log`
-- SQLite storage for matches, decks, draft sessions, draft picks, and event runs
+- SQLite storage for matches, decks, drafts, event runs, and Arena economy snapshots
 - Local HTTP API
-- React/Vite frontend for overview, match history, decks, and drafts
+- React/Vite frontend for overview, match history, decks, drafts, and economy tracking
 
 ## Project Layout
 
@@ -92,6 +92,7 @@ go run ./cmd/ponder serve -db data/ponder.db -addr :8080
 API endpoints:
 - `GET /api/health`
 - `GET /api/overview`
+- `GET /api/economy`
 - `GET /api/matches?limit=500`
 - `GET /api/matches/:id`
 - `GET /api/matches/:id/timeline`
@@ -175,6 +176,7 @@ The desktop app stores its SQLite database and runtime config under `~/Library/A
 
 - Event aliasing is implemented for common Arena naming differences (e.g. `FIN_Quick_Draft` to `QuickDraft_FIN_...`).
 - Draft parsing supports both `BotDraftDraftPick` and `EventPlayerDraftMakePick`.
+- Economy parsing tracks `InventoryInfo` snapshots: gold, gems, wildcards, vault progress, wildcard-track position, boosters, custom tokens, vouchers, and change sources.
 - Deck card names are resolved on demand and cached in the local `card_catalog` table:
   - First from the local MTGA raw card DB (`Raw_CardDatabase*.mtga`) if found.
   - Then from Scryfall for any remaining unresolved IDs.

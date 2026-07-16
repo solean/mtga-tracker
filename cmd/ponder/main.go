@@ -99,6 +99,7 @@ func runParse(ctx context.Context, args []string) error {
 	var totalRawEvents int64
 	var totalMatches int64
 	var totalRankSnapshots int64
+	var totalEconomySnapshots int64
 	var totalDecks int64
 	var totalDraftPicks int64
 	startedAt := time.Now().UTC()
@@ -110,13 +111,14 @@ func runParse(ctx context.Context, args []string) error {
 		}
 
 		duration := stats.CompletedAt.Sub(stats.StartedAt)
-		log.Printf("parsed %s: lines=%d bytes=%d raw_events=%d matches=%d rank_snapshots=%d decks=%d draft_picks=%d duration=%s",
+		log.Printf("parsed %s: lines=%d bytes=%d raw_events=%d matches=%d rank_snapshots=%d economy_snapshots=%d decks=%d draft_picks=%d duration=%s",
 			path,
 			stats.LinesRead,
 			stats.BytesRead,
 			stats.RawEventsStored,
 			stats.MatchesUpserted,
 			stats.RankSnapshots,
+			stats.EconomySnapshots,
 			stats.DecksUpserted,
 			stats.DraftPicksAdded,
 			duration,
@@ -127,17 +129,19 @@ func runParse(ctx context.Context, args []string) error {
 		totalRawEvents += stats.RawEventsStored
 		totalMatches += stats.MatchesUpserted
 		totalRankSnapshots += stats.RankSnapshots
+		totalEconomySnapshots += stats.EconomySnapshots
 		totalDecks += stats.DecksUpserted
 		totalDraftPicks += stats.DraftPicksAdded
 	}
 
-	log.Printf("parse complete (files=%d): lines=%d bytes=%d raw_events=%d matches=%d rank_snapshots=%d decks=%d draft_picks=%d duration=%s",
+	log.Printf("parse complete (files=%d): lines=%d bytes=%d raw_events=%d matches=%d rank_snapshots=%d economy_snapshots=%d decks=%d draft_picks=%d duration=%s",
 		len(logPaths),
 		totalLines,
 		totalBytes,
 		totalRawEvents,
 		totalMatches,
 		totalRankSnapshots,
+		totalEconomySnapshots,
 		totalDecks,
 		totalDraftPicks,
 		time.Since(startedAt),
@@ -229,16 +233,18 @@ func runTail(ctx context.Context, args []string) error {
 			hasActivity := stats.LinesRead > 0 ||
 				stats.RawEventsStored > 0 ||
 				stats.MatchesUpserted > 0 ||
+				stats.EconomySnapshots > 0 ||
 				stats.DecksUpserted > 0 ||
 				stats.DraftPicksAdded > 0
 
 			if hasActivity {
 				log.Printf(
-					"tail activity: lines=%d bytes=%d raw_events=%d matches=%d decks=%d draft_picks=%d duration=%s",
+					"tail activity: lines=%d bytes=%d raw_events=%d matches=%d economy_snapshots=%d decks=%d draft_picks=%d duration=%s",
 					stats.LinesRead,
 					stats.BytesRead,
 					stats.RawEventsStored,
 					stats.MatchesUpserted,
+					stats.EconomySnapshots,
 					stats.DecksUpserted,
 					stats.DraftPicksAdded,
 					stats.CompletedAt.Sub(stats.StartedAt),

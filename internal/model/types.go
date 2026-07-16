@@ -3,16 +3,17 @@ package model
 import "time"
 
 type ParseStats struct {
-	LogPath         string
-	LinesRead       int64
-	BytesRead       int64
-	RawEventsStored int64
-	MatchesUpserted int64
-	RankSnapshots   int64
-	DecksUpserted   int64
-	DraftPicksAdded int64
-	StartedAt       time.Time
-	CompletedAt     time.Time
+	LogPath          string
+	LinesRead        int64
+	BytesRead        int64
+	RawEventsStored  int64
+	MatchesUpserted  int64
+	RankSnapshots    int64
+	EconomySnapshots int64
+	DecksUpserted    int64
+	DraftPicksAdded  int64
+	StartedAt        time.Time
+	CompletedAt      time.Time
 }
 
 type MatchRow struct {
@@ -207,6 +208,38 @@ type Overview struct {
 	Losses       int64      `json:"losses"`
 	WinRate      float64    `json:"winRate"`
 	Recent       []MatchRow `json:"recent"`
+}
+
+type WildcardBalance struct {
+	Common   int64 `json:"common"`
+	Uncommon int64 `json:"uncommon"`
+	Rare     int64 `json:"rare"`
+	Mythic   int64 `json:"mythic"`
+}
+
+type EconomyBoosterCount struct {
+	SetCode string `json:"setCode"`
+	Count   int64  `json:"count"`
+}
+
+type EconomySnapshot struct {
+	ID                    int64                 `json:"id"`
+	ObservedAt            string                `json:"observedAt"`
+	SequenceID            int64                 `json:"sequenceId"`
+	Gold                  int64                 `json:"gold"`
+	Gems                  int64                 `json:"gems"`
+	VaultProgress         int64                 `json:"vaultProgress"`
+	WildcardTrackPosition int64                 `json:"wildcardTrackPosition"`
+	Wildcards             WildcardBalance       `json:"wildcards"`
+	CustomTokens          map[string]int64      `json:"customTokens"`
+	Boosters              []EconomyBoosterCount `json:"boosters"`
+	Vouchers              map[string]int64      `json:"vouchers"`
+	ChangeSources         []string              `json:"changeSources"`
+}
+
+type EconomyHistory struct {
+	Latest  *EconomySnapshot  `json:"latest"`
+	History []EconomySnapshot `json:"history"`
 }
 
 type RankState struct {

@@ -56,6 +56,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/overview", s.handleOverview)
 	mux.HandleFunc("/api/rank-history", s.handleRankHistory)
+	mux.HandleFunc("/api/economy", s.handleEconomy)
 	mux.HandleFunc("/api/matches", s.handleMatches)
 	mux.HandleFunc("/api/matches/", s.handleMatchDetail)
 	mux.HandleFunc("/api/decks", s.handleDecks)
@@ -542,6 +543,23 @@ func (s *Server) handleRankHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+func (s *Server) handleEconomy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	history, err := s.store.ListEconomyHistory(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := model.EconomyHistory{History: history}
+	if len(history) > 0 {
+		out.Latest = &history[len(history)-1]
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {

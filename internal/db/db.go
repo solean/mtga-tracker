@@ -95,6 +95,10 @@ func Init(ctx context.Context, db *sql.DB) error {
 		_, _ = conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
 	}()
 
+	if err := prepareEconomyBackfill(ctx, conn); err != nil {
+		return err
+	}
+
 	if err := migrateMatchObservationTables(ctx, conn); err != nil {
 		return err
 	}
@@ -103,6 +107,61 @@ func Init(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	return nil
+}
+
+const economyBackfillMetadataKey = "economy_backfill_v1"
+
+// prepareEconomyBackfill makes an existing installation replay its Arena logs
+// once after economy tracking is introduced. Normal resume imports otherwise
+// start at EOF and would not discover InventoryInfo snapshots already present
+// in those logs. The metadata marker keeps the reset strictly one-time.
+func prepareEconomyBackfill(ctx context.Context, db dbConn) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin economy backfill migration: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var markerCount int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM app_metadata
+		WHERE key = ?
+	`, economyBackfillMetadataKey).Scan(&markerCount); err != nil {
+		return fmt.Errorf("check economy backfill marker: %w", err)
+	}
+	if markerCount > 0 {
+		return tx.Commit()
+	}
+
+	var snapshotCount, ingestStateCount int64
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM economy_snapshots`).Scan(&snapshotCount); err != nil {
+		return fmt.Errorf("count economy snapshots for backfill: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM ingest_state`).Scan(&ingestStateCount); err != nil {
+		return fmt.Errorf("count ingest state for economy backfill: %w", err)
+	}
+	if snapshotCount == 0 && ingestStateCount > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE ingest_state
+			SET byte_offset = 0, line_no = 0
+		`); err != nil {
+			return fmt.Errorf("reset ingest state for economy backfill: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO app_metadata (key, value, updated_at)
+		VALUES (?, 'complete', ?)
+	`, economyBackfillMetadataKey, nowUTC()); err != nil {
+		return fmt.Errorf("save economy backfill marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit economy backfill migration: %w", err)
+	}
 	return nil
 }
 
