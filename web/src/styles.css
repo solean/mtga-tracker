@@ -44,18 +44,18 @@
   --track-md: 0.08em;
   --track-lg: 0.12em;
 
-  --bg: #050302;
-  --bg-mid: #0b0705;
-  --bg-end: #140b06;
-  --bg-orb-a: rgba(255, 143, 56, 0.08);
-  --bg-orb-b: rgba(255, 102, 24, 0.05);
+  --bg: #020101;
+  --bg-mid: #050303;
+  --bg-end: #0a0503;
+  --bg-orb-a: rgba(255, 143, 56, 0.06);
+  --bg-orb-b: rgba(255, 102, 24, 0.04);
   --veil-orb: rgba(255, 150, 72, 0.07);
   --veil-line: rgba(255, 150, 72, 0.03);
   --grid-line: rgba(255, 150, 72, 0.035);
 
-  --surface: rgba(18, 12, 8, 0.88);
-  --surface-strong: rgba(24, 16, 10, 0.94);
-  --surface-faint: rgba(14, 10, 7, 0.85);
+  --surface: rgba(11, 7, 5, 0.88);
+  --surface-strong: rgba(15, 10, 6, 0.94);
+  --surface-faint: rgba(8, 6, 4, 0.85);
 
   --line: rgba(255, 145, 64, 0.16);
   --line-strong: rgba(255, 168, 90, 0.34);
@@ -85,7 +85,7 @@
   --text-soft: #fff1e7;
   --kicker: #c6946e;
 
-  --tabs-bg: rgba(14, 10, 7, 0.74);
+  --tabs-bg: rgba(8, 6, 4, 0.74);
   --tab-hover-border: rgba(255, 168, 90, 0.22);
   --tab-active-border: rgba(255, 138, 36, 0.6);
   --tab-active-bg-a: rgba(255, 138, 36, 0.14);
@@ -108,16 +108,16 @@
   --metric-neutral-border: rgba(197, 160, 134, 0.42);
   --metric-neutral-text: #d3b49e;
 
-  --panel-inner-a: rgba(22, 14, 9, 0.92);
-  --panel-inner-b: rgba(14, 10, 7, 0.96);
+  --panel-inner-a: rgba(13, 8, 5, 0.92);
+  --panel-inner-b: rgba(8, 6, 4, 0.96);
 
-  --list-bg-a: rgba(14, 10, 7, 0.48);
-  --list-bg-b: rgba(20, 13, 9, 0.72);
+  --list-bg-a: rgba(8, 6, 4, 0.48);
+  --list-bg-b: rgba(12, 8, 5, 0.72);
   --list-hover-border: rgba(255, 138, 36, 0.28);
-  --list-hover-bg-a: rgba(22, 14, 9, 0.72);
-  --list-hover-bg-b: rgba(28, 17, 10, 0.86);
+  --list-hover-bg-a: rgba(13, 8, 5, 0.72);
+  --list-hover-bg-b: rgba(17, 10, 6, 0.86);
 
-  --pill-bg: rgba(16, 11, 8, 0.55);
+  --pill-bg: rgba(10, 7, 5, 0.55);
   --pill-win-border: rgba(0, 230, 118, 0.6);
   --pill-win-text: #69f0ae;
   --pill-win-bg: rgba(0, 230, 118, 0.1);
@@ -128,13 +128,13 @@
   --table-wrap-border: rgba(255, 145, 64, 0.15);
   --table-row-border: rgba(255, 145, 64, 0.12);
   --table-head-text: #ba9478;
-  --table-head-bg-a: rgba(20, 13, 9, 0.97);
-  --table-head-bg-b: rgba(15, 10, 7, 0.97);
-  --table-head-solid: #0c0805;
+  --table-head-bg-a: rgba(12, 8, 5, 0.97);
+  --table-head-bg-b: rgba(9, 6, 4, 0.97);
+  --table-head-solid: #070503;
   --table-row-hover: rgba(255, 138, 36, 0.06);
 
-  --deck-card-bg-a: rgba(20, 13, 9, 0.76);
-  --deck-card-bg-b: rgba(12, 8, 6, 0.9);
+  --deck-card-bg-a: rgba(12, 8, 5, 0.76);
+  --deck-card-bg-b: rgba(7, 5, 3, 0.9);
   --skeleton-base: rgba(255, 145, 64, 0.1);
   --skeleton-highlight: rgba(255, 138, 36, 0.22);
 
@@ -144,8 +144,8 @@
   --rarity-mythic: #ee5c2e;
 
   --card-trigger-hover: #ffd0a3;
-  --popover-bg: rgba(12, 8, 6, 0.97);
-  --popover-card-bg: rgba(20, 13, 9, 0.96);
+  --popover-bg: rgba(7, 5, 3, 0.97);
+  --popover-card-bg: rgba(12, 8, 5, 0.96);
 
   --error: #ff8a80;
   --focus-ring: #ff9a4a;

@@ -53,7 +53,7 @@ function applyThemeColorMeta(mode: ThemeMode, scheme: ColorScheme) {
   }
 
   const themeColors: Record<ColorScheme, Record<ThemeMode, string>> = {
-    ember: { dark: "#050302", light: "#f4ece1" },
+    ember: { dark: "#020101", light: "#f4ece1" },
     dimir: { dark: "#020507", light: "#f7f9fa" },
     steel: { dark: "#040608", light: "#eef0f3" },
   };
