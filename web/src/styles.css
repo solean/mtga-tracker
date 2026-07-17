@@ -4959,6 +4959,12 @@ button.match-replay-zonechip.is-button {
   font-size: var(--text-base);
 }
 
+/* inline-block + overflow:hidden shifts the trigger's baseline to its bottom
+   edge, leaving phantom space under the name that breaks row centering */
+.deck-card li .card-preview-trigger {
+  display: block;
+}
+
 .deck-curve-panel,
 .deck-visual-panel {
   border: 1px solid var(--line);
