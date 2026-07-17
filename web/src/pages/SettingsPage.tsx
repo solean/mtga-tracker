@@ -11,14 +11,20 @@ import type { RuntimeConfig, RuntimeOperation, RuntimeStatus, UpdateCheck } from
 function StatusPill({
   tone,
   pulsing,
+  compact,
   children,
 }: {
   tone: "positive" | "negative" | "neutral";
   pulsing?: boolean;
+  compact?: boolean;
   children: ReactNode;
 }) {
   const toneClass = tone === "neutral" ? "" : tone === "positive" ? " is-positive" : " is-negative";
-  return <span className={`settings-status-pill${toneClass}${pulsing ? " is-pulsing" : ""}`}>{children}</span>;
+  return (
+    <span className={`settings-status-pill${toneClass}${pulsing ? " is-pulsing" : ""}${compact ? " is-compact" : ""}`}>
+      {children}
+    </span>
+  );
 }
 
 function CopyIcon() {
@@ -474,7 +480,7 @@ export function SettingsPage() {
       </section>
 
       <section className="panel">
-        <div className="panel-head">
+        <div className="panel-head panel-head--stacked">
           <h3>Tracking</h3>
           <p>
             {hasLocalEdits ? <span className="settings-unsaved-chip">Unsaved changes</span> : null}
@@ -482,121 +488,129 @@ export function SettingsPage() {
           </p>
         </div>
 
-        <div className="settings-grid">
-          <label className="settings-field">
-            <span>
-              Custom Log Path
-              {form.logPath.trim() ? (
-                <button
-                  type="button"
-                  className="settings-text-button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setForm((current) => ({ ...current, logPath: "" }));
+        <div className="settings-groups">
+          <div className="settings-group">
+            <h4 className="settings-group-title">Log Source</h4>
+
+            <label className="settings-field">
+              <span>
+                Custom Log Path
+                {form.logPath.trim() ? (
+                  <button
+                    type="button"
+                    className="settings-text-button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setForm((current) => ({ ...current, logPath: "" }));
+                      setHasLocalEdits(true);
+                    }}
+                  >
+                    Use default
+                  </button>
+                ) : null}
+              </span>
+              <span className="settings-input-row">
+                <input
+                  className="settings-input"
+                  type="text"
+                  value={form.logPath}
+                  onChange={(event) => {
+                    setForm((current) => ({ ...current, logPath: event.target.value }));
                     setHasLocalEdits(true);
                   }}
-                >
-                  Use default
-                </button>
-              ) : null}
-            </span>
-            <span className="settings-input-row">
-              <input
+                  placeholder={data.defaultLogPath}
+                  spellCheck={false}
+                />
+                {canPickFile ? (
+                  <button
+                    type="button"
+                    className="settings-browse-button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      pickLogMutation.mutate();
+                    }}
+                    disabled={pickLogMutation.isPending}
+                  >
+                    {pickLogMutation.isPending ? "Choosing…" : "Browse…"}
+                  </button>
+                ) : null}
+              </span>
+              <small className="settings-meta">
+                Effective path
+                <PathValue path={effectiveActivePath} copyLabel="log path" canReveal={canReveal} />
+              </small>
+            </label>
+
+            <div className="settings-option">
+              <label className="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.includePrev}
+                  onChange={(event) => {
+                    setForm((current) => ({ ...current, includePrev: event.target.checked }));
+                    setHasLocalEdits(true);
+                  }}
+                  disabled={form.logPath.trim().length > 0}
+                />
+                <span>
+                  Include <code>Player-prev.log</code> in full imports.
+                </span>
+              </label>
+              {form.logPath.trim().length > 0 ? (
+                <p className="settings-checkbox-hint">Disabled while a custom log path is set.</p>
+              ) : (
+                <p className="settings-checkbox-hint settings-meta">
+                  <PathValue
+                    path={data.previousLogPath || data.defaultPrevLogPath}
+                    copyLabel="previous log path"
+                    canReveal={canReveal}
+                  />
+                  <StatusPill tone={data.previousLogPathExists ? "positive" : "negative"} compact>
+                    {data.previousLogPathExists ? "Found" : "Missing"}
+                  </StatusPill>
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="settings-group">
+            <h4 className="settings-group-title">Live Tracking</h4>
+
+            <label className="settings-field settings-field--narrow">
+              <span>Poll Interval</span>
+              <select
                 className="settings-input"
-                type="text"
-                value={form.logPath}
+                value={String(form.pollIntervalSeconds)}
                 onChange={(event) => {
-                  setForm((current) => ({ ...current, logPath: event.target.value }));
+                  setForm((current) => ({
+                    ...current,
+                    pollIntervalSeconds: normalizePollInterval(event.target.value),
+                  }));
                   setHasLocalEdits(true);
                 }}
-                placeholder={data.defaultLogPath}
-                spellCheck={false}
+              >
+                {pollOptions.map((seconds) => (
+                  <option key={seconds} value={String(seconds)}>
+                    {seconds === 1 ? "1 second" : `${seconds} seconds`}
+                  </option>
+                ))}
+              </select>
+              <small>Lower values update faster but keep the parser busier.</small>
+            </label>
+
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={form.autoStartLive}
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, autoStartLive: event.target.checked }));
+                  setHasLocalEdits(true);
+                }}
               />
-              {canPickFile ? (
-                <button
-                  type="button"
-                  className="settings-browse-button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    pickLogMutation.mutate();
-                  }}
-                  disabled={pickLogMutation.isPending}
-                >
-                  {pickLogMutation.isPending ? "Choosing…" : "Browse…"}
-                </button>
-              ) : null}
-            </span>
-            <small className="settings-path-row" title={effectiveActivePath}>
-              Current effective path: {shortenHomePath(effectiveActivePath)}
-              <CopyButton text={effectiveActivePath} label="log path" />
-              {canReveal ? <RevealButton path={effectiveActivePath} /> : null}
-            </small>
-          </label>
-
-          <label className="settings-field">
-            <span>Live Poll Interval</span>
-            <select
-              className="settings-input"
-              value={String(form.pollIntervalSeconds)}
-              onChange={(event) => {
-                setForm((current) => ({
-                  ...current,
-                  pollIntervalSeconds: normalizePollInterval(event.target.value),
-                }));
-                setHasLocalEdits(true);
-              }}
-            >
-              {pollOptions.map((seconds) => (
-                <option key={seconds} value={String(seconds)}>
-                  {seconds === 1 ? "1 second" : `${seconds} seconds`}
-                </option>
-              ))}
-            </select>
-            <small>Lower values update faster but keep the parser busier.</small>
-          </label>
+              <span>Start live tracking automatically when the app launches.</span>
+            </label>
+          </div>
         </div>
-
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
-            checked={form.includePrev}
-            onChange={(event) => {
-              setForm((current) => ({ ...current, includePrev: event.target.checked }));
-              setHasLocalEdits(true);
-            }}
-            disabled={form.logPath.trim().length > 0}
-          />
-          <span>
-            Include <code>Player-prev.log</code> during full imports when using the default MTGA log location.
-          </span>
-        </label>
-        {form.logPath.trim().length > 0 ? (
-          <p className="settings-checkbox-hint">Disabled while a custom log path is set.</p>
-        ) : (
-          <p className="settings-prevlog">
-            Default previous log:{" "}
-            <PathValue
-              path={data.previousLogPath || data.defaultPrevLogPath}
-              copyLabel="previous log path"
-              canReveal={canReveal}
-            />{" "}
-            <StatusPill tone={data.previousLogPathExists ? "positive" : "negative"}>
-              {data.previousLogPathExists ? "Found" : "Missing"}
-            </StatusPill>
-          </p>
-        )}
-
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
-            checked={form.autoStartLive}
-            onChange={(event) => {
-              setForm((current) => ({ ...current, autoStartLive: event.target.checked }));
-              setHasLocalEdits(true);
-            }}
-          />
-          <span>Start live tracking automatically when the app launches.</span>
-        </label>
 
         <div className="settings-action-row">
           <button
@@ -647,7 +661,7 @@ export function SettingsPage() {
       </section>
 
       <section className="panel">
-        <div className="panel-head">
+        <div className="panel-head panel-head--stacked">
           <h3>Data</h3>
           <p>Local database, config file, and import history.</p>
         </div>
@@ -704,7 +718,7 @@ export function SettingsPage() {
       </section>
 
       <section className="panel">
-        <div className="panel-head">
+        <div className="panel-head panel-head--stacked">
           <h3>Application</h3>
           <p>Appearance, startup behavior, and updates.</p>
         </div>

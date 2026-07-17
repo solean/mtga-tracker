@@ -1615,10 +1615,54 @@ body.has-wide-deck-curve .app-shell {
   touch-action: manipulation;
 }
 
-.settings-grid {
+.panel-head--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.panel-head--stacked p {
+  max-width: 62ch;
+}
+
+.settings-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.4rem 2.2rem;
+}
+
+.settings-group {
+  display: grid;
+  gap: 0.95rem;
+  align-content: start;
+}
+
+h4.settings-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--track-lg);
+  text-transform: uppercase;
+}
+
+h4.settings-group-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.settings-group .settings-checkbox {
+  margin-top: 0;
+}
+
+.settings-field--narrow .settings-input {
+  max-width: 12rem;
 }
 
 .settings-field {
@@ -1955,15 +1999,26 @@ span.settings-status-pill {
   align-self: center;
 }
 
-.settings-prevlog {
+/* Metadata rows under a field or checkbox: dimmer and smaller than the
+   controls they describe. The element selectors outrank `.settings-field
+   small`-style rules on shared properties. */
+p.settings-meta,
+small.settings-meta,
+.settings-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
   align-items: center;
-  margin: 0.75rem 0 0;
-  color: var(--muted-strong);
+  gap: 0.2rem 0.45rem;
+  color: var(--muted);
   font-family: var(--font-sans);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.45;
+}
+
+.settings-status-pill.is-compact {
+  padding: 0.12rem 0.46rem;
 }
 
 .settings-version {
