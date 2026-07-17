@@ -1424,17 +1424,6 @@ body.has-wide-deck-curve .app-shell {
   font-size: var(--text-md);
 }
 
-.rank-panel {
-  background:
-    radial-gradient(circle at 92% -6%, var(--accent-glow) 0%, transparent 32%),
-    radial-gradient(circle at 0% 100%, var(--accent-soft) 0%, transparent 36%),
-    linear-gradient(
-      155deg,
-      var(--surface-strong) 0%,
-      var(--surface) 100%
-    );
-}
-
 .rank-toolbar {
   display: flex;
   flex-wrap: wrap;
