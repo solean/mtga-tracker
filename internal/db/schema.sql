@@ -315,3 +315,12 @@ CREATE TABLE IF NOT EXISTS draft_picks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_draft_picks_session ON draft_picks(draft_session_id);
+
+CREATE TABLE IF NOT EXISTS deck_ai_primers (
+  deck_id INTEGER PRIMARY KEY,
+  cards_hash TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(deck_id) REFERENCES decks(id) ON DELETE CASCADE
+);

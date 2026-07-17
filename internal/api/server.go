@@ -18,8 +18,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/solean/ponder/internal/ai"
 	"github.com/solean/ponder/internal/appstate"
 	"github.com/solean/ponder/internal/db"
 	"github.com/solean/ponder/internal/model"
@@ -33,6 +35,8 @@ type Server struct {
 	appState     *appstate.Service
 	desktop      Desktop
 	httpClient   *http.Client
+	aiProvider   *ai.CLIProvider
+	aiGenBusy    sync.Mutex
 }
 
 func NewServer(store *db.Store, staticDir string, appState *appstate.Service) *Server {
@@ -43,6 +47,7 @@ func NewServer(store *db.Store, staticDir string, appState *appstate.Service) *S
 		httpClient: &http.Client{
 			Timeout: 8 * time.Second,
 		},
+		aiProvider: &ai.CLIProvider{},
 	}
 }
 
@@ -64,6 +69,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/drafts", s.handleDrafts)
 	mux.HandleFunc("/api/drafts/", s.handleDraftPicks)
 	mux.HandleFunc("/api/sets", s.handleSets)
+	mux.HandleFunc("/api/ai/status", s.handleAIStatus)
 	mux.HandleFunc("/api/live", s.handleLive)
 	if s.appState != nil {
 		mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
@@ -141,7 +147,10 @@ func (g *gzipResponseWriter) Write(b []byte) (int, error) {
 func withGzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") ||
-			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
+			// SSE responses must reach the client incrementally; the gzip
+			// writer buffers, so streaming endpoints opt out via Accept.
+			strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -673,15 +682,22 @@ func (s *Server) handleDeckDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, prefix)
-	idStr = strings.Trim(idStr, "/")
-	if idStr == "" {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
 		writeError(w, http.StatusBadRequest, "missing deck id")
 		return
 	}
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid deck id")
+		return
+	}
+	if len(parts) == 2 && parts[1] == "primer" {
+		s.handleDeckPrimer(w, r, id)
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 

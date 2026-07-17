@@ -1,6 +1,8 @@
 import type {
+  AiStatus,
   AutostartStatus,
   DeckDetail,
+  DeckPrimer,
   DeckSummary,
   DraftPick,
   DraftSession,
@@ -71,4 +73,107 @@ export const api = {
   checkForUpdate: () => getJSON<UpdateCheck>("/api/runtime/update-check"),
   pickLogFile: () => postJSON<{ path: string }>("/api/runtime/pick-log"),
   revealPath: (path: string) => postJSON<{ status: string }>("/api/runtime/reveal", { path }),
+  aiStatus: () => getJSON<AiStatus>("/api/ai/status"),
+  deckPrimer: async (deckId: number): Promise<DeckPrimer | null> => {
+    const res = await fetch(`${API_BASE}/api/decks/${deckId}/primer`);
+    if (res.status === 404) {
+      return null;
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Request failed (${res.status}): ${text}`);
+    }
+    return (await res.json()) as DeckPrimer;
+  },
 };
+
+export type PrimerStreamHandlers = {
+  onDelta: (text: string) => void;
+  onDone: (primer: DeckPrimer) => void;
+  onError: (message: string) => void;
+};
+
+/**
+ * Generates a deck primer, streaming progress via Server-Sent Events over a
+ * POST fetch (EventSource only supports GET). The Accept header also tells
+ * the backend to skip gzip so events arrive incrementally.
+ */
+export async function generateDeckPrimer(
+  deckId: number,
+  handlers: PrimerStreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/decks/${deckId}/primer`, {
+      method: "POST",
+      headers: { Accept: "text/event-stream" },
+      signal,
+    });
+  } catch (err) {
+    if (signal?.aborted) return;
+    handlers.onError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      handlers.onError(parsed.error ?? `Request failed (${res.status})`);
+    } catch {
+      handlers.onError(`Request failed (${res.status}): ${text}`);
+    }
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+
+  const dispatch = (rawEvent: string) => {
+    let eventName = "message";
+    const dataLines: string[] = [];
+    for (const line of rawEvent.split("\n")) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (dataLines.length === 0) return;
+    const data = dataLines.join("\n");
+    if (eventName === "delta") {
+      handlers.onDelta(JSON.parse(data) as string);
+    } else if (eventName === "done") {
+      finished = true;
+      handlers.onDone(JSON.parse(data) as DeckPrimer);
+    } else if (eventName === "error") {
+      finished = true;
+      handlers.onError((JSON.parse(data) as { error: string }).error);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep: number;
+      while ((sep = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        dispatch(rawEvent);
+      }
+    }
+    if (!finished) {
+      handlers.onError("Generation stream ended unexpectedly.");
+    }
+  } catch (err) {
+    if (signal?.aborted) return;
+    if (!finished) {
+      handlers.onError(err instanceof Error ? err.message : String(err));
+    }
+  }
+}

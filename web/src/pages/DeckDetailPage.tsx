@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { DeckColorIdentity } from "../components/MatchDeckColors";
+import { DeckPrimerPanel } from "../components/DeckPrimerPanel";
 import { EventLabel } from "../components/EventLabel";
 import { ManaSymbol } from "../components/ManaSymbol";
 import { RarityDot, RARITY_LABELS, RARITY_ORDER } from "../components/RarityDot";
@@ -1428,6 +1429,8 @@ export function DeckDetailPage() {
         </div>
         {isCardMetadataLoading ? <StatusMessage>Loading deck card details…</StatusMessage> : null}
       </section>
+
+      <DeckPrimerPanel deckId={deckId} />
 
       <section className="panel">
         <div className="panel-head">

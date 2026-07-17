@@ -155,6 +155,17 @@ type DeckDetail struct {
 	Matches     []MatchRow    `json:"matches"`
 }
 
+// DeckPrimer is a cached AI-generated strategy primer for a deck. Stale is
+// computed at read time by comparing CardsHash against the current deck list.
+type DeckPrimer struct {
+	DeckID    int64  `json:"deckId"`
+	CardsHash string `json:"cardsHash"`
+	Model     string `json:"model"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"createdAt"`
+	Stale     bool   `json:"stale"`
+}
+
 type DraftSessionRow struct {
 	ID          int64   `json:"id"`
 	EventName   string  `json:"eventName"`

@@ -7493,3 +7493,113 @@ select {
     align-items: start;
   }
 }
+
+/* ============================================================
+   AI primer panel
+   ============================================================ */
+
+.ai-primer-panel {
+  padding: 1.02rem 1.12rem;
+}
+
+.ai-primer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-primer-stale-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-strong);
+  border-radius: 2px;
+  padding: 0.15rem 0.4rem;
+}
+
+.ai-primer-error {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--danger, #d05353);
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.ai-primer-stream {
+  margin-top: 0.75rem;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.ai-primer-stream pre {
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+
+.ai-primer-stream-note {
+  margin-top: 0.75rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.ai-primer-content {
+  margin-top: 0.75rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--text-soft);
+  max-width: 72ch;
+}
+
+.ai-primer-content h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 1.4rem 0 0.5rem;
+}
+
+.ai-primer-content h2:first-child {
+  margin-top: 0;
+}
+
+.ai-primer-content h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  margin: 1rem 0 0.35rem;
+}
+
+.ai-primer-content p {
+  margin: 0 0 0.7rem;
+}
+
+.ai-primer-content ul,
+.ai-primer-content ol {
+  margin: 0 0 0.7rem;
+  padding-left: 1.3rem;
+}
+
+.ai-primer-content li {
+  margin-bottom: 0.25rem;
+}
+
+.ai-primer-content strong {
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.ai-primer-content code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}

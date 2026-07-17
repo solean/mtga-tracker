@@ -217,6 +217,22 @@ export type DeckDetail = {
   matches: Match[] | null;
 };
 
+export type AiStatus = {
+  available: boolean;
+  cliPath?: string;
+  version?: string;
+  detail?: string;
+};
+
+export type DeckPrimer = {
+  deckId: number;
+  cardsHash: string;
+  model: string;
+  content: string;
+  createdAt: string;
+  stale: boolean;
+};
+
 export type DraftSession = {
   id: number;
   eventName: string;
