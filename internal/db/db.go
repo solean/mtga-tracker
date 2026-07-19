@@ -115,6 +115,18 @@ func Init(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	if err := migrateEconomyTables(ctx, conn); err != nil {
+		return err
+	}
+
+	if err := backfillEconomyTransactions(ctx, conn, NewStore(db)); err != nil {
+		return err
+	}
+
+	if err := prepareEconomyTransactionsBackfill(ctx, conn); err != nil {
+		return err
+	}
+
 	if err := dropRedundantIndexes(ctx, conn); err != nil {
 		return err
 	}
@@ -123,6 +135,57 @@ func Init(ctx context.Context, db *sql.DB) error {
 }
 
 const economyBackfillMetadataKey = "economy_backfill_v1"
+
+// v2: replay logs once more after the transaction ledger and DTO_InventoryInfo
+// envelope support were introduced — resumed imports sit at EOF and would
+// never revisit the lines that carry Changes payloads and card-pool grants.
+const economyTransactionsBackfillMetadataKey = "economy_backfill_v2"
+
+func prepareEconomyTransactionsBackfill(ctx context.Context, db dbConn) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin economy transactions backfill migration: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var markerCount int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM app_metadata
+		WHERE key = ?
+	`, economyTransactionsBackfillMetadataKey).Scan(&markerCount); err != nil {
+		return fmt.Errorf("check economy transactions backfill marker: %w", err)
+	}
+	if markerCount > 0 {
+		return tx.Commit()
+	}
+
+	var ingestStateCount int64
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM ingest_state`).Scan(&ingestStateCount); err != nil {
+		return fmt.Errorf("count ingest state for economy transactions backfill: %w", err)
+	}
+	if ingestStateCount > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE ingest_state
+			SET byte_offset = 0, line_no = 0
+		`); err != nil {
+			return fmt.Errorf("reset ingest state for economy transactions backfill: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO app_metadata (key, value, updated_at)
+		VALUES (?, 'complete', ?)
+	`, economyTransactionsBackfillMetadataKey, nowUTC()); err != nil {
+		return fmt.Errorf("save economy transactions backfill marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit economy transactions backfill migration: %w", err)
+	}
+	return nil
+}
 
 // prepareEconomyBackfill makes an existing installation replay its Arena logs
 // once after economy tracking is introduced. Normal resume imports otherwise

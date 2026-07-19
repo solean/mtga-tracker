@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS event_runs (
   event_type TEXT,
   entry_currency_type TEXT,
   entry_currency_paid INTEGER,
+  -- SourceId of the EventPayEntry inventory change that paid for this run;
+  -- lets EventReward changes (which reuse the id) link back to the run.
+  pay_source_id TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   started_at TEXT,
   ended_at TEXT,
@@ -428,6 +431,38 @@ CREATE TABLE IF NOT EXISTS economy_snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_economy_snapshots_observed_at ON economy_snapshots(observed_at);
+
+-- Normalized inventory deltas: one row per entry in an InventoryInfo
+-- snapshot's Changes array. event_name attributes the change to an event run
+-- where derivable; event_link records how ('source_id' and 'event_name' are
+-- exact, 'proximity' is a labeled time-window heuristic).
+CREATE TABLE IF NOT EXISTS economy_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id INTEGER NOT NULL,
+  change_index INTEGER NOT NULL,
+  observed_at TEXT,
+  source TEXT NOT NULL,
+  source_id TEXT,
+  event_name TEXT,
+  event_link TEXT,
+  gold_delta INTEGER NOT NULL DEFAULT 0,
+  gems_delta INTEGER NOT NULL DEFAULT 0,
+  wildcard_common_delta INTEGER NOT NULL DEFAULT 0,
+  wildcard_uncommon_delta INTEGER NOT NULL DEFAULT 0,
+  wildcard_rare_delta INTEGER NOT NULL DEFAULT 0,
+  wildcard_mythic_delta INTEGER NOT NULL DEFAULT 0,
+  cards_granted INTEGER NOT NULL DEFAULT 0,
+  vault_progress_delta INTEGER NOT NULL DEFAULT 0,
+  boosters_delta_json TEXT NOT NULL DEFAULT '[]',
+  custom_tokens_delta_json TEXT NOT NULL DEFAULT '{}',
+  vouchers_delta_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  UNIQUE(snapshot_id, change_index),
+  FOREIGN KEY(snapshot_id) REFERENCES economy_snapshots(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_economy_transactions_event ON economy_transactions(event_name);
+CREATE INDEX IF NOT EXISTS idx_economy_transactions_observed ON economy_transactions(observed_at);
 
 CREATE TABLE IF NOT EXISTS draft_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

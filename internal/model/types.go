@@ -516,9 +516,58 @@ type EconomySnapshot struct {
 	ChangeSources         []string              `json:"changeSources"`
 }
 
+// EconomyTransaction is one normalized entry of an InventoryInfo Changes
+// array. EventName attributes the change to an event run where derivable;
+// EventLink says how ("source_id" and "event_name" are exact, "proximity" is
+// a time-window heuristic).
+type EconomyTransaction struct {
+	ID                 int64                 `json:"id"`
+	ObservedAt         string                `json:"observedAt"`
+	Source             string                `json:"source"`
+	EventName          string                `json:"eventName"`
+	EventLink          string                `json:"eventLink"`
+	GoldDelta          int64                 `json:"goldDelta"`
+	GemsDelta          int64                 `json:"gemsDelta"`
+	WildcardDeltas     WildcardBalance       `json:"wildcardDeltas"`
+	CardsGranted       int64                 `json:"cardsGranted"`
+	VaultProgressDelta int64                 `json:"vaultProgressDelta"`
+	Boosters           []EconomyBoosterCount `json:"boosters"`
+	CustomTokens       map[string]int64      `json:"customTokens"`
+	Vouchers           map[string]int64      `json:"vouchers"`
+}
+
+// EventRunEconomy is the cost/reward summary of one event run. Entry deltas
+// are negative; net values keep gold and gems separate deliberately.
+type EventRunEconomy struct {
+	EventName           string                `json:"eventName"`
+	EventType           string                `json:"eventType"`
+	SetCode             string                `json:"setCode"`
+	Status              string                `json:"status"`
+	StartedAt           string                `json:"startedAt"`
+	EndedAt             string                `json:"endedAt"`
+	Wins                int64                 `json:"wins"`
+	Losses              int64                 `json:"losses"`
+	EntryCurrencyType   string                `json:"entryCurrencyType"`
+	EntryCurrencyPaid   *int64                `json:"entryCurrencyPaid"`
+	EntryGold           int64                 `json:"entryGold"`
+	EntryGems           int64                 `json:"entryGems"`
+	RewardGold          int64                 `json:"rewardGold"`
+	RewardGems          int64                 `json:"rewardGems"`
+	RewardBoosters      []EconomyBoosterCount `json:"rewardBoosters"`
+	RewardCards         int64                 `json:"rewardCards"`
+	RewardVaultProgress int64                 `json:"rewardVaultProgress"`
+	NetGold             int64                 `json:"netGold"`
+	NetGems             int64                 `json:"netGems"`
+	// exact | inferred | none: whether reward attribution used only exact
+	// links, any proximity heuristics, or found no reward data at all.
+	LinkConfidence string `json:"linkConfidence"`
+}
+
 type EconomyHistory struct {
-	Latest  *EconomySnapshot  `json:"latest"`
-	History []EconomySnapshot `json:"history"`
+	Latest       *EconomySnapshot     `json:"latest"`
+	History      []EconomySnapshot    `json:"history"`
+	Transactions []EconomyTransaction `json:"transactions"`
+	EventRuns    []EventRunEconomy    `json:"eventRuns"`
 }
 
 type RankState struct {
@@ -538,6 +587,10 @@ type RankHistoryPoint struct {
 	Result       string    `json:"result"`
 	ObservedAt   string    `json:"observedAt"`
 	EndedAt      string    `json:"endedAt"`
+	Format       string    `json:"format"`
+	SecondsCount *int64    `json:"secondsCount"`
+	DeckID       *int64    `json:"deckId"`
+	DeckName     string    `json:"deckName"`
 	Constructed  RankState `json:"constructed"`
 	Limited      RankState `json:"limited"`
 }

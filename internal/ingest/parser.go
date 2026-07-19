@@ -561,7 +561,8 @@ func (p *Parser) processLine(ctx context.Context, tx *sql.Tx, stats *model.Parse
 		}
 	}
 
-	if strings.HasPrefix(line, "{") && strings.Contains(line, "\"InventoryInfo\"") {
+	if strings.HasPrefix(line, "{") &&
+		(strings.Contains(line, "\"InventoryInfo\"") || strings.Contains(line, "\"DTO_InventoryInfo\"")) {
 		if err := p.handleEconomyJSON(ctx, tx, stats, state, logPath, lineNo, line); err != nil {
 			return err
 		}

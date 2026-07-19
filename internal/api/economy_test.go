@@ -34,7 +34,7 @@ func TestEconomyEndpointReturnsLatestAndHistory(t *testing.T) {
 		{ObservedAt: "2026-07-12T18:40:38Z", Gold: 1000, Gems: 200},
 		{ObservedAt: "2026-07-12T19:14:09Z", Gold: 1250, Gems: 200},
 	} {
-		if _, err := store.InsertEconomySnapshot(ctx, tx, "Player.log", int64(index+1), snapshot); err != nil {
+		if _, _, err := store.InsertEconomySnapshot(ctx, tx, "Player.log", int64(index+1), snapshot); err != nil {
 			_ = tx.Rollback()
 			t.Fatalf("insert snapshot %d: %v", index, err)
 		}

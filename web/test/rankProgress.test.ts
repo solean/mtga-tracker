@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildGraphPoints, type Ladder, type SeasonView } from "../src/lib/rankProgress";
+import {
+  buildGraphPoints,
+  fillMissingRankClasses,
+  rankStepIndex,
+  type Ladder,
+  type SeasonView,
+} from "../src/lib/rankProgress";
 import type { RankHistoryPoint, RankState } from "../src/lib/types";
 
 function rankState(values: Partial<Omit<RankState, "rankClass">> & { rankClass?: string } = {}): RankState {
@@ -29,6 +35,10 @@ function point(
     result,
     observedAt: "",
     endedAt: `2026-03-19T00:00:0${matchId}Z`,
+    format: "",
+    secondsCount: null,
+    deckId: null,
+    deckName: "",
     constructed,
     limited,
   };
@@ -248,5 +258,113 @@ describe("buildGraphPoints", () => {
     ];
 
     expect(buildGraphPoints(history, "constructed", "previous")).toBeNull();
+  });
+});
+
+describe("rankStepIndex", () => {
+  test("counts absolute steps from the bottom of the ladder", () => {
+    // Constructed: Spark (5/level) then Bronze (6/level). Silver 4 step 0 sits
+    // above 4 Spark levels and 4 Bronze levels.
+    const silverFloor = rankState({ seasonOrdinal: 12, rankClass: "Silver", level: 4, step: 0 });
+    expect(rankStepIndex(silverFloor, "constructed")).toBe(4 * 5 + 4 * 6);
+
+    const silverStep = rankState({ seasonOrdinal: 12, rankClass: "Silver", level: 3, step: 2 });
+    expect(rankStepIndex(silverStep, "constructed")).toBe(4 * 5 + 4 * 6 + 6 + 2);
+  });
+
+  test("returns null without a known rank class", () => {
+    expect(
+      rankStepIndex(rankState({ seasonOrdinal: 12, level: 3, step: 2 }), "constructed"),
+    ).toBeNull();
+  });
+
+  test("caps Mythic at the top of the ladder", () => {
+    const mythic = rankState({ seasonOrdinal: 12, rankClass: "Mythic", level: 1, step: 0 });
+    const diamondTop = rankState({ seasonOrdinal: 12, rankClass: "Diamond", level: 1, step: 6 });
+    const mythicIndex = rankStepIndex(mythic, "constructed");
+    const diamondIndex = rankStepIndex(diamondTop, "constructed");
+    expect(mythicIndex).not.toBeNull();
+    expect(diamondIndex).not.toBeNull();
+    expect(mythicIndex!).toBe(diamondIndex!);
+  });
+});
+
+describe("fillMissingRankClasses", () => {
+  test("carries known classes forward and advances on promotion", () => {
+    const history: RankHistoryPoint[] = [
+      point(
+        1,
+        "Ladder",
+        "win",
+        rankState({ seasonOrdinal: 12, rankClass: "Silver", level: 1, step: 5, matchesWon: 1, matchesLost: 0 }),
+        rankState(),
+      ),
+      point(
+        2,
+        "Ladder",
+        "win",
+        // Promotion: level 1 -> level 4 with no class reported.
+        rankState({ seasonOrdinal: 12, level: 4, step: 1, matchesWon: 2, matchesLost: 0 }),
+        rankState(),
+      ),
+      point(
+        3,
+        "Ladder",
+        "loss",
+        rankState({ seasonOrdinal: 12, level: 4, step: 0, matchesWon: 2, matchesLost: 1 }),
+        rankState(),
+      ),
+    ];
+
+    const filled = fillMissingRankClasses(history);
+    expect(filled[1].constructed.rankClass).toBe("Gold");
+    expect(filled[2].constructed.rankClass).toBe("Gold");
+    // Input is untouched.
+    expect(history[1].constructed.rankClass).toBe("");
+  });
+
+  test("backfills the season prefix before the first explicit class", () => {
+    const history: RankHistoryPoint[] = [
+      point(
+        1,
+        "Ladder",
+        "win",
+        rankState({ seasonOrdinal: 12, level: 1, step: 5, matchesWon: 1, matchesLost: 0 }),
+        rankState(),
+      ),
+      point(
+        2,
+        "Ladder",
+        "win",
+        // Promotion boundary; the explicit class arrives after it.
+        rankState({ seasonOrdinal: 12, level: 4, step: 1, matchesWon: 2, matchesLost: 0 }),
+        rankState(),
+      ),
+      point(
+        3,
+        "Ladder",
+        "win",
+        rankState({ seasonOrdinal: 12, rankClass: "Gold", level: 4, step: 2, matchesWon: 3, matchesLost: 0 }),
+        rankState(),
+      ),
+    ];
+
+    const filled = fillMissingRankClasses(history);
+    expect(filled[0].constructed.rankClass).toBe("Silver");
+    expect(filled[1].constructed.rankClass).toBe("Gold");
+  });
+
+  test("leaves classes empty when a season has no explicit class", () => {
+    const history: RankHistoryPoint[] = [
+      point(
+        1,
+        "Ladder",
+        "win",
+        rankState({ seasonOrdinal: 12, level: 3, step: 2, matchesWon: 1, matchesLost: 0 }),
+        rankState(),
+      ),
+    ];
+
+    expect(fillMissingRankClasses(history)[0].constructed.rankClass).toBe("");
   });
 });

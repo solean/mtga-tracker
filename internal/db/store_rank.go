@@ -157,6 +157,10 @@ func (s *Store) ListRankHistory(ctx context.Context) ([]model.RankHistoryPoint, 
 			COALESCE(m.result, 'unknown'),
 			COALESCE(mrs.observed_at, ''),
 			COALESCE(m.ended_at, ''),
+			COALESCE(m.format, ''),
+			m.seconds_count,
+			md.deck_id,
+			COALESCE(d.name, ''),
 			mrs.constructed_season_ordinal,
 			COALESCE(mrs.constructed_rank_class, ''),
 			mrs.constructed_level,
@@ -171,6 +175,12 @@ func (s *Store) ListRankHistory(ctx context.Context) ([]model.RankHistoryPoint, 
 			mrs.limited_matches_lost
 		FROM match_rank_snapshots mrs
 		JOIN matches m ON m.id = mrs.match_id
+		LEFT JOIN (
+			SELECT match_id, MIN(deck_id) AS deck_id
+			FROM match_decks
+			GROUP BY match_id
+		) md ON md.match_id = m.id
+		LEFT JOIN decks d ON d.id = md.deck_id
 		ORDER BY COALESCE(mrs.observed_at, m.ended_at, m.started_at, m.updated_at) ASC, mrs.id ASC
 	`)
 	if err != nil {
@@ -181,6 +191,8 @@ func (s *Store) ListRankHistory(ctx context.Context) ([]model.RankHistoryPoint, 
 	var out []model.RankHistoryPoint
 	for rows.Next() {
 		var row model.RankHistoryPoint
+		var secondsCount sql.NullInt64
+		var deckID sql.NullInt64
 		var constructedSeasonOrdinal sql.NullInt64
 		var constructedLevel sql.NullInt64
 		var constructedStep sql.NullInt64
@@ -200,6 +212,10 @@ func (s *Store) ListRankHistory(ctx context.Context) ([]model.RankHistoryPoint, 
 			&row.Result,
 			&row.ObservedAt,
 			&row.EndedAt,
+			&row.Format,
+			&secondsCount,
+			&deckID,
+			&row.DeckName,
 			&constructedSeasonOrdinal,
 			&row.Constructed.RankClass,
 			&constructedLevel,
@@ -216,6 +232,8 @@ func (s *Store) ListRankHistory(ctx context.Context) ([]model.RankHistoryPoint, 
 			return nil, fmt.Errorf("scan rank history row: %w", err)
 		}
 
+		row.SecondsCount = nullInt64Ptr(secondsCount)
+		row.DeckID = nullInt64Ptr(deckID)
 		row.Constructed.SeasonOrdinal = nullInt64Ptr(constructedSeasonOrdinal)
 		row.Constructed.Level = nullInt64Ptr(constructedLevel)
 		row.Constructed.Step = nullInt64Ptr(constructedStep)

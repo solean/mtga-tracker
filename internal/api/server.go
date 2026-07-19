@@ -565,7 +565,20 @@ func (s *Server) handleEconomy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := model.EconomyHistory{History: history}
+	transactions, err := s.store.ListEconomyTransactions(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	eventRuns, err := s.store.ListEventRunEconomies(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for index := range eventRuns {
+		eventRuns[index].SetCode = limitedSetCode(eventRuns[index].EventName)
+	}
+	out := model.EconomyHistory{History: history, Transactions: transactions, EventRuns: eventRuns}
 	if len(history) > 0 {
 		out.Latest = &history[len(history)-1]
 	}

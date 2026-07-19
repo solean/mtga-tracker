@@ -8,6 +8,7 @@ import { formatDateTime } from "../lib/format";
 import { useEventSets } from "../lib/useEventSets";
 import {
   buildGraphPoints,
+  fillMissingRankClasses,
   LADDER_CONFIG,
   seasonOrdinalsFor,
   tierLabelAt,
@@ -200,7 +201,14 @@ export function RankProgressPanel() {
   const headingId = `${tabBaseId}-heading`;
   const ladderOptions = ["constructed", "limited"] as const satisfies readonly Ladder[];
 
-  const availableSeasons = useMemo(() => (data ? seasonOrdinalsFor(data, ladder) : []), [data, ladder]);
+  // Arena often omits the rank-class string; anchor missing classes to the
+  // explicit ones within each season so tiers label correctly.
+  const filledData = useMemo(() => (data ? fillMissingRankClasses(data) : null), [data]);
+
+  const availableSeasons = useMemo(
+    () => (filledData ? seasonOrdinalsFor(filledData, ladder) : []),
+    [filledData, ladder],
+  );
   const hasPreviousSeason = availableSeasons.length > 1;
   const currentSeasonOrdinal = availableSeasons[availableSeasons.length - 1];
   const previousSeasonOrdinal = availableSeasons[availableSeasons.length - 2];
@@ -212,8 +220,8 @@ export function RankProgressPanel() {
   }, [hasPreviousSeason, seasonView]);
 
   const series = useMemo(
-    () => (data ? buildGraphPoints(data, ladder, seasonView) : null),
-    [data, ladder, seasonView],
+    () => (filledData ? buildGraphPoints(filledData, ladder, seasonView) : null),
+    [filledData, ladder, seasonView],
   );
   const latestPoint = series ? series.points[series.points.length - 1] : null;
   const firstPoint = series?.points[0];
@@ -226,10 +234,10 @@ export function RankProgressPanel() {
   // visible without toggling.
   const otherLadder: Ladder = ladder === "constructed" ? "limited" : "constructed";
   const otherLadderRank = useMemo(() => {
-    if (!data) return null;
-    const otherSeries = buildGraphPoints(data, otherLadder, "current");
+    if (!filledData) return null;
+    const otherSeries = buildGraphPoints(filledData, otherLadder, "current");
     return otherSeries?.points[otherSeries.points.length - 1]?.rankLabel ?? null;
-  }, [data, otherLadder]);
+  }, [filledData, otherLadder]);
 
   // A one- or two-point line reads as noise; below this we show chips only.
   const hasChartableTrend = (series?.points.length ?? 0) >= 3;

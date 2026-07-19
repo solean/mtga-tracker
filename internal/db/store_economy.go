@@ -28,13 +28,16 @@ type EconomySnapshotRecord struct {
 	ChangesJSON           string
 }
 
+// InsertEconomySnapshot stores one InventoryInfo snapshot. It returns the
+// snapshot's row id (also when the row already existed) and whether this call
+// inserted it.
 func (s *Store) InsertEconomySnapshot(
 	ctx context.Context,
 	tx *sql.Tx,
 	logPath string,
 	lineNo int64,
 	snapshot EconomySnapshotRecord,
-) (bool, error) {
+) (int64, bool, error) {
 	snapshot.ObservedAt = normalizeTS(snapshot.ObservedAt)
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO economy_snapshots (
@@ -64,13 +67,27 @@ func (s *Store) InsertEconomySnapshot(
 		jsonOrDefault(snapshot.BoostersJSON, "[]"), jsonOrDefault(snapshot.VouchersJSON, "{}"),
 		jsonOrDefault(snapshot.ChangesJSON, "[]"), nowUTC())
 	if err != nil {
-		return false, fmt.Errorf("insert economy snapshot: %w", err)
+		return 0, false, fmt.Errorf("insert economy snapshot: %w", err)
 	}
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("count inserted economy snapshots: %w", err)
+		return 0, false, fmt.Errorf("count inserted economy snapshots: %w", err)
 	}
-	return rowsAffected > 0, nil
+	if rowsAffected > 0 {
+		id, err := result.LastInsertId()
+		if err != nil {
+			return 0, false, fmt.Errorf("resolve inserted economy snapshot id: %w", err)
+		}
+		return id, true, nil
+	}
+
+	var id int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id FROM economy_snapshots WHERE log_path = ? AND line_no = ?
+	`, logPath, lineNo).Scan(&id); err != nil {
+		return 0, false, fmt.Errorf("lookup existing economy snapshot: %w", err)
+	}
+	return id, false, nil
 }
 
 func (s *Store) ListEconomyHistory(ctx context.Context) ([]model.EconomySnapshot, error) {
@@ -131,6 +148,241 @@ func (s *Store) ListEconomyHistory(ctx context.Context) ([]model.EconomySnapshot
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate economy history: %w", err)
+	}
+	return out, nil
+}
+
+// ListEconomyTransactions returns the normalized inventory-change ledger in
+// chronological order.
+func (s *Store) ListEconomyTransactions(ctx context.Context) ([]model.EconomyTransaction, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			id,
+			COALESCE(observed_at, ''),
+			source,
+			COALESCE(event_name, ''),
+			COALESCE(event_link, ''),
+			gold_delta,
+			gems_delta,
+			wildcard_common_delta,
+			wildcard_uncommon_delta,
+			wildcard_rare_delta,
+			wildcard_mythic_delta,
+			cards_granted,
+			vault_progress_delta,
+			boosters_delta_json,
+			custom_tokens_delta_json,
+			vouchers_delta_json
+		FROM economy_transactions
+		ORDER BY COALESCE(observed_at, created_at) ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list economy transactions: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]model.EconomyTransaction, 0)
+	for rows.Next() {
+		var txn model.EconomyTransaction
+		var boostersJSON, customTokensJSON, vouchersJSON string
+		if err := rows.Scan(
+			&txn.ID,
+			&txn.ObservedAt,
+			&txn.Source,
+			&txn.EventName,
+			&txn.EventLink,
+			&txn.GoldDelta,
+			&txn.GemsDelta,
+			&txn.WildcardDeltas.Common,
+			&txn.WildcardDeltas.Uncommon,
+			&txn.WildcardDeltas.Rare,
+			&txn.WildcardDeltas.Mythic,
+			&txn.CardsGranted,
+			&txn.VaultProgressDelta,
+			&boostersJSON,
+			&customTokensJSON,
+			&vouchersJSON,
+		); err != nil {
+			return nil, fmt.Errorf("scan economy transaction: %w", err)
+		}
+		txn.Boosters = decodeBoosterCounts(boostersJSON)
+		txn.CustomTokens = decodeIntMap(customTokensJSON)
+		txn.Vouchers = decodeIntMap(vouchersJSON)
+		out = append(out, txn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate economy transactions: %w", err)
+	}
+	return out, nil
+}
+
+// ListEventRunEconomies folds the transaction ledger into per-run cost and
+// reward summaries. Runs with a free entry and no linked transactions (ladder
+// and open play) are omitted. SetCode is left for the API layer to derive
+// from the event name.
+func (s *Store) ListEventRunEconomies(ctx context.Context) ([]model.EventRunEconomy, error) {
+	runRows, err := s.db.QueryContext(ctx, `
+		SELECT
+			event_name,
+			COALESCE(event_type, 'other'),
+			COALESCE(entry_currency_type, ''),
+			entry_currency_paid,
+			status,
+			COALESCE(started_at, ''),
+			COALESCE(ended_at, ''),
+			wins,
+			losses
+		FROM event_runs
+		ORDER BY COALESCE(started_at, updated_at) DESC, id DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list event runs: %w", err)
+	}
+	defer runRows.Close()
+
+	runs := make([]model.EventRunEconomy, 0)
+	for runRows.Next() {
+		var run model.EventRunEconomy
+		var entryPaid sql.NullInt64
+		if err := runRows.Scan(
+			&run.EventName,
+			&run.EventType,
+			&run.EntryCurrencyType,
+			&entryPaid,
+			&run.Status,
+			&run.StartedAt,
+			&run.EndedAt,
+			&run.Wins,
+			&run.Losses,
+		); err != nil {
+			return nil, fmt.Errorf("scan event run: %w", err)
+		}
+		run.EntryCurrencyPaid = nullInt64Ptr(entryPaid)
+		run.RewardBoosters = []model.EconomyBoosterCount{}
+		run.LinkConfidence = "none"
+		runs = append(runs, run)
+	}
+	if err := runRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate event runs: %w", err)
+	}
+
+	type runEconomy struct {
+		hasTransactions bool
+		hasProximity    bool
+		payGold         int64
+		payGems         int64
+		hasPay          bool
+		rewardGold      int64
+		rewardGems      int64
+		rewardCards     int64
+		rewardVault     int64
+		hasReward       bool
+		boosterCounts   map[string]int64
+	}
+	economies := make(map[string]*runEconomy)
+	economyFor := func(eventName string) *runEconomy {
+		if entry, ok := economies[eventName]; ok {
+			return entry
+		}
+		entry := &runEconomy{boosterCounts: make(map[string]int64)}
+		economies[eventName] = entry
+		return entry
+	}
+
+	txnRows, err := s.db.QueryContext(ctx, `
+		SELECT
+			event_name,
+			COALESCE(event_link, ''),
+			source,
+			gold_delta,
+			gems_delta,
+			cards_granted,
+			vault_progress_delta,
+			boosters_delta_json
+		FROM economy_transactions
+		WHERE event_name IS NOT NULL AND event_name != ''
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list event-linked transactions: %w", err)
+	}
+	defer txnRows.Close()
+
+	for txnRows.Next() {
+		var eventName, eventLink, source, boostersJSON string
+		var gold, gems, cards, vault int64
+		if err := txnRows.Scan(&eventName, &eventLink, &source, &gold, &gems, &cards, &vault, &boostersJSON); err != nil {
+			return nil, fmt.Errorf("scan event-linked transaction: %w", err)
+		}
+		economy := economyFor(eventName)
+		economy.hasTransactions = true
+		if eventLink == "proximity" {
+			economy.hasProximity = true
+		}
+		switch source {
+		case "EventPayEntry", "EventRefund":
+			economy.hasPay = true
+			economy.payGold += gold
+			economy.payGems += gems
+		case "EventReward", "EventGrantCardPool":
+			economy.hasReward = true
+			economy.rewardGold += gold
+			economy.rewardGems += gems
+			economy.rewardCards += cards
+			economy.rewardVault += vault
+			for _, booster := range decodeBoosterCounts(boostersJSON) {
+				economy.boosterCounts[booster.SetCode] += booster.Count
+			}
+		}
+	}
+	if err := txnRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate event-linked transactions: %w", err)
+	}
+
+	out := make([]model.EventRunEconomy, 0, len(runs))
+	for _, run := range runs {
+		economy := economies[run.EventName]
+		paidEntry := run.EntryCurrencyType != "" && run.EntryCurrencyType != "None"
+		if economy == nil && !paidEntry {
+			continue
+		}
+
+		if economy != nil {
+			if economy.hasPay {
+				run.EntryGold = economy.payGold
+				run.EntryGems = economy.payGems
+			}
+			run.RewardGold = economy.rewardGold
+			run.RewardGems = economy.rewardGems
+			run.RewardCards = economy.rewardCards
+			run.RewardVaultProgress = economy.rewardVault
+			for setCode, count := range economy.boosterCounts {
+				run.RewardBoosters = append(run.RewardBoosters, model.EconomyBoosterCount{SetCode: setCode, Count: count})
+			}
+			sort.Slice(run.RewardBoosters, func(i, j int) bool {
+				return run.RewardBoosters[i].SetCode < run.RewardBoosters[j].SetCode
+			})
+			if economy.hasReward {
+				run.LinkConfidence = "exact"
+				if economy.hasProximity {
+					run.LinkConfidence = "inferred"
+				}
+			}
+		}
+
+		// Without an observed pay transaction, fall back to the entry price
+		// from the EventJoin request itself — still an exact log value.
+		if (economy == nil || !economy.hasPay) && run.EntryCurrencyPaid != nil {
+			switch run.EntryCurrencyType {
+			case "Gold":
+				run.EntryGold = -*run.EntryCurrencyPaid
+			case "Gem", "Gems":
+				run.EntryGems = -*run.EntryCurrencyPaid
+			}
+		}
+
+		run.NetGold = run.EntryGold + run.RewardGold
+		run.NetGems = run.EntryGems + run.RewardGems
+		out = append(out, run)
 	}
 	return out, nil
 }

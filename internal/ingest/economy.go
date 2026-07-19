@@ -9,22 +9,27 @@ import (
 	"github.com/solean/ponder/internal/model"
 )
 
+type inventoryInfoPayload struct {
+	SequenceID            int64           `json:"SeqId"`
+	Changes               json.RawMessage `json:"Changes"`
+	Gems                  int64           `json:"Gems"`
+	Gold                  int64           `json:"Gold"`
+	VaultProgress         int64           `json:"TotalVaultProgress"`
+	WildcardTrackPosition int64           `json:"wcTrackPosition"`
+	WildcardCommons       int64           `json:"WildCardCommons"`
+	WildcardUncommons     int64           `json:"WildCardUnCommons"`
+	WildcardRares         int64           `json:"WildCardRares"`
+	WildcardMythics       int64           `json:"WildCardMythics"`
+	CustomTokens          json.RawMessage `json:"CustomTokens"`
+	Boosters              json.RawMessage `json:"Boosters"`
+	Vouchers              json.RawMessage `json:"Vouchers"`
+}
+
+// Arena reports inventory either nested under "InventoryInfo" or, for module
+// responses like draft card-pool grants, as a top-level "DTO_InventoryInfo".
 type economyEnvelope struct {
-	InventoryInfo *struct {
-		SequenceID            int64           `json:"SeqId"`
-		Changes               json.RawMessage `json:"Changes"`
-		Gems                  int64           `json:"Gems"`
-		Gold                  int64           `json:"Gold"`
-		VaultProgress         int64           `json:"TotalVaultProgress"`
-		WildcardTrackPosition int64           `json:"wcTrackPosition"`
-		WildcardCommons       int64           `json:"WildCardCommons"`
-		WildcardUncommons     int64           `json:"WildCardUnCommons"`
-		WildcardRares         int64           `json:"WildCardRares"`
-		WildcardMythics       int64           `json:"WildCardMythics"`
-		CustomTokens          json.RawMessage `json:"CustomTokens"`
-		Boosters              json.RawMessage `json:"Boosters"`
-		Vouchers              json.RawMessage `json:"Vouchers"`
-	} `json:"InventoryInfo"`
+	InventoryInfo    *inventoryInfoPayload `json:"InventoryInfo"`
+	DTOInventoryInfo *inventoryInfoPayload `json:"DTO_InventoryInfo"`
 }
 
 func (p *Parser) handleEconomyJSON(
@@ -37,12 +42,17 @@ func (p *Parser) handleEconomyJSON(
 	line string,
 ) error {
 	var envelope economyEnvelope
-	if err := json.Unmarshal([]byte(line), &envelope); err != nil || envelope.InventoryInfo == nil {
+	if err := json.Unmarshal([]byte(line), &envelope); err != nil {
 		return nil
 	}
-
 	inventory := envelope.InventoryInfo
-	inserted, err := p.store.InsertEconomySnapshot(ctx, tx, logPath, lineNo, db.EconomySnapshotRecord{
+	if inventory == nil {
+		inventory = envelope.DTOInventoryInfo
+	}
+	if inventory == nil {
+		return nil
+	}
+	snapshotID, inserted, err := p.store.InsertEconomySnapshot(ctx, tx, logPath, lineNo, db.EconomySnapshotRecord{
 		ObservedAt:            state.lastUnityLogTimestamp,
 		SequenceID:            inventory.SequenceID,
 		Gold:                  inventory.Gold,
@@ -63,6 +73,11 @@ func (p *Parser) handleEconomyJSON(
 	}
 	if inserted {
 		stats.EconomySnapshots++
+		if _, err := p.store.DeriveEconomyTransactions(
+			ctx, tx, snapshotID, state.lastUnityLogTimestamp, string(inventory.Changes),
+		); err != nil {
+			return err
+		}
 	}
 	return nil
 }

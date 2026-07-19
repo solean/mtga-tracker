@@ -219,9 +219,50 @@ export type EconomySnapshot = {
   changeSources: string[];
 };
 
+export type EconomyTransaction = {
+  id: number;
+  observedAt: string;
+  source: string;
+  eventName: string;
+  eventLink: "source_id" | "event_name" | "proximity" | "";
+  goldDelta: number;
+  gemsDelta: number;
+  wildcardDeltas: WildcardBalance;
+  cardsGranted: number;
+  vaultProgressDelta: number;
+  boosters: EconomyBoosterCount[];
+  customTokens: Record<string, number>;
+  vouchers: Record<string, number>;
+};
+
+export type EventRunEconomy = {
+  eventName: string;
+  eventType: string;
+  setCode: string;
+  status: string;
+  startedAt: string;
+  endedAt: string;
+  wins: number;
+  losses: number;
+  entryCurrencyType: string;
+  entryCurrencyPaid: number | null;
+  entryGold: number;
+  entryGems: number;
+  rewardGold: number;
+  rewardGems: number;
+  rewardBoosters: EconomyBoosterCount[];
+  rewardCards: number;
+  rewardVaultProgress: number;
+  netGold: number;
+  netGems: number;
+  linkConfidence: "exact" | "inferred" | "none";
+};
+
 export type EconomyHistory = {
   latest: EconomySnapshot | null;
   history: EconomySnapshot[];
+  transactions: EconomyTransaction[];
+  eventRuns: EventRunEconomy[];
 };
 
 export type RankState = {
@@ -241,6 +282,10 @@ export type RankHistoryPoint = {
   result: "win" | "loss" | "unknown";
   observedAt: string;
   endedAt: string;
+  format: string;
+  secondsCount: number | null;
+  deckId: number | null;
+  deckName: string;
   constructed: RankState;
   limited: RankState;
 };

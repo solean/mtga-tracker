@@ -62,11 +62,124 @@ function stepsPerLevel(ladder: Ladder, rankClass: string): number {
   return 5;
 }
 
-function formatRankLabel(rank: RankState): string {
+export function formatRankLabel(rank: RankState): string {
   if (rank.level == null || rank.seasonOrdinal == null) return "Unranked";
   const rankClass = normalizeRankClass(rank.rankClass);
   if (rankClass === "Mythic") return "Mythic";
   return `${rankClass} ${rank.level}`;
+}
+
+/**
+ * Absolute ladder position measured in steps (Arena "pips") from the bottom
+ * of the ladder. Mythic returns the ladder's step cap, so climbing into
+ * Mythic counts but movement within Mythic (percentile-based) does not.
+ * Null when the rank is unknown.
+ */
+export function rankStepIndex(rank: RankState, ladder: Ladder): number | null {
+  if (rank.level == null || rank.seasonOrdinal == null) return null;
+  // Without a known class the absolute position is ambiguous — no Bronze
+  // fallback here, unlike display labels: step math must not guess tiers.
+  const rankClass = rank.rankClass.trim();
+  if (!rankClass) return null;
+  const config = LADDER_CONFIG[ladder];
+  const tierIndex = config.tiers.indexOf(rankClass);
+  if (tierIndex === -1) return null;
+
+  let steps = 0;
+  for (let index = 0; index < tierIndex; index += 1) {
+    const tier = config.tiers[index];
+    if (tier === "Mythic") continue;
+    steps += 4 * stepsPerLevel(ladder, tier);
+  }
+  if (rankClass === "Mythic") return steps;
+
+  const totalSteps = stepsPerLevel(ladder, rankClass);
+  const level = Math.min(Math.max(rank.level, 1), 4);
+  steps += (4 - level) * totalSteps;
+  steps += Math.min(Math.max(rank.step ?? 0, 0), totalSteps);
+  return steps;
+}
+
+/**
+ * Every match recorded against the given ladder: the points where that
+ * ladder's state (rank or win/loss counters) actually changed.
+ */
+export function ladderMatchPoints(history: RankHistoryPoint[], ladder: Ladder): RankHistoryPoint[] {
+  return changedPointsFor(history, ladder);
+}
+
+export function normalizedRankClass(rank: RankState): string {
+  return normalizeRankClass(rank.rankClass);
+}
+
+/**
+ * Arena's rank responses frequently omit the rank-class string while still
+ * reporting level and step. Within one season the class only moves up at a
+ * promotion (level 1 -> level 4 of the next tier), so missing classes can be
+ * inferred by carrying known classes forward — and backward across the same
+ * boundary rule for points before the first explicit class. Points that
+ * cannot be anchored to any explicit class in their season keep an empty
+ * class. Returns copies; the input is not mutated.
+ */
+export function fillMissingRankClasses(history: RankHistoryPoint[]): RankHistoryPoint[] {
+  const out = history.map((point) => ({
+    ...point,
+    constructed: { ...point.constructed },
+    limited: { ...point.limited },
+  }));
+
+  for (const ladder of ["constructed", "limited"] as const) {
+    const tiers = LADDER_CONFIG[ladder].tiers;
+    const bySeason = new Map<number, RankState[]>();
+    for (const point of out) {
+      const rank = ladder === "constructed" ? point.constructed : point.limited;
+      if (rank.seasonOrdinal == null || rank.level == null) continue;
+      const group = bySeason.get(rank.seasonOrdinal);
+      if (group) group.push(rank);
+      else bySeason.set(rank.seasonOrdinal, [rank]);
+    }
+
+    for (const ranks of bySeason.values()) {
+      const assigned: Array<number | null> = ranks.map(() => null);
+
+      const promoted = (prev: RankState, next: RankState) => prev.level === 1 && next.level === 4;
+
+      let tier: number | null = null;
+      for (let index = 0; index < ranks.length; index += 1) {
+        const explicit = ranks[index].rankClass.trim();
+        const explicitTier = explicit ? tiers.indexOf(explicit) : -1;
+        if (explicitTier !== -1) {
+          tier = explicitTier;
+        } else if (tier != null && index > 0 && promoted(ranks[index - 1], ranks[index])) {
+          tier = Math.min(tier + 1, tiers.length - 1);
+        }
+        assigned[index] = tier;
+      }
+
+      let nextTier: number | null = null;
+      for (let index = ranks.length - 1; index >= 0; index -= 1) {
+        if (assigned[index] != null) {
+          nextTier = assigned[index];
+          continue;
+        }
+        if (nextTier != null) {
+          if (promoted(ranks[index], ranks[index + 1])) {
+            nextTier = Math.max(nextTier - 1, 0);
+          }
+          assigned[index] = nextTier;
+        }
+      }
+
+      for (let index = 0; index < ranks.length; index += 1) {
+        const tierIndex = assigned[index];
+        if (tierIndex != null && !ranks[index].rankClass.trim()) {
+          ranks[index].rankClass = tiers[tierIndex];
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 function rankScore(rank: RankState, ladder: Ladder): number | null {

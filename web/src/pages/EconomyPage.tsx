@@ -1,13 +1,16 @@
 import ReactECharts from "echarts-for-react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
+import { EventLabel } from "../components/EventLabel";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
+import { parseEventName } from "../lib/events";
 import { formatDateTime, formatRelativeTime } from "../lib/format";
+import { useEventSets } from "../lib/useEventSets";
 import { useTheme } from "../lib/theme";
-import type { EconomySnapshot, WildcardBalance } from "../lib/types";
+import type { EconomySnapshot, EventRunEconomy, WildcardBalance } from "../lib/types";
 
 const integerFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const decimalFormatter = new Intl.NumberFormat(undefined, {
@@ -99,6 +102,125 @@ function sourceLabel(sources: string[]): string {
   return sources.map(humanizeInventoryKey).join(", ");
 }
 
+const TRANSACTION_SOURCE_LABELS: Record<string, string> = {
+  EventPayEntry: "Event entry",
+  EventRefund: "Event refund",
+  EventReward: "Event prizes",
+  EventGrantCardPool: "Draft card pool",
+  QuestReward: "Quest reward",
+  DailyReward: "Daily reward",
+  WeeklyReward: "Weekly reward",
+  LoginGrant: "Login grant",
+  RedeemVoucherReward: "Voucher redemption",
+  PurchasedProductDelivery: "Store purchase",
+  BoosterOpen: "Booster opened",
+  VaultOpen: "Vault opened",
+  WildCardRedemption: "Wildcard crafted",
+  RankedSeasonReward: "Ranked season reward",
+  BattlePassReward: "Mastery pass reward",
+  BattlePassLevelUp: "Mastery level",
+};
+
+function transactionSourceLabel(source: string): string {
+  return TRANSACTION_SOURCE_LABELS[source] ?? humanizeInventoryKey(source);
+}
+
+function eventRunLabel(run: EventRunEconomy): string {
+  const parsed = parseEventName(run.eventName);
+  const kind = parsed.kindLabel === "Unknown event" ? "Event" : parsed.kindLabel;
+  return parsed.setCode ? `${parsed.setCode} ${kind}` : kind;
+}
+
+function entryLabel(run: EventRunEconomy): string {
+  if (run.entryGold < 0) return `${formatDelta(run.entryGold)} gold`;
+  if (run.entryGems < 0) return `${formatDelta(run.entryGems)} gems`;
+  const type = run.entryCurrencyType;
+  if (!type || type === "None") return "Free";
+  if (run.entryCurrencyPaid != null && run.entryCurrencyPaid > 1) {
+    return `${integerFormatter.format(run.entryCurrencyPaid)} × ${humanizeInventoryKey(type)}`;
+  }
+  return humanizeInventoryKey(type);
+}
+
+function rewardLabel(run: EventRunEconomy): string {
+  const parts: string[] = [];
+  if (run.rewardGold !== 0) parts.push(`${formatDelta(run.rewardGold)} gold`);
+  if (run.rewardGems !== 0) parts.push(`${formatDelta(run.rewardGems)} gems`);
+  const packCount = run.rewardBoosters.reduce((sum, booster) => sum + booster.count, 0);
+  if (packCount > 0) parts.push(`${integerFormatter.format(packCount)} pack${packCount === 1 ? "" : "s"}`);
+  if (run.rewardCards > 0) parts.push(`${integerFormatter.format(run.rewardCards)} cards`);
+  if (parts.length === 0) return run.linkConfidence === "none" ? "not captured" : "—";
+  return parts.join(" · ");
+}
+
+type EventValueGroup = {
+  key: string;
+  label: string;
+  runs: number;
+  totalWins: number;
+  totalLosses: number;
+  netGold: number;
+  netGems: number;
+  packs: number;
+  runsWithRewardData: number;
+  runsCoveredEntry: number;
+};
+
+function groupEventRuns(runs: EventRunEconomy[]): EventValueGroup[] {
+  const groups = new Map<string, EventValueGroup>();
+  for (const run of runs) {
+    const key = `${run.eventType}:${run.setCode}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: eventRunLabel(run),
+        runs: 0,
+        totalWins: 0,
+        totalLosses: 0,
+        netGold: 0,
+        netGems: 0,
+        packs: 0,
+        runsWithRewardData: 0,
+        runsCoveredEntry: 0,
+      };
+      groups.set(key, group);
+    }
+    group.runs += 1;
+    group.totalWins += run.wins;
+    group.totalLosses += run.losses;
+    group.netGold += run.netGold;
+    group.netGems += run.netGems;
+    group.packs += run.rewardBoosters.reduce((sum, booster) => sum + booster.count, 0);
+    if (run.linkConfidence !== "none") {
+      group.runsWithRewardData += 1;
+      if (run.netGold >= 0 && run.netGems >= 0) group.runsCoveredEntry += 1;
+    }
+  }
+  return [...groups.values()].sort((left, right) => right.runs - left.runs);
+}
+
+function confidenceBadge(confidence: EventRunEconomy["linkConfidence"]): ReactNode {
+  if (confidence === "exact") {
+    return <span className="analytics-confidence is-exact">exact</span>;
+  }
+  if (confidence === "inferred") {
+    return (
+      <span
+        className="analytics-confidence is-derived"
+        title="Rewards were matched to this run by time proximity, not an exact log reference."
+      >
+        inferred
+      </span>
+    );
+  }
+  return (
+    <span className="analytics-confidence" title="No reward data was captured for this run.">
+      no data
+    </span>
+  );
+}
+
 export function EconomyPage() {
   const { mode, scheme } = useTheme();
   const { data, isLoading, error } = useQuery({
@@ -108,6 +230,13 @@ export function EconomyPage() {
   });
 
   const changes = useMemo(() => economyChanges(data?.history ?? []), [data?.history]);
+  const recentTransactions = useMemo(
+    () => (data?.transactions ?? []).slice(-MAX_RECENT_CHANGES).reverse(),
+    [data?.transactions],
+  );
+  const eventRuns = data?.eventRuns ?? [];
+  const eventGroups = useMemo(() => groupEventRuns(data?.eventRuns ?? []), [data?.eventRuns]);
+  const { lookup: setLookup } = useEventSets(eventRuns.map((run) => run.eventName));
   const chartPoints = useMemo(
     () =>
       (data?.history ?? []).flatMap((snapshot) => {
@@ -318,6 +447,99 @@ export function EconomyPage() {
         )}
       </section>
 
+      <section className="panel" aria-labelledby="event-value-heading">
+        <div className="panel-head">
+          <div>
+            <h3 id="event-value-heading">Event value</h3>
+            <p>Entry costs and prizes per tracked event run — gold and gems stay separate</p>
+          </div>
+        </div>
+        {eventRuns.length > 0 ? (
+          <div className="stack-md">
+            {eventGroups.length > 1 || (eventGroups.length === 1 && eventGroups[0].runs > 1) ? (
+              <div className="table-wrap">
+                <table className="data-table compact">
+                  <thead>
+                    <tr>
+                      <th scope="col">Event</th>
+                      <th scope="col">Runs</th>
+                      <th scope="col">Record</th>
+                      <th scope="col">Avg wins</th>
+                      <th scope="col">Net gold</th>
+                      <th scope="col">Net gems</th>
+                      <th scope="col">Packs</th>
+                      <th scope="col">Covered entry</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eventGroups.map((group) => (
+                      <tr key={group.key}>
+                        <td>{group.label}</td>
+                        <td>{integerFormatter.format(group.runs)}</td>
+                        <td>
+                          {integerFormatter.format(group.totalWins)}–{integerFormatter.format(group.totalLosses)}
+                        </td>
+                        <td>{decimalFormatter.format(group.totalWins / group.runs)}</td>
+                        <td className={deltaTone(group.netGold)}>{formatDelta(group.netGold)}</td>
+                        <td className={deltaTone(group.netGems)}>{formatDelta(group.netGems)}</td>
+                        <td>{group.packs > 0 ? integerFormatter.format(group.packs) : "—"}</td>
+                        <td>
+                          {group.runsWithRewardData > 0
+                            ? `${group.runsCoveredEntry} of ${group.runsWithRewardData}`
+                            : "no reward data"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            <div className="table-wrap">
+              <table className="data-table compact">
+                <thead>
+                  <tr>
+                    <th scope="col">Event</th>
+                    <th scope="col">Record</th>
+                    <th scope="col">Entry</th>
+                    <th scope="col">Rewards</th>
+                    <th scope="col">Net gold</th>
+                    <th scope="col">Net gems</th>
+                    <th scope="col">Data</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventRuns.map((run) => (
+                    <tr key={run.eventName}>
+                      <td title={run.startedAt ? formatDateTime(run.startedAt) : run.eventName}>
+                        <EventLabel eventName={run.eventName} lookup={setLookup} />
+                      </td>
+                      <td>
+                        {integerFormatter.format(run.wins)}–{integerFormatter.format(run.losses)}
+                      </td>
+                      <td>{entryLabel(run)}</td>
+                      <td>{rewardLabel(run)}</td>
+                      <td className={deltaTone(run.netGold)}>{formatDelta(run.netGold)}</td>
+                      <td className={deltaTone(run.netGems)}>{formatDelta(run.netGems)}</td>
+                      <td>{confidenceBadge(run.linkConfidence)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="state">
+              "Covered entry" counts runs whose captured rewards at least repaid the entry cost, out
+              of runs with reward data. Runs marked "no data" predate reward tracking or have not
+              been claimed yet; their net values reflect only the entry cost.
+            </p>
+          </div>
+        ) : (
+          <p className="state">
+            No paid event runs tracked yet. Join a draft or other paid event and its entry cost and
+            prizes will appear here.
+          </p>
+        )}
+      </section>
+
       <div className="economy-inventory-grid">
         <section className="panel" aria-labelledby="tokens-heading">
           <div className="panel-head">
@@ -366,10 +588,54 @@ export function EconomyPage() {
         <div className="panel-head">
           <div>
             <h3 id="recent-economy-heading">Recent balance changes</h3>
-            <p>Changes calculated between consecutive Arena snapshots</p>
+            <p>
+              {recentTransactions.length > 0
+                ? "Itemized inventory changes reported by Arena"
+                : "Changes calculated between consecutive Arena snapshots"}
+            </p>
           </div>
         </div>
-        {changes.length > 0 ? (
+        {recentTransactions.length > 0 ? (
+          <div className="table-wrap economy-history-wrap">
+            <table className="data-table compact economy-history-table">
+              <thead>
+                <tr>
+                  <th scope="col">Observed</th>
+                  <th scope="col">Source</th>
+                  <th scope="col">Event</th>
+                  <th scope="col">Gold</th>
+                  <th scope="col">Gems</th>
+                  <th scope="col">Packs</th>
+                  <th scope="col">Cards</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTransactions.map((txn) => {
+                  const packDelta = txn.boosters.reduce((sum, booster) => sum + booster.count, 0);
+                  return (
+                    <tr key={txn.id}>
+                      <td title={formatDateTime(txn.observedAt)}>
+                        {txn.observedAt ? formatRelativeTime(txn.observedAt) : "Unknown"}
+                      </td>
+                      <td>{transactionSourceLabel(txn.source)}</td>
+                      <td>
+                        {txn.eventName ? (
+                          <EventLabel eventName={txn.eventName} lookup={setLookup} showSymbol={false} />
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className={deltaTone(txn.goldDelta)}>{formatDelta(txn.goldDelta)}</td>
+                      <td className={deltaTone(txn.gemsDelta)}>{formatDelta(txn.gemsDelta)}</td>
+                      <td className={deltaTone(packDelta)}>{formatDelta(packDelta)}</td>
+                      <td>{txn.cardsGranted > 0 ? `+${integerFormatter.format(txn.cardsGranted)}` : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : changes.length > 0 ? (
           <div className="table-wrap economy-history-wrap">
             <table className="data-table compact economy-history-table">
               <thead>
