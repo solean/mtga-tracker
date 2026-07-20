@@ -14,6 +14,8 @@ import type {
   DeckAnalyticsCardFacet,
   DeckAnalyticsGamesParams,
   DeckCardPerformance,
+  DeckGameShape,
+  DeckTurnCurvePoint,
   DeckVersion,
   RecordAgg,
 } from "../lib/types";
@@ -226,6 +228,189 @@ function BucketTable({
       )}
       {footnote ? <p className="deck-analytics-footnote">{footnote}</p> : null}
     </article>
+  );
+}
+
+const CURVE_LEFT = 26;
+const CURVE_TURN_W = 30;
+const CURVE_TOP = 6;
+const CURVE_PLOT_H = 64;
+const CURVE_AXIS_H = 14;
+
+/**
+ * Small win-versus-loss line chart over the deck's per-turn averages. Points
+ * carry their sample sizes in the tooltip; turns few games reached simply
+ * have thinner evidence and are not hidden.
+ */
+function DeckTurnCurveChart({
+  curve,
+  metric,
+  label,
+}: {
+  curve: DeckTurnCurvePoint[];
+  metric: "lands" | "spells";
+  label: string;
+}) {
+  const valueOf = (point: DeckTurnCurvePoint, side: "win" | "loss"): number | undefined => {
+    if (metric === "lands") {
+      return side === "win" ? point.avgLandsWins : point.avgLandsLosses;
+    }
+    return side === "win" ? point.avgSpellsWins : point.avgSpellsLosses;
+  };
+  const maxValue = Math.max(
+    1,
+    ...curve.flatMap((point) => [valueOf(point, "win") ?? 0, valueOf(point, "loss") ?? 0]),
+  );
+  const viewW = CURVE_LEFT + curve.length * CURVE_TURN_W + 6;
+  const viewH = CURVE_TOP + CURVE_PLOT_H + CURVE_AXIS_H;
+  const xOf = (turn: number) => CURVE_LEFT + (turn - 0.5) * CURVE_TURN_W;
+  const yOf = (value: number) => CURVE_TOP + (1 - value / maxValue) * CURVE_PLOT_H;
+  const linePoints = (side: "win" | "loss") =>
+    curve
+      .filter((point) => valueOf(point, side) != null)
+      .map((point) => `${xOf(point.turn).toFixed(1)},${yOf(valueOf(point, side) as number).toFixed(1)}`)
+      .join(" ");
+  const pointSummary = (point: DeckTurnCurvePoint): string => {
+    const win = valueOf(point, "win");
+    const loss = valueOf(point, "loss");
+    return [
+      `Turn ${point.turn}`,
+      win != null ? `wins avg ${win.toFixed(1)} (${point.winGames} games)` : "no wins reached this turn",
+      loss != null ? `losses avg ${loss.toFixed(1)} (${point.lossGames} games)` : "no losses reached this turn",
+    ].join(" · ");
+  };
+
+  return (
+    <article className="deck-analytics-bucket-card deck-shape-curve-card">
+      <h4>{label}</h4>
+      <svg
+        className="deck-shape-curve"
+        viewBox={`0 0 ${viewW} ${viewH}`}
+        style={{ maxWidth: `${viewW * 2}px` }}
+        role="img"
+        aria-label={`${label}, wins versus losses by turn`}
+      >
+        <line className="deck-shape-curve-axis" x1={CURVE_LEFT - 4} x2={viewW - 4} y1={CURVE_TOP + CURVE_PLOT_H} y2={CURVE_TOP + CURVE_PLOT_H} />
+        <text className="deck-shape-curve-y-label" x={CURVE_LEFT - 8} y={yOf(maxValue) + 3}>
+          {maxValue.toFixed(0)}
+        </text>
+        <text className="deck-shape-curve-y-label" x={CURVE_LEFT - 8} y={CURVE_TOP + CURVE_PLOT_H + 3}>
+          0
+        </text>
+        <polyline className="deck-shape-curve-line is-loss" points={linePoints("loss")} />
+        <polyline className="deck-shape-curve-line is-win" points={linePoints("win")} />
+        {curve.map((point) => {
+          const win = valueOf(point, "win");
+          const loss = valueOf(point, "loss");
+          return (
+            <g key={point.turn} className="deck-shape-curve-turn">
+              <title>{pointSummary(point)}</title>
+              <rect className="deck-shape-curve-hover" x={xOf(point.turn) - CURVE_TURN_W / 2} y={0} width={CURVE_TURN_W} height={viewH} />
+              {win != null ? <circle className="deck-shape-curve-dot is-win" cx={xOf(point.turn)} cy={yOf(win)} r={2.2} /> : null}
+              {loss != null ? <circle className="deck-shape-curve-dot is-loss" cx={xOf(point.turn)} cy={yOf(loss)} r={2.2} /> : null}
+              <text className="deck-shape-curve-turn-label" x={xOf(point.turn)} y={CURVE_TOP + CURVE_PLOT_H + 10}>
+                {point.turn}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <p className="deck-analytics-footnote">
+        <span className="deck-shape-swatch is-win" /> wins · <span className="deck-shape-swatch is-loss" /> losses.
+        Games count only at turns they reached.
+      </p>
+    </article>
+  );
+}
+
+function DeckGameShapeSection({
+  shape,
+  baseline,
+  onDrill,
+}: {
+  shape: DeckGameShape;
+  baseline: number | null;
+  onDrill: (drillDown: DrillDown) => void;
+}) {
+  const hasCurve = shape.turnCurve.length > 0;
+  const hasAnything =
+    hasCurve || shape.gameLengths.length > 0 || shape.missedDropGames.games > 0 || shape.cleanDropGames.games > 0;
+  if (!hasAnything) {
+    return null;
+  }
+  return (
+    <>
+      <div className="deck-analytics-cards-head">
+        <h4>Game shape</h4>
+        <p>
+          Turn-by-turn tempo derived from replay frames and observed card plays. Land-drop judgments need resolved
+          card types and are heuristics, not verdicts.
+        </p>
+      </div>
+      <dl className="deck-analytics-tiles" aria-label="Game shape summary">
+        <div className="deck-analytics-tile">
+          <dt>Avg winning turn</dt>
+          <dd>
+            <strong>{shape.avgWinningTurn != null ? shape.avgWinningTurn.toFixed(1) : "—"}</strong>
+            <span>turns</span>
+          </dd>
+        </div>
+        <div className="deck-analytics-tile">
+          <dt>Avg losing turn</dt>
+          <dd>
+            <strong>{shape.avgLosingTurn != null ? shape.avgLosingTurn.toFixed(1) : "—"}</strong>
+            <span>turns</span>
+          </dd>
+        </div>
+        <div className="deck-analytics-tile">
+          <dt>Lowest-life win</dt>
+          <dd>
+            <strong>{shape.lowestWinLife != null ? shape.lowestWinLife : "—"}</strong>
+            <span>life</span>
+          </dd>
+        </div>
+        <RecordTile
+          label="Kept every land drop"
+          record={shape.cleanDropGames}
+          onDrill={() =>
+            onDrill({ label: "Games with every land drop made", params: { landDrops: "clean" } })
+          }
+        />
+        <RecordTile
+          label="Missed a land drop"
+          record={shape.missedDropGames}
+          detail={
+            shape.missedDropUnknownGames > 0
+              ? `${shape.missedDropUnknownGames} game${shape.missedDropUnknownGames === 1 ? "" : "s"} unjudged`
+              : undefined
+          }
+          onDrill={() =>
+            onDrill({ label: "Games with a possible missed land drop", params: { landDrops: "missed" } })
+          }
+        />
+      </dl>
+      <div className="deck-analytics-buckets">
+        <BucketTable
+          title="Game length"
+          buckets={shape.gameLengths}
+          formatKey={(key) => `${key} turns`}
+          baseline={baseline}
+          emptyMessage="No games with a known ending turn yet."
+          onDrill={(bucket) =>
+            onDrill({
+              label: `Games ending on turn ${bucket.key}`,
+              params: { turns: bucket.key },
+            })
+          }
+        />
+        {hasCurve ? (
+          <>
+            <DeckTurnCurveChart curve={shape.turnCurve} metric="lands" label="Lands by turn" />
+            <DeckTurnCurveChart curve={shape.turnCurve} metric="spells" label="Spells cast per turn" />
+          </>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -481,6 +666,14 @@ export function DeckAnalyticsPanel({ deckId, versions }: { deckId: number; versi
           <dt>Card data</dt>
           <dd>{coverage.gameCount > 0 ? `${coverage.gamesWithCardStats} of ${coverage.gameCount}` : "—"}</dd>
         </div>
+        <div>
+          <dt>Turn data</dt>
+          <dd>{coverage.gameCount > 0 ? `${coverage.gamesWithTurnStats} of ${coverage.gameCount}` : "—"}</dd>
+        </div>
+        <div>
+          <dt>Land drops judged</dt>
+          <dd>{coverage.gameCount > 0 ? `${coverage.gamesWithLandJudged} of ${coverage.gameCount}` : "—"}</dd>
+        </div>
       </dl>
 
       {coverage.gameCount === 0 ? (
@@ -566,6 +759,8 @@ export function DeckAnalyticsPanel({ deckId, versions }: { deckId: number; versi
               }
             />
           </div>
+
+          <DeckGameShapeSection shape={data.shape} baseline={baseline} onDrill={setDrillDown} />
 
           <div className="deck-analytics-cards-head">
             <h4>Card performance</h4>

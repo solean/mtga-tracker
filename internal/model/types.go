@@ -161,6 +161,8 @@ type GameRow struct {
 	EndingLifeTotal       *int64           `json:"endingLifeTotal,omitempty"`
 	MulliganCount         *int64           `json:"mulliganCount,omitempty"`
 	KeptHandSize          *int64           `json:"keptHandSize,omitempty"`
+	MinSelfLife           *int64           `json:"minSelfLife,omitempty"`
+	MinOpponentLife       *int64           `json:"minOpponentLife,omitempty"`
 	ResultSource          string           `json:"resultSource,omitempty"`
 	ResultConfidence      string           `json:"resultConfidence"`
 	PlayDrawSource        string           `json:"playDrawSource,omitempty"`
@@ -168,6 +170,33 @@ type GameRow struct {
 	OpeningHandSource     string           `json:"openingHandSource,omitempty"`
 	OpeningHandConfidence string           `json:"openingHandConfidence"`
 	OpeningHands          []OpeningHandRow `json:"openingHands"`
+	TurnStats             []GameTurnStatRow `json:"turnStats"`
+	Flags                 []GameFlagRow    `json:"flags"`
+}
+
+// GameTurnStatRow is one turn's derived shape. Life, hand size, and land-in-hand
+// reflect the last replay frame of the turn; lands/spells count the player's
+// card plays classified by cached type line with a public-zone fallback.
+// Nil pointers mean the underlying data was not observable, never zero.
+type GameTurnStatRow struct {
+	TurnNumber   int64  `json:"turnNumber"`
+	IsPlayerTurn *bool  `json:"isPlayerTurn,omitempty"`
+	SelfLife     *int64 `json:"selfLife,omitempty"`
+	OpponentLife *int64 `json:"opponentLife,omitempty"`
+	SelfHandSize *int64 `json:"selfHandSize,omitempty"`
+	LandsPlayed  int64  `json:"landsPlayed"`
+	SpellsCast   int64  `json:"spellsCast"`
+	LandInHand   *bool  `json:"landInHand,omitempty"`
+}
+
+// GameFlagRow is a descriptive decision-review flag computed from turn stats
+// at read time. Every flag is a heuristic prompt for replay review, not a
+// judgment of the play.
+type GameFlagRow struct {
+	Flag       string `json:"flag"`
+	TurnNumber *int64 `json:"turnNumber,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	Confidence string `json:"confidence"`
 }
 
 type MatchAnalyticsCoverage struct {
@@ -177,6 +206,7 @@ type MatchAnalyticsCoverage struct {
 	GamesWithResult       int64  `json:"gamesWithResult"`
 	GamesWithOpeningHand  int64  `json:"gamesWithOpeningHand"`
 	GamesWithPlayDraw     int64  `json:"gamesWithPlayDraw"`
+	GamesWithTurnStats    int64  `json:"gamesWithTurnStats"`
 	DeckSnapshotAvailable bool   `json:"deckSnapshotAvailable"`
 	DeckVersionAvailable  bool   `json:"deckVersionAvailable"`
 	OverallConfidence     string `json:"overallConfidence"`
@@ -231,6 +261,36 @@ type DeckAnalyticsCoverage struct {
 	GamesWithOpeningHand int64 `json:"gamesWithOpeningHand"`
 	GamesWithPlayDraw    int64 `json:"gamesWithPlayDraw"`
 	GamesWithCardStats   int64 `json:"gamesWithCardStats"`
+	GamesWithTurnStats   int64 `json:"gamesWithTurnStats"`
+	GamesWithLandJudged  int64 `json:"gamesWithLandJudged"`
+}
+
+// DeckTurnCurvePoint aggregates game shape at one turn across a deck's games
+// with turn stats, split by result. Lands are cumulative land drops through
+// the turn; spells are casts on that turn. Games are only counted at turns
+// they actually reached, and averages are nil when no game qualifies.
+type DeckTurnCurvePoint struct {
+	Turn           int64    `json:"turn"`
+	WinGames       int64    `json:"winGames"`
+	LossGames      int64    `json:"lossGames"`
+	AvgLandsWins   *float64 `json:"avgLandsWins,omitempty"`
+	AvgLandsLosses *float64 `json:"avgLandsLosses,omitempty"`
+	AvgSpellsWins  *float64 `json:"avgSpellsWins,omitempty"`
+	AvgSpellsLosses *float64 `json:"avgSpellsLosses,omitempty"`
+}
+
+// DeckGameShape is the deck-level game-shape rollup: win rate by ending turn,
+// average winning/losing turn, missed-land-drop record splits (judged games
+// only), and per-turn land/spell curves split by result.
+type DeckGameShape struct {
+	GameLengths     []AnalyticsBucket    `json:"gameLengths"`
+	AvgWinningTurn  *float64             `json:"avgWinningTurn,omitempty"`
+	AvgLosingTurn   *float64             `json:"avgLosingTurn,omitempty"`
+	LowestWinLife   *int64               `json:"lowestWinLife,omitempty"`
+	MissedDropGames RecordAgg            `json:"missedDropGames"`
+	CleanDropGames  RecordAgg            `json:"cleanDropGames"`
+	MissedDropUnknownGames int64         `json:"missedDropUnknownGames"`
+	TurnCurve       []DeckTurnCurvePoint `json:"turnCurve"`
 }
 
 type DeckAnalytics struct {
@@ -250,6 +310,7 @@ type DeckAnalytics struct {
 	LandCounts            []AnalyticsBucket     `json:"landCounts"`
 	LandCountUnknownHands int64                 `json:"landCountUnknownHands"`
 	Cards                 []DeckCardPerformance `json:"cards"`
+	Shape                 DeckGameShape         `json:"shape"`
 }
 
 // DeckAnalyticsGameRef links one aggregated statistic back to a concrete game

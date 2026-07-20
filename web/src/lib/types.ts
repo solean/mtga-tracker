@@ -161,6 +161,8 @@ export type GameAnalytics = {
   endingLifeTotal?: number;
   mulliganCount?: number;
   keptHandSize?: number;
+  minSelfLife?: number;
+  minOpponentLife?: number;
   resultSource?: string;
   resultConfidence: "exact" | "derived" | "unknown";
   playDrawSource?: string;
@@ -168,6 +170,30 @@ export type GameAnalytics = {
   openingHandSource?: string;
   openingHandConfidence: "exact" | "derived" | "unknown";
   openingHands: OpeningHand[];
+  turnStats: GameTurnStat[];
+  flags: GameFlag[];
+};
+
+// One turn's derived game shape. Life, hand size, and land-in-hand come from
+// the last replay frame of the turn; nulls mean unobserved, never zero.
+export type GameTurnStat = {
+  turnNumber: number;
+  isPlayerTurn?: boolean;
+  selfLife?: number;
+  opponentLife?: number;
+  selfHandSize?: number;
+  landsPlayed: number;
+  spellsCast: number;
+  landInHand?: boolean;
+};
+
+// A descriptive decision-review flag; always a heuristic prompt for replay
+// review, never a judgment of the play.
+export type GameFlag = {
+  flag: string;
+  turnNumber?: number;
+  detail?: string;
+  confidence: string;
 };
 
 export type MatchAnalyticsCoverage = {
@@ -177,6 +203,7 @@ export type MatchAnalyticsCoverage = {
   gamesWithResult: number;
   gamesWithOpeningHand: number;
   gamesWithPlayDraw: number;
+  gamesWithTurnStats: number;
   deckSnapshotAvailable: boolean;
   deckVersionAvailable: boolean;
   overallConfidence: "complete" | "partial" | "unknown";
@@ -376,6 +403,32 @@ export type DeckAnalyticsCoverage = {
   gamesWithOpeningHand: number;
   gamesWithPlayDraw: number;
   gamesWithCardStats: number;
+  gamesWithTurnStats: number;
+  gamesWithLandJudged: number;
+};
+
+// Per-turn shape aggregated across a deck's games with a known result. Lands
+// are cumulative drops through the turn; spells are casts on that turn. A game
+// only counts at turns it actually reached.
+export type DeckTurnCurvePoint = {
+  turn: number;
+  winGames: number;
+  lossGames: number;
+  avgLandsWins?: number;
+  avgLandsLosses?: number;
+  avgSpellsWins?: number;
+  avgSpellsLosses?: number;
+};
+
+export type DeckGameShape = {
+  gameLengths: AnalyticsBucket[];
+  avgWinningTurn?: number;
+  avgLosingTurn?: number;
+  lowestWinLife?: number;
+  missedDropGames: RecordAgg;
+  cleanDropGames: RecordAgg;
+  missedDropUnknownGames: number;
+  turnCurve: DeckTurnCurvePoint[];
 };
 
 export type DeckAnalytics = {
@@ -395,6 +448,7 @@ export type DeckAnalytics = {
   landCounts: AnalyticsBucket[];
   landCountUnknownHands: number;
   cards: DeckCardPerformance[];
+  shape: DeckGameShape;
 };
 
 export type DeckAnalyticsGameRef = {
@@ -429,8 +483,10 @@ export type DeckAnalyticsGamesParams = {
   facet?: DeckAnalyticsCardFacet;
   keptSize?: number;
   mulligans?: number;
+  turns?: number;
   game?: "one" | "post";
   playDraw?: "play" | "draw";
+  landDrops?: "missed" | "clean";
 };
 
 export type MatchupObservedCard = {

@@ -23,12 +23,75 @@ func migrateAnalyticsTables(ctx context.Context, conn dbConn) error {
 	`); err != nil {
 		return fmt.Errorf("index match deck versions: %w", err)
 	}
+
+	// Game-shape columns arrived with turn-stat analytics; older databases
+	// already have the tables, so add the columns in place.
+	shapeColumns := []struct {
+		table  string
+		column string
+		ddl    string
+	}{
+		{"games", "min_self_life", `ALTER TABLE games ADD COLUMN min_self_life INTEGER`},
+		{"games", "min_opponent_life", `ALTER TABLE games ADD COLUMN min_opponent_life INTEGER`},
+		{"match_analytics_coverage", "games_with_turn_stats",
+			`ALTER TABLE match_analytics_coverage ADD COLUMN games_with_turn_stats INTEGER NOT NULL DEFAULT 0`},
+	}
+	for _, migration := range shapeColumns {
+		hasColumn, err := tableHasColumn(ctx, conn, migration.table, migration.column)
+		if err != nil {
+			return fmt.Errorf("inspect %s %s schema: %w", migration.table, migration.column, err)
+		}
+		if hasColumn {
+			continue
+		}
+		if _, err := conn.ExecContext(ctx, migration.ddl); err != nil {
+			return fmt.Errorf("add %s.%s: %w", migration.table, migration.column, err)
+		}
+	}
 	return nil
 }
 
 // v2: v1 was briefly consumable by a build that created the marker before the
 // card-stat derivation existed, leaving game_card_stats empty.
 const cardStatsBackfillMetadataKey = "card_stats_backfill_v2"
+
+const gameShapeBackfillMetadataKey = "game_shape_backfill_v1"
+
+// prepareGameShapeBackfill invalidates analytics coverage exactly once after
+// per-turn game shape stats were introduced, so the next maintenance pass (or
+// per-match EnsureMatchAnalytics) re-derives every match and populates
+// game_turn_stats and the min-life columns from archived replays.
+func prepareGameShapeBackfill(ctx context.Context, conn dbConn) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin game shape backfill migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var markerCount int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM app_metadata WHERE key = ?
+	`, gameShapeBackfillMetadataKey).Scan(&markerCount); err != nil {
+		return fmt.Errorf("check game shape backfill marker: %w", err)
+	}
+	if markerCount > 0 {
+		return tx.Commit()
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM match_analytics_coverage`); err != nil {
+		return fmt.Errorf("invalidate analytics coverage for game shape backfill: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO app_metadata (key, value, updated_at)
+		VALUES (?, 'complete', ?)
+	`, gameShapeBackfillMetadataKey, nowUTC()); err != nil {
+		return fmt.Errorf("save game shape backfill marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit game shape backfill migration: %w", err)
+	}
+	return nil
+}
 
 // prepareCardStatsBackfill invalidates existing analytics coverage exactly once
 // after per-card game stats were introduced, so the next maintenance pass (or

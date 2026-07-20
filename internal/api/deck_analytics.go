@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strconv"
@@ -33,6 +34,38 @@ func queryOptionalInt64(r *http.Request, name string) *int64 {
 	return &value
 }
 
+// ensureCardTypeLines resolves and caches type lines for the given cards.
+// Basic lands often fail Scryfall's arenaid search, so unresolved cards fall
+// back to classification by name, mirroring the live banner's land-odds
+// handling.
+func (s *Server) ensureCardTypeLines(ctx context.Context, cardIDs []int64) {
+	if len(cardIDs) == 0 {
+		return
+	}
+	typeLines := s.resolveCardTypeLines(ctx, cardIDs)
+	unresolved := make([]int64, 0)
+	for _, cardID := range cardIDs {
+		if _, ok := typeLines[cardID]; !ok {
+			unresolved = append(unresolved, cardID)
+		}
+	}
+	if len(unresolved) == 0 {
+		return
+	}
+	names := s.resolveCardNames(ctx, unresolved)
+	basicLandTypeLines := make(map[int64]string)
+	for cardID, name := range names {
+		if isBasicLandName(name) {
+			basicLandTypeLines[cardID] = "Basic Land"
+		}
+	}
+	if len(basicLandTypeLines) > 0 {
+		if err := s.store.UpsertCardTypeLines(ctx, basicLandTypeLines); err != nil {
+			log.Printf("basic land type cache upsert failed: %v", err)
+		}
+	}
+}
+
 func (s *Server) handleDeckAnalytics(w http.ResponseWriter, r *http.Request, deckID int64) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -41,31 +74,9 @@ func (s *Server) handleDeckAnalytics(w http.ResponseWriter, r *http.Request, dec
 	ctx := r.Context()
 
 	// Land distributions depend on cached type lines; resolve any kept-hand
-	// cards that have never been classified before aggregating. Basic lands
-	// often fail Scryfall's arenaid search, so fall back to classifying those
-	// by name, mirroring the live banner's land-odds handling.
-	if keptCardIDs, err := s.store.ListDeckKeptHandCardIDs(ctx, deckID); err == nil && len(keptCardIDs) > 0 {
-		typeLines := s.resolveCardTypeLines(ctx, keptCardIDs)
-		unresolved := make([]int64, 0)
-		for _, cardID := range keptCardIDs {
-			if _, ok := typeLines[cardID]; !ok {
-				unresolved = append(unresolved, cardID)
-			}
-		}
-		if len(unresolved) > 0 {
-			names := s.resolveCardNames(ctx, unresolved)
-			basicLandTypeLines := make(map[int64]string)
-			for cardID, name := range names {
-				if isBasicLandName(name) {
-					basicLandTypeLines[cardID] = "Basic Land"
-				}
-			}
-			if len(basicLandTypeLines) > 0 {
-				if err := s.store.UpsertCardTypeLines(ctx, basicLandTypeLines); err != nil {
-					log.Printf("basic land type cache upsert failed: %v", err)
-				}
-			}
-		}
+	// cards that have never been classified before aggregating.
+	if keptCardIDs, err := s.store.ListDeckKeptHandCardIDs(ctx, deckID); err == nil {
+		s.ensureCardTypeLines(ctx, keptCardIDs)
 	}
 
 	out, err := s.store.GetDeckAnalytics(ctx, deckID, queryInt64(r, "version"))
@@ -105,8 +116,10 @@ func (s *Server) handleDeckAnalyticsGames(w http.ResponseWriter, r *http.Request
 		Facet:         strings.TrimSpace(r.URL.Query().Get("facet")),
 		KeptHandSize:  queryOptionalInt64(r, "keptSize"),
 		MulliganCount: queryOptionalInt64(r, "mulligans"),
+		TurnCount:     queryOptionalInt64(r, "turns"),
 		GameFilter:    strings.TrimSpace(r.URL.Query().Get("game")),
 		PlayDraw:      strings.TrimSpace(r.URL.Query().Get("playDraw")),
+		LandDrops:     strings.TrimSpace(r.URL.Query().Get("landDrops")),
 		Limit:         queryInt64(r, "limit"),
 	})
 	if err != nil {

@@ -28,6 +28,7 @@ import { fetchCardPreview } from "../lib/scryfall";
 import type { CardPreview } from "../lib/scryfall";
 import type {
   GameAnalytics,
+  GameTurnStat,
   MatchCardPlay,
   MatchAnalyticsCoverage,
   MatchReplayFrame,
@@ -3524,6 +3525,148 @@ function coverageFraction(value: number, total: number): string {
   return total > 0 ? `${value} of ${total}` : "—";
 }
 
+const SHAPE_CHART_LEFT = 30;
+const SHAPE_CHART_TURN_W = 26;
+const SHAPE_LIFE_TOP = 8;
+const SHAPE_LIFE_H = 78;
+const SHAPE_BARS_TOP = 96;
+const SHAPE_BARS_H = 30;
+const SHAPE_AXIS_Y = 138;
+const SHAPE_CHART_H = 148;
+
+function shapeTurnSummary(stat: GameTurnStat, missed: boolean): string {
+  const parts = [
+    `Turn ${stat.turnNumber}${stat.isPlayerTurn == null ? "" : stat.isPlayerTurn ? " (you)" : " (opponent)"}`,
+  ];
+  if (stat.selfLife != null || stat.opponentLife != null) {
+    parts.push(`life ${stat.selfLife ?? "?"} vs ${stat.opponentLife ?? "?"}`);
+  }
+  parts.push(`${stat.landsPlayed} land${stat.landsPlayed === 1 ? "" : "s"}, ${stat.spellsCast} spell${stat.spellsCast === 1 ? "" : "s"}`);
+  if (stat.selfHandSize != null) {
+    parts.push(`${stat.selfHandSize} in hand`);
+  }
+  if (missed) {
+    parts.push("no land played while holding one (heuristic)");
+  }
+  return parts.join(" · ");
+}
+
+function GameShapeChart({ game }: { game: GameAnalytics }) {
+  const stats = game.turnStats;
+  const maxTurn = stats.reduce((max, stat) => Math.max(max, stat.turnNumber), 0);
+  if (maxTurn === 0) {
+    return null;
+  }
+  const byTurn = new Map(stats.map((stat) => [stat.turnNumber, stat]));
+  const missedTurns = new Set(
+    game.flags.filter((flag) => flag.flag === "missed_land_drop" && flag.turnNumber != null).map((flag) => flag.turnNumber),
+  );
+
+  const viewW = SHAPE_CHART_LEFT + maxTurn * SHAPE_CHART_TURN_W + 8;
+  const xOf = (turn: number) => SHAPE_CHART_LEFT + (turn - 0.5) * SHAPE_CHART_TURN_W;
+
+  const lifeMax = Math.max(
+    20,
+    ...stats.flatMap((stat) => [stat.selfLife ?? 0, stat.opponentLife ?? 0]),
+  );
+  const yOfLife = (value: number) => SHAPE_LIFE_TOP + (1 - value / lifeMax) * SHAPE_LIFE_H;
+  const lifePoints = (side: "selfLife" | "opponentLife") =>
+    stats
+      .filter((stat) => stat[side] != null)
+      .map((stat) => `${xOf(stat.turnNumber).toFixed(1)},${yOfLife(stat[side] as number).toFixed(1)}`)
+      .join(" ");
+
+  const maxPlays = Math.max(1, ...stats.map((stat) => Math.max(stat.landsPlayed, stat.spellsCast)));
+  const barH = (count: number) => (count / maxPlays) * SHAPE_BARS_H;
+  const turnLabelStep = maxTurn > 14 ? 2 : 1;
+
+  return (
+    <figure className="game-shape">
+      <svg
+        className="game-shape-chart"
+        viewBox={`0 0 ${viewW} ${SHAPE_CHART_H}`}
+        style={{ maxWidth: `${viewW * 2}px` }}
+        role="img"
+        aria-label={`Turn-by-turn life totals, land drops, and spells cast for game ${game.gameNumber}`}
+      >
+        <line className="game-shape-axis" x1={SHAPE_CHART_LEFT - 6} x2={viewW - 4} y1={SHAPE_LIFE_TOP + SHAPE_LIFE_H} y2={SHAPE_LIFE_TOP + SHAPE_LIFE_H} />
+        <text className="game-shape-y-label" x={SHAPE_CHART_LEFT - 10} y={yOfLife(lifeMax) + 3}>
+          {lifeMax}
+        </text>
+        <text className="game-shape-y-label" x={SHAPE_CHART_LEFT - 10} y={SHAPE_LIFE_TOP + SHAPE_LIFE_H + 3}>
+          0
+        </text>
+        <polyline className="game-shape-life is-opponent" points={lifePoints("opponentLife")} />
+        <polyline className="game-shape-life is-self" points={lifePoints("selfLife")} />
+        {Array.from({ length: maxTurn }, (_, i) => i + 1).map((turn) => {
+          const stat = byTurn.get(turn);
+          const missed = missedTurns.has(turn);
+          const x = xOf(turn);
+          return (
+            <g key={turn} className="game-shape-turn">
+              <title>{stat ? shapeTurnSummary(stat, missed) : `Turn ${turn} · no data`}</title>
+              <rect
+                className="game-shape-hover"
+                x={x - SHAPE_CHART_TURN_W / 2}
+                y={0}
+                width={SHAPE_CHART_TURN_W}
+                height={SHAPE_CHART_H}
+              />
+              {stat && stat.selfLife != null ? (
+                <circle className="game-shape-dot is-self" cx={x} cy={yOfLife(stat.selfLife)} r={2.4} />
+              ) : null}
+              {stat && stat.opponentLife != null ? (
+                <circle className="game-shape-dot is-opponent" cx={x} cy={yOfLife(stat.opponentLife)} r={2.4} />
+              ) : null}
+              {stat && stat.landsPlayed > 0 ? (
+                <rect
+                  className="game-shape-bar is-land"
+                  x={x - 9}
+                  y={SHAPE_BARS_TOP + SHAPE_BARS_H - barH(stat.landsPlayed)}
+                  width={8}
+                  height={barH(stat.landsPlayed)}
+                />
+              ) : null}
+              {stat && stat.spellsCast > 0 ? (
+                <rect
+                  className="game-shape-bar is-spell"
+                  x={x + 1}
+                  y={SHAPE_BARS_TOP + SHAPE_BARS_H - barH(stat.spellsCast)}
+                  width={8}
+                  height={barH(stat.spellsCast)}
+                />
+              ) : null}
+              {missed ? (
+                <path
+                  className="game-shape-missed"
+                  d={`M ${x - 4} ${SHAPE_AXIS_Y - 8} L ${x + 4} ${SHAPE_AXIS_Y - 8} L ${x} ${SHAPE_AXIS_Y - 2} Z`}
+                />
+              ) : null}
+              {turn % turnLabelStep === 0 ? (
+                <text
+                  className={`game-shape-turn-label ${stat?.isPlayerTurn ? "is-own" : ""}`}
+                  x={x}
+                  y={SHAPE_AXIS_Y + 8}
+                >
+                  {turn}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
+      <figcaption className="game-shape-legend">
+        <span className="game-shape-legend-item is-self">You</span>
+        <span className="game-shape-legend-item is-opponent">Opponent</span>
+        <span className="game-shape-legend-item is-land">Lands</span>
+        <span className="game-shape-legend-item is-spell">Spells</span>
+        {missedTurns.size > 0 ? <span className="game-shape-legend-item is-missed">Possible missed land drop</span> : null}
+        <span className="game-shape-legend-note">Own turns are numbered in bold.</span>
+      </figcaption>
+    </figure>
+  );
+}
+
 function MatchAnalyticsPanel({
   games,
   coverage,
@@ -3567,6 +3710,10 @@ function MatchAnalyticsPanel({
         <div>
           <dt>Play / draw</dt>
           <dd>{coverageFraction(coverage.gamesWithPlayDraw, coverage.gameCount)}</dd>
+        </div>
+        <div>
+          <dt>Turn data</dt>
+          <dd>{coverageFraction(coverage.gamesWithTurnStats, coverage.gameCount)}</dd>
         </div>
         <div>
           <dt>Deck snapshot</dt>
@@ -3624,9 +3771,28 @@ function MatchAnalyticsPanel({
                     {game.openingLifeTotal != null || game.endingLifeTotal != null
                       ? `${game.openingLifeTotal ?? "?"} → ${game.endingLifeTotal ?? "?"}`
                       : "—"}
+                    {game.minSelfLife != null &&
+                    game.minSelfLife < Math.min(game.openingLifeTotal ?? Infinity, game.endingLifeTotal ?? Infinity)
+                      ? ` (low ${game.minSelfLife})`
+                      : ""}
                   </dd>
                 </div>
               </dl>
+
+              {game.turnStats.length > 0 ? <GameShapeChart game={game} /> : null}
+              {game.flags.length > 0 ? (
+                <ul className="game-shape-flags" aria-label={`Review flags for game ${game.gameNumber}`}>
+                  {game.flags.map((flag, index) => (
+                    <li key={`${flag.flag}-${flag.turnNumber ?? index}`}>
+                      <span className="game-shape-flag-turn">
+                        {flag.turnNumber != null ? `Turn ${flag.turnNumber}` : "Game"}
+                      </span>
+                      {flag.detail || flag.flag}
+                      <small>{flag.confidence}</small>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
 
               {game.openingHands.length > 0 ? (
                 <div className="opening-hand-list">
@@ -3659,21 +3825,33 @@ function MatchAnalyticsPanel({
       )}
 
       <p className="analytics-method-note">
-        Logged results come directly from GRE game state. Opening-hand sequencing and play/draw are inferred from observed replay transitions.
+        Logged results come directly from GRE game state. Opening-hand sequencing and play/draw are inferred from
+        observed replay transitions. Turn-by-turn lands and spells classify observed card plays by type line and first
+        public zone; missed-land-drop flags are heuristic prompts for replay review, not judgments.
       </p>
     </section>
   );
 }
 
+const MATCH_SECTIONS = [
+  { id: "replay", label: "Replay" },
+  { id: "analytics", label: "Game Analytics" },
+  { id: "opponent", label: "Opponent Cards" },
+] as const;
+
+type MatchSection = (typeof MATCH_SECTIONS)[number]["id"];
+
 export function MatchDetailPage() {
   const params = useParams();
   const matchId = Number(params.matchId);
   const isValidMatchID = Number.isFinite(matchId);
+  const [activeSection, setActiveSection] = useState<MatchSection>("replay");
   const [timelineDisplayMode, setTimelineDisplayMode] =
     useState<TimelineDisplayMode>("board");
   const [selectedTimelineGameNumber, setSelectedTimelineGameNumber] =
     useState<number | null>(null);
   const timelineGameTabBaseId = useId();
+  const sectionTabBaseId = useId();
 
   const query = useQuery({
     queryKey: ["match-detail", matchId],
@@ -3688,7 +3866,10 @@ export function MatchDetailPage() {
   const replayQuery = useQuery({
     queryKey: ["match-replay", matchId],
     queryFn: () => api.matchReplay(matchId),
-    enabled: isValidMatchID && timelineDisplayMode === "board",
+    enabled:
+      isValidMatchID &&
+      activeSection === "replay" &&
+      timelineDisplayMode === "board",
   });
   const { lookup: setLookup } = useEventSets([query.data?.match.eventName]);
 
@@ -3901,6 +4082,49 @@ export function MatchDetailPage() {
     }
   }
 
+  function handleSectionTabKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    section: MatchSection,
+  ) {
+    const currentIndex = MATCH_SECTIONS.findIndex(
+      (candidate) => candidate.id === section,
+    );
+    if (currentIndex === -1) return;
+
+    const focusSection = (index: number) => {
+      const next = MATCH_SECTIONS[index];
+      setActiveSection(next.id);
+      document
+        .getElementById(`${sectionTabBaseId}-tab-${next.id}`)
+        ?.focus();
+    };
+
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        focusSection(
+          (currentIndex + MATCH_SECTIONS.length - 1) % MATCH_SECTIONS.length,
+        );
+        break;
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        focusSection((currentIndex + 1) % MATCH_SECTIONS.length);
+        break;
+      case "Home":
+        event.preventDefault();
+        focusSection(0);
+        break;
+      case "End":
+        event.preventDefault();
+        focusSection(MATCH_SECTIONS.length - 1);
+        break;
+      default:
+        break;
+    }
+  }
+
   if (!isValidMatchID)
     return <StatusMessage tone="error">Invalid match id.</StatusMessage>;
   if (query.isLoading) return <StatusMessage>Loading match…</StatusMessage>;
@@ -3984,8 +4208,45 @@ export function MatchDetailPage() {
         </dl>
       </section>
 
-      <MatchAnalyticsPanel games={query.data.games ?? []} coverage={query.data.coverage} />
+      <div
+        className="tabs match-section-tabs"
+        role="tablist"
+        aria-label="Match detail sections"
+      >
+        {MATCH_SECTIONS.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            id={`${sectionTabBaseId}-tab-${section.id}`}
+            role="tab"
+            aria-selected={activeSection === section.id}
+            aria-controls={`${sectionTabBaseId}-panel-${section.id}`}
+            tabIndex={activeSection === section.id ? 0 : -1}
+            className={`tab match-section-tab ${activeSection === section.id ? "is-active" : ""}`}
+            onClick={() => setActiveSection(section.id)}
+            onKeyDown={(event) => handleSectionTabKeyDown(event, section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
 
+      {activeSection === "analytics" ? (
+        <div
+          id={`${sectionTabBaseId}-panel-analytics`}
+          role="tabpanel"
+          aria-labelledby={`${sectionTabBaseId}-tab-analytics`}
+        >
+          <MatchAnalyticsPanel games={query.data.games ?? []} coverage={query.data.coverage} />
+        </div>
+      ) : null}
+
+      {activeSection === "replay" ? (
+        <div
+          id={`${sectionTabBaseId}-panel-replay`}
+          role="tabpanel"
+          aria-labelledby={`${sectionTabBaseId}-tab-replay`}
+        >
       <section className="panel">
         <div className="panel-head match-timeline-toolbar">
           <div className="match-timeline-heading">
@@ -4174,7 +4435,15 @@ export function MatchDetailPage() {
           </div>
         )}
       </section>
+        </div>
+      ) : null}
 
+      {activeSection === "opponent" ? (
+        <div
+          id={`${sectionTabBaseId}-panel-opponent`}
+          role="tabpanel"
+          aria-labelledby={`${sectionTabBaseId}-tab-opponent`}
+        >
       <section className="panel">
         <div className="panel-head">
           <h3>Observed Opponent Cards</h3>
@@ -4220,6 +4489,8 @@ export function MatchDetailPage() {
           <StatusMessage>Loading card previews and mana details…</StatusMessage>
         ) : null}
       </section>
+        </div>
+      ) : null}
     </div>
   );
 }

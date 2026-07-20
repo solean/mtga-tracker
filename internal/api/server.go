@@ -654,6 +654,12 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Turn-stat land classification depends on cached type lines; resolving
+	// them first (with a freshness check on card_types in EnsureMatchAnalytics)
+	// lets the first derivation already judge lands in hand.
+	if cardIDs, err := s.store.ListMatchAnalyticsCardIDs(r.Context(), id); err == nil {
+		s.ensureCardTypeLines(r.Context(), cardIDs)
+	}
 	if err := s.store.EnsureMatchAnalytics(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

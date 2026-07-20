@@ -45,8 +45,14 @@ type derivedGame struct {
 	PlayDrawConfidence    string
 	OpeningHandSource     string
 	OpeningHandConfidence string
+	MinSelfLife           *int64
+	MinOpponentLife       *int64
 	OpeningHands          []derivedOpeningHand
 	CardStats             map[int64]*derivedCardStat
+	TurnStats             []derivedTurnStat
+	// frames retains this game's replay frames so turn stats can be derived
+	// after play/draw has been merged in from card-play facts.
+	frames []model.MatchReplayFrameRow
 }
 
 // derivedCardStat captures what one card did in one game from the player's
@@ -397,6 +403,16 @@ func deriveReplayGames(frames []model.MatchReplayFrameRow) []derivedGame {
 			if frame.SelfLifeTotal != nil {
 				game.EndingLifeTotal = pointerInt64(*frame.SelfLifeTotal)
 			}
+			// Minimum life is tracked over play frames only; pre-game frames can
+			// carry uninitialized totals.
+			if replayFrameIsPlay(frame) {
+				if frame.SelfLifeTotal != nil && (game.MinSelfLife == nil || *frame.SelfLifeTotal < *game.MinSelfLife) {
+					game.MinSelfLife = pointerInt64(*frame.SelfLifeTotal)
+				}
+				if frame.OpponentLifeTotal != nil && (game.MinOpponentLife == nil || *frame.OpponentLifeTotal < *game.MinOpponentLife) {
+					game.MinOpponentLife = pointerInt64(*frame.OpponentLifeTotal)
+				}
+			}
 			switch frame.WinningPlayerSide {
 			case "self":
 				game.Result = "win"
@@ -420,6 +436,7 @@ func deriveReplayGames(frames []model.MatchReplayFrameRow) []derivedGame {
 			game.OpeningHandConfidence = "derived"
 		}
 		game.CardStats = deriveGameCardStats(gameFrames, opening)
+		game.frames = gameFrames
 		out = append(out, game)
 	}
 	return out
@@ -601,6 +618,35 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 	games := mergeGameFacts(deriveReplayGames(frames), facts)
 	games = mergeCardPlayCardFacts(games, cardFacts)
 
+	selfPlays, err := s.loadSelfCardPlays(ctx, matchID)
+	if err != nil {
+		return err
+	}
+	landCardIDs := make([]int64, 0, len(selfPlays))
+	for _, play := range selfPlays {
+		landCardIDs = append(landCardIDs, play.CardID)
+	}
+	for _, frame := range frames {
+		for _, object := range frame.Objects {
+			if object.PlayerSide == "self" && strings.EqualFold(strings.TrimSpace(object.ZoneType), "hand") {
+				landCardIDs = append(landCardIDs, object.CardID)
+			}
+		}
+	}
+	landByCard, err := s.loadLandKnowledge(ctx, landCardIDs)
+	if err != nil {
+		return err
+	}
+	playsByGame := make(map[int64][]selfCardPlay)
+	for _, play := range selfPlays {
+		playsByGame[play.GameNumber] = append(playsByGame[play.GameNumber], play)
+	}
+	for index := range games {
+		games[index].TurnStats = deriveGameTurnStats(
+			games[index].frames, playsByGame[games[index].GameNumber],
+			games[index].PlayDraw, landByCard)
+	}
+
 	var matchResult, matchReason string
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(result, 'unknown'), COALESCE(win_reason, '')
@@ -627,6 +673,7 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 	gamesWithResult := int64(0)
 	gamesWithOpeningHand := int64(0)
 	gamesWithPlayDraw := int64(0)
+	gamesWithTurnStats := int64(0)
 	for _, game := range games {
 		result := game.Result
 		if result == "" {
@@ -636,10 +683,11 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 			INSERT INTO games (
 				match_id, game_number, result, win_reason, play_draw,
 				started_at, ended_at, turn_count, opening_life_total, ending_life_total,
-				mulligan_count, kept_hand_size, result_source, result_confidence,
+				mulligan_count, kept_hand_size, min_self_life, min_opponent_life,
+				result_source, result_confidence,
 				play_draw_source, play_draw_confidence, opening_hand_source,
 				opening_hand_confidence, derived_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(match_id, game_number) DO UPDATE SET
 				result = excluded.result,
 				win_reason = excluded.win_reason,
@@ -651,6 +699,8 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 				ending_life_total = excluded.ending_life_total,
 				mulligan_count = excluded.mulligan_count,
 				kept_hand_size = excluded.kept_hand_size,
+				min_self_life = excluded.min_self_life,
+				min_opponent_life = excluded.min_opponent_life,
 				result_source = excluded.result_source,
 				result_confidence = excluded.result_confidence,
 				play_draw_source = excluded.play_draw_source,
@@ -662,6 +712,7 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 			nullIfEmpty(game.StartedAt), nullIfEmpty(game.EndedAt), nullableDerivedInt(game.TurnCount),
 			nullableDerivedInt(game.OpeningLifeTotal), nullableDerivedInt(game.EndingLifeTotal),
 			nullableDerivedInt(game.MulliganCount), nullableDerivedInt(game.KeptHandSize),
+			nullableDerivedInt(game.MinSelfLife), nullableDerivedInt(game.MinOpponentLife),
 			nullIfEmpty(game.ResultSource), game.ResultConfidence, nullIfEmpty(game.PlayDrawSource),
 			game.PlayDrawConfidence, nullIfEmpty(game.OpeningHandSource), game.OpeningHandConfidence, now)
 		if err != nil {
@@ -726,6 +777,23 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 				return fmt.Errorf("insert derived card stat: %w", err)
 			}
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM game_turn_stats WHERE game_id = ?`, gameID); err != nil {
+			return fmt.Errorf("clear derived turn stats: %w", err)
+		}
+		for _, stat := range game.TurnStats {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO game_turn_stats (
+					game_id, match_id, turn_number, is_player_turn, self_life,
+					opponent_life, self_hand_size, lands_played, spells_cast,
+					land_in_hand, source, confidence
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'replay_frames_card_plays', 'derived')
+			`, gameID, matchID, stat.TurnNumber, nullableDerivedBool(stat.IsPlayerTurn),
+				nullableDerivedInt(stat.SelfLife), nullableDerivedInt(stat.OpponentLife),
+				nullableDerivedInt(stat.SelfHandSize), stat.LandsPlayed, stat.SpellsCast,
+				nullableDerivedBool(stat.LandInHand)); err != nil {
+				return fmt.Errorf("insert derived turn stat: %w", err)
+			}
+		}
 		if result != "unknown" {
 			gamesWithResult++
 		}
@@ -734,6 +802,9 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 		}
 		if game.PlayDraw != "" {
 			gamesWithPlayDraw++
+		}
+		if len(game.TurnStats) > 0 {
+			gamesWithTurnStats++
 		}
 	}
 
@@ -777,8 +848,9 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 		INSERT INTO match_analytics_coverage (
 			match_id, replay_available, replay_frame_count, game_count,
 			games_with_result, games_with_opening_hand, games_with_play_draw,
+			games_with_turn_stats,
 			deck_snapshot_available, deck_version_available, overall_confidence, derived_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(match_id) DO UPDATE SET
 			replay_available = excluded.replay_available,
 			replay_frame_count = excluded.replay_frame_count,
@@ -786,12 +858,13 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 			games_with_result = excluded.games_with_result,
 			games_with_opening_hand = excluded.games_with_opening_hand,
 			games_with_play_draw = excluded.games_with_play_draw,
+			games_with_turn_stats = excluded.games_with_turn_stats,
 			deck_snapshot_available = excluded.deck_snapshot_available,
 			deck_version_available = excluded.deck_version_available,
 			overall_confidence = excluded.overall_confidence,
 			derived_at = excluded.derived_at
 	`, matchID, boolToInt(len(frames) > 0), int64(len(frames)), int64(len(games)), gamesWithResult,
-		gamesWithOpeningHand, gamesWithPlayDraw, boolToInt(deckSnapshotCount > 0),
+		gamesWithOpeningHand, gamesWithPlayDraw, gamesWithTurnStats, boolToInt(deckSnapshotCount > 0),
 		boolToInt(deckVersionCount > 0), overallConfidence, now); err != nil {
 		return fmt.Errorf("upsert analytics coverage: %w", err)
 	}
@@ -854,6 +927,17 @@ func (s *Store) EnsureMatchAnalytics(ctx context.Context, matchID int64) error {
 			WHEN julianday(COALESCE((
 				SELECT MAX(f.created_at) FROM match_replay_frames f WHERE f.match_id = m.id
 			), '')) > julianday(c.derived_at) THEN 1
+			WHEN julianday(COALESCE((
+				-- Newly cached type lines refine land/spell classification, so a
+				-- fresher card_types row for any card this match played or held
+				-- re-derives its analytics once.
+				SELECT MAX(ct.updated_at) FROM card_types ct
+				WHERE ct.arena_id IN (
+					SELECT s.card_id FROM game_card_stats s WHERE s.match_id = m.id
+					UNION
+					SELECT cp.card_id FROM match_card_plays cp WHERE cp.match_id = m.id
+				)
+			), '')) > julianday(c.derived_at) THEN 1
 			ELSE 0
 		END
 		FROM matches m
@@ -879,6 +963,7 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 			id, game_number, result, COALESCE(win_reason, ''), COALESCE(play_draw, ''),
 			COALESCE(started_at, ''), COALESCE(ended_at, ''), turn_count,
 			opening_life_total, ending_life_total, mulligan_count, kept_hand_size,
+			min_self_life, min_opponent_life,
 			COALESCE(result_source, ''), result_confidence,
 			COALESCE(play_draw_source, ''), play_draw_confidence,
 			COALESCE(opening_hand_source, ''), opening_hand_confidence
@@ -898,6 +983,7 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 			&game.ID, &game.GameNumber, &game.Result, &game.WinReason, &game.PlayDraw,
 			&game.StartedAt, &game.EndedAt, &game.TurnCount, &game.OpeningLifeTotal,
 			&game.EndingLifeTotal, &game.MulliganCount, &game.KeptHandSize,
+			&game.MinSelfLife, &game.MinOpponentLife,
 			&game.ResultSource, &game.ResultConfidence, &game.PlayDrawSource,
 			&game.PlayDrawConfidence, &game.OpeningHandSource, &game.OpeningHandConfidence,
 		); err != nil {
@@ -910,6 +996,9 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 	}
 
 	for gameIndex := range games {
+		// Hands are collected before their cards are fetched so no two result
+		// sets are open at once; a single-connection pool would deadlock.
+		hands := make([]model.OpeningHandRow, 0)
 		handRows, err := s.db.QueryContext(ctx, `
 			SELECT id, attempt_number, decision, offered_hand_size, kept_hand_size,
 				COALESCE(observed_at, ''), source, confidence
@@ -928,7 +1017,16 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 				handRows.Close()
 				return nil, fmt.Errorf("scan opening hand: %w", err)
 			}
+			hands = append(hands, hand)
+		}
+		if err := handRows.Err(); err != nil {
+			handRows.Close()
+			return nil, fmt.Errorf("iterate opening hands: %w", err)
+		}
+		handRows.Close()
 
+		for handIndex := range hands {
+			hand := &hands[handIndex]
 			cardRows, err := s.db.QueryContext(ctx, `
 				SELECT c.card_id, c.quantity, COALESCE(cc.name, ''), c.kept
 				FROM game_opening_hand_cards c
@@ -937,7 +1035,6 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 				ORDER BY c.kept DESC, cc.name, c.card_id
 			`, hand.ID)
 			if err != nil {
-				handRows.Close()
 				return nil, fmt.Errorf("list opening hand cards: %w", err)
 			}
 			for cardRows.Next() {
@@ -945,7 +1042,6 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 				var kept int64
 				if err := cardRows.Scan(&card.CardID, &card.Quantity, &card.CardName, &kept); err != nil {
 					cardRows.Close()
-					handRows.Close()
 					return nil, fmt.Errorf("scan opening hand card: %w", err)
 				}
 				card.Kept = kept != 0
@@ -953,17 +1049,18 @@ func (s *Store) ListMatchGames(ctx context.Context, matchID int64) ([]model.Game
 			}
 			if err := cardRows.Err(); err != nil {
 				cardRows.Close()
-				handRows.Close()
 				return nil, fmt.Errorf("iterate opening hand cards: %w", err)
 			}
 			cardRows.Close()
-			games[gameIndex].OpeningHands = append(games[gameIndex].OpeningHands, hand)
 		}
-		if err := handRows.Err(); err != nil {
-			handRows.Close()
-			return nil, fmt.Errorf("iterate opening hands: %w", err)
+		games[gameIndex].OpeningHands = hands
+
+		turnStats, err := s.listGameTurnStats(ctx, games[gameIndex].ID)
+		if err != nil {
+			return nil, err
 		}
-		handRows.Close()
+		games[gameIndex].TurnStats = turnStats
+		games[gameIndex].Flags = deriveGameFlags(turnStats)
 	}
 
 	return games, nil
@@ -974,12 +1071,14 @@ func (s *Store) GetMatchAnalyticsCoverage(ctx context.Context, matchID int64) (m
 	var replayAvailable, deckSnapshotAvailable, deckVersionAvailable int64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT replay_available, replay_frame_count, game_count, games_with_result,
-			games_with_opening_hand, games_with_play_draw, deck_snapshot_available,
+			games_with_opening_hand, games_with_play_draw, games_with_turn_stats,
+			deck_snapshot_available,
 			deck_version_available, overall_confidence, derived_at
 		FROM match_analytics_coverage
 		WHERE match_id = ?
 	`, matchID).Scan(&replayAvailable, &out.ReplayFrameCount, &out.GameCount,
 		&out.GamesWithResult, &out.GamesWithOpeningHand, &out.GamesWithPlayDraw,
+		&out.GamesWithTurnStats,
 		&deckSnapshotAvailable, &deckVersionAvailable, &out.OverallConfidence, &out.DerivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, nil

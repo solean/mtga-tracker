@@ -2835,6 +2835,178 @@ small.settings-meta,
   text-transform: uppercase;
 }
 
+.game-shape {
+  margin: 0;
+  padding: 0.78rem 0.9rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.game-shape-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.game-shape-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.game-shape-life {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.game-shape-life.is-self,
+.game-shape-dot.is-self {
+  stroke: var(--win);
+}
+
+.game-shape-life.is-opponent,
+.game-shape-dot.is-opponent {
+  stroke: var(--loss);
+}
+
+.game-shape-dot {
+  fill: var(--surface-strong);
+  stroke-width: 1.4;
+}
+
+.game-shape-hover {
+  fill: transparent;
+}
+
+.game-shape-turn:hover .game-shape-hover {
+  fill: var(--accent-soft);
+}
+
+.game-shape-bar.is-land {
+  fill: var(--accent);
+  opacity: 0.85;
+}
+
+.game-shape-bar.is-spell {
+  fill: var(--muted-strong);
+  opacity: 0.7;
+}
+
+.game-shape-missed {
+  fill: var(--loss);
+}
+
+.game-shape-y-label,
+.game-shape-turn-label {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-shape-y-label {
+  text-anchor: end;
+}
+
+.game-shape-turn-label {
+  text-anchor: middle;
+}
+
+.game-shape-turn-label.is-own {
+  fill: var(--muted-strong);
+  font-weight: 700;
+}
+
+.game-shape-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-md);
+  text-transform: uppercase;
+}
+
+.game-shape-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.game-shape-legend-item::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+}
+
+.game-shape-legend-item.is-self::before {
+  border-radius: 999px;
+  background: var(--win);
+}
+
+.game-shape-legend-item.is-opponent::before {
+  border-radius: 999px;
+  background: var(--loss);
+}
+
+.game-shape-legend-item.is-land::before {
+  background: var(--accent);
+}
+
+.game-shape-legend-item.is-spell::before {
+  background: var(--muted-strong);
+}
+
+.game-shape-legend-item.is-missed::before {
+  background: var(--loss);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.game-shape-legend-note {
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-sans);
+}
+
+.game-shape-flags {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+}
+
+.game-shape-flags li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  color: var(--muted-strong);
+  font-size: var(--text-sm);
+}
+
+.game-shape-flag-turn {
+  flex: none;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-md);
+  text-transform: uppercase;
+}
+
+.game-shape-flags small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-md);
+  text-transform: uppercase;
+}
+
 .match-game-empty,
 .analytics-method-note {
   margin: 0;
@@ -2950,6 +3122,11 @@ small.settings-meta,
   appearance: none;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.match-section-tabs {
+  width: fit-content;
+  max-width: 100%;
 }
 
 .match-timeline-game-tabs {
@@ -8238,6 +8415,80 @@ select {
 .deck-analytics-footnote {
   margin: 0.2rem 0 0;
   font-family: var(--font-mono);
+}
+
+.deck-shape-curve {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 0.35rem;
+}
+
+.deck-shape-curve-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.deck-shape-curve-line {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.deck-shape-curve-line.is-win,
+.deck-shape-curve-dot.is-win {
+  stroke: var(--win);
+}
+
+.deck-shape-curve-line.is-loss,
+.deck-shape-curve-dot.is-loss {
+  stroke: var(--loss);
+}
+
+.deck-shape-curve-dot {
+  fill: var(--surface-strong);
+  stroke-width: 1.3;
+}
+
+.deck-shape-curve-hover {
+  fill: transparent;
+}
+
+.deck-shape-curve-turn:hover .deck-shape-curve-hover {
+  fill: var(--accent-soft);
+}
+
+.deck-shape-curve-y-label,
+.deck-shape-curve-turn-label {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-shape-curve-y-label {
+  text-anchor: end;
+}
+
+.deck-shape-curve-turn-label {
+  text-anchor: middle;
+}
+
+.deck-shape-swatch {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  vertical-align: baseline;
+}
+
+.deck-shape-swatch.is-win {
+  background: var(--win);
+}
+
+.deck-shape-swatch.is-loss {
+  background: var(--loss);
 }
 
 .deck-analytics-cards-head {

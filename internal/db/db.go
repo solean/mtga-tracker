@@ -111,6 +111,10 @@ func Init(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	if err := prepareGameShapeBackfill(ctx, conn); err != nil {
+		return err
+	}
+
 	if err := backfillDeckVersions(ctx, conn); err != nil {
 		return err
 	}

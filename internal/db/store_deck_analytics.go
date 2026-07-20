@@ -91,7 +91,229 @@ func (s *Store) GetDeckAnalytics(ctx context.Context, deckID, deckVersionID int6
 	if err != nil {
 		return out, err
 	}
+	if err := s.loadDeckGameShape(ctx, &out, scope, scopeArgs); err != nil {
+		return out, err
+	}
 	return out, nil
+}
+
+// missedDropTurnCond selects own non-final turns; the final turn is excluded
+// because a concede or game-ending action can cut it short before a land drop.
+const missedDropTurnCond = "ts.is_player_turn = 1 AND ts.turn_number < COALESCE(g.turn_count, 0)"
+
+// loadDeckGameShape aggregates turn-stat game shape: win rate by ending turn,
+// average winning/losing turn, lowest life in a win, missed-land-drop record
+// splits, and per-turn land/spell curves split by result.
+func (s *Store) loadDeckGameShape(ctx context.Context, out *model.DeckAnalytics, scope string, scopeArgs []any) error {
+	out.Shape.GameLengths = []model.AnalyticsBucket{}
+	out.Shape.TurnCurve = []model.DeckTurnCurvePoint{}
+
+	var err error
+	out.Shape.GameLengths, err = s.loadDeckGameBuckets(ctx, "g.turn_count", scope, scopeArgs)
+	if err != nil {
+		return err
+	}
+	sort.Slice(out.Shape.GameLengths, func(i, j int) bool {
+		return out.Shape.GameLengths[i].Key < out.Shape.GameLengths[j].Key
+	})
+
+	var avgWinningTurn, avgLosingTurn sql.NullFloat64
+	var lowestWinLife, gamesWithTurnStats sql.NullInt64
+	query := fmt.Sprintf(`
+		SELECT
+			AVG(CASE WHEN g.result = 'win' AND g.turn_count IS NOT NULL THEN CAST(g.turn_count AS REAL) END),
+			AVG(CASE WHEN g.result = 'loss' AND g.turn_count IS NOT NULL THEN CAST(g.turn_count AS REAL) END),
+			MIN(CASE WHEN g.result = 'win' THEN g.min_self_life END),
+			SUM(CASE WHEN EXISTS (SELECT 1 FROM game_turn_stats ts WHERE ts.game_id = g.id) THEN 1 ELSE 0 END)
+		FROM games g
+		JOIN match_decks md ON md.match_id = g.match_id
+		WHERE %s
+	`, scope)
+	if err := s.db.QueryRowContext(ctx, query, scopeArgs...).Scan(
+		&avgWinningTurn, &avgLosingTurn, &lowestWinLife, &gamesWithTurnStats,
+	); err != nil {
+		return fmt.Errorf("load deck game shape summary: %w", err)
+	}
+	out.Shape.AvgWinningTurn = nullableFloat(avgWinningTurn)
+	out.Shape.AvgLosingTurn = nullableFloat(avgLosingTurn)
+	if lowestWinLife.Valid {
+		out.Shape.LowestWinLife = pointerInt64(lowestWinLife.Int64)
+	}
+	out.Coverage.GamesWithTurnStats = gamesWithTurnStats.Int64
+
+	if err := s.loadDeckMissedDropSplit(ctx, out, scope, scopeArgs); err != nil {
+		return err
+	}
+	return s.loadDeckTurnCurve(ctx, out, scope, scopeArgs)
+}
+
+// loadDeckMissedDropSplit classifies each game with turn stats as missed (an
+// own non-final turn ended with no land played while holding one), clean (all
+// own non-final turns are judgeable and none missed), or unknown (unresolved
+// type lines or missing hand frames leave the question open).
+func (s *Store) loadDeckMissedDropSplit(ctx context.Context, out *model.DeckAnalytics, scope string, scopeArgs []any) error {
+	query := fmt.Sprintf(`
+		SELECT
+			g.result,
+			MAX(CASE WHEN %[1]s AND ts.lands_played = 0 AND ts.land_in_hand = 1 THEN 1 ELSE 0 END),
+			MAX(CASE WHEN %[1]s AND ts.lands_played = 0 AND ts.land_in_hand IS NULL THEN 1 ELSE 0 END),
+			MAX(CASE WHEN ts.is_player_turn IS NOT NULL THEN 1 ELSE 0 END)
+		FROM games g
+		JOIN match_decks md ON md.match_id = g.match_id
+		JOIN game_turn_stats ts ON ts.game_id = g.id
+		WHERE %[2]s
+		GROUP BY g.id, g.result
+	`, missedDropTurnCond, scope)
+
+	rows, err := s.db.QueryContext(ctx, query, scopeArgs...)
+	if err != nil {
+		return fmt.Errorf("load deck missed-drop split: %w", err)
+	}
+	defer rows.Close()
+
+	addResult := func(record *model.RecordAgg, result string) bool {
+		switch result {
+		case "win":
+			record.Wins++
+		case "loss":
+			record.Losses++
+		case "draw":
+			record.Draws++
+		default:
+			return false
+		}
+		record.Games++
+		return true
+	}
+
+	for rows.Next() {
+		var result string
+		var missed, ambiguous, judgedAny int64
+		if err := rows.Scan(&result, &missed, &ambiguous, &judgedAny); err != nil {
+			return fmt.Errorf("scan deck missed-drop split: %w", err)
+		}
+		switch {
+		case judgedAny == 0 || (missed == 0 && ambiguous > 0):
+			out.Shape.MissedDropUnknownGames++
+		case missed > 0:
+			if addResult(&out.Shape.MissedDropGames, result) {
+				out.Coverage.GamesWithLandJudged++
+			}
+		default:
+			if addResult(&out.Shape.CleanDropGames, result) {
+				out.Coverage.GamesWithLandJudged++
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate deck missed-drop split: %w", err)
+	}
+	return nil
+}
+
+// deckTurnCurveMaxTurn caps the land/spell curve; later turns rarely have
+// enough games to average meaningfully and the counts are still shown.
+const deckTurnCurveMaxTurn = 12
+
+// loadDeckTurnCurve builds per-turn averages over games with a known result:
+// cumulative land drops through each turn and spells cast on each turn, split
+// by wins and losses. A game contributes only to turns it actually reached.
+func (s *Store) loadDeckTurnCurve(ctx context.Context, out *model.DeckAnalytics, scope string, scopeArgs []any) error {
+	query := fmt.Sprintf(`
+		SELECT g.id, g.result, COALESCE(g.turn_count, 0), ts.turn_number, ts.lands_played, ts.spells_cast
+		FROM game_turn_stats ts
+		JOIN games g ON g.id = ts.game_id
+		JOIN match_decks md ON md.match_id = g.match_id
+		WHERE %s AND g.result IN ('win', 'loss')
+		ORDER BY g.id, ts.turn_number
+	`, scope)
+
+	rows, err := s.db.QueryContext(ctx, query, scopeArgs...)
+	if err != nil {
+		return fmt.Errorf("load deck turn curve: %w", err)
+	}
+	defer rows.Close()
+
+	type gameCurve struct {
+		result    string
+		turnCount int64
+		lands     map[int64]int64
+		spells    map[int64]int64
+	}
+	games := make([]*gameCurve, 0)
+	var current *gameCurve
+	var currentID int64
+	for rows.Next() {
+		var gameID, turnCount, turn, lands, spells int64
+		var result string
+		if err := rows.Scan(&gameID, &result, &turnCount, &turn, &lands, &spells); err != nil {
+			return fmt.Errorf("scan deck turn curve: %w", err)
+		}
+		if current == nil || gameID != currentID {
+			current = &gameCurve{result: result, turnCount: turnCount,
+				lands: make(map[int64]int64), spells: make(map[int64]int64)}
+			currentID = gameID
+			games = append(games, current)
+		}
+		current.lands[turn] = lands
+		current.spells[turn] = spells
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate deck turn curve: %w", err)
+	}
+
+	type turnTally struct {
+		winGames, lossGames                                int64
+		winLands, lossLands, winSpells, lossSpells         float64
+	}
+	tallies := make(map[int64]*turnTally)
+	maxTurn := int64(0)
+	for _, game := range games {
+		limit := min(game.turnCount, deckTurnCurveMaxTurn)
+		cumulativeLands := int64(0)
+		for turn := int64(1); turn <= limit; turn++ {
+			cumulativeLands += game.lands[turn]
+			tally, ok := tallies[turn]
+			if !ok {
+				tally = &turnTally{}
+				tallies[turn] = tally
+			}
+			if game.result == "win" {
+				tally.winGames++
+				tally.winLands += float64(cumulativeLands)
+				tally.winSpells += float64(game.spells[turn])
+			} else {
+				tally.lossGames++
+				tally.lossLands += float64(cumulativeLands)
+				tally.lossSpells += float64(game.spells[turn])
+			}
+			if turn > maxTurn {
+				maxTurn = turn
+			}
+		}
+	}
+
+	for turn := int64(1); turn <= maxTurn; turn++ {
+		tally, ok := tallies[turn]
+		if !ok {
+			continue
+		}
+		point := model.DeckTurnCurvePoint{Turn: turn, WinGames: tally.winGames, LossGames: tally.lossGames}
+		if tally.winGames > 0 {
+			avgLands := tally.winLands / float64(tally.winGames)
+			avgSpells := tally.winSpells / float64(tally.winGames)
+			point.AvgLandsWins = &avgLands
+			point.AvgSpellsWins = &avgSpells
+		}
+		if tally.lossGames > 0 {
+			avgLands := tally.lossLands / float64(tally.lossGames)
+			avgSpells := tally.lossSpells / float64(tally.lossGames)
+			point.AvgLandsLosses = &avgLands
+			point.AvgSpellsLosses = &avgSpells
+		}
+		out.Shape.TurnCurve = append(out.Shape.TurnCurve, point)
+	}
+	return nil
 }
 
 func (s *Store) loadDeckMatchRecord(ctx context.Context, out *model.DeckAnalytics, scope string, scopeArgs []any) error {
@@ -441,8 +663,10 @@ type DeckAnalyticsGamesQuery struct {
 	Facet         string
 	KeptHandSize  *int64
 	MulliganCount *int64
+	TurnCount     *int64
 	GameFilter    string // "one", "post", or ""
 	PlayDraw      string // "play", "draw", or ""
+	LandDrops     string // "missed", "clean", or ""
 	Limit         int64
 }
 
@@ -499,6 +723,32 @@ func (s *Store) ListDeckAnalyticsGames(ctx context.Context, q DeckAnalyticsGames
 	if q.MulliganCount != nil {
 		conditions = append(conditions, "g.mulligan_count = ?")
 		conditionArgs = append(conditionArgs, *q.MulliganCount)
+	}
+	if q.TurnCount != nil {
+		conditions = append(conditions, "g.turn_count = ?")
+		conditionArgs = append(conditionArgs, *q.TurnCount)
+	}
+	missedDropExists := fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM game_turn_stats ts
+			WHERE ts.game_id = g.id AND %s AND ts.lands_played = 0 AND ts.land_in_hand = 1
+		)`, missedDropTurnCond)
+	switch q.LandDrops {
+	case "missed":
+		conditions = append(conditions, missedDropExists)
+	case "clean":
+		conditions = append(conditions,
+			"NOT "+missedDropExists,
+			fmt.Sprintf(`NOT EXISTS (
+				SELECT 1 FROM game_turn_stats ts
+				WHERE ts.game_id = g.id AND %s AND ts.lands_played = 0 AND ts.land_in_hand IS NULL
+			)`, missedDropTurnCond),
+			`EXISTS (
+				SELECT 1 FROM game_turn_stats ts
+				WHERE ts.game_id = g.id AND ts.is_player_turn IS NOT NULL
+			)`)
+	case "":
+	default:
+		return nil, fmt.Errorf("unknown land drops filter %q", q.LandDrops)
 	}
 	switch q.GameFilter {
 	case "one":

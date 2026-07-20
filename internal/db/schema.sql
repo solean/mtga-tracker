@@ -203,10 +203,38 @@ CREATE TABLE IF NOT EXISTS games (
   play_draw_confidence TEXT NOT NULL DEFAULT 'unknown',
   opening_hand_source TEXT,
   opening_hand_confidence TEXT NOT NULL DEFAULT 'unknown',
+  min_self_life INTEGER,
+  min_opponent_life INTEGER,
   derived_at TEXT NOT NULL,
   UNIQUE(match_id, game_number),
   FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
 );
+
+-- Per-turn game shape derived from replay frames and card plays. Life and hand
+-- size come from the last frame of each turn; lands/spells classify the
+-- player's card plays by cached type line, falling back to the first public
+-- zone (battlefield = land drop, stack = spell cast). land_in_hand is NULL
+-- when the turn has no frame or an unresolved type line leaves it ambiguous.
+CREATE TABLE IF NOT EXISTS game_turn_stats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL,
+  match_id INTEGER NOT NULL,
+  turn_number INTEGER NOT NULL,
+  is_player_turn INTEGER,
+  self_life INTEGER,
+  opponent_life INTEGER,
+  self_hand_size INTEGER,
+  lands_played INTEGER NOT NULL DEFAULT 0,
+  spells_cast INTEGER NOT NULL DEFAULT 0,
+  land_in_hand INTEGER,
+  source TEXT,
+  confidence TEXT NOT NULL DEFAULT 'derived',
+  UNIQUE(game_id, turn_number),
+  FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE,
+  FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_game_turn_stats_match ON game_turn_stats(match_id);
 
 CREATE TABLE IF NOT EXISTS game_opening_hands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -265,6 +293,7 @@ CREATE TABLE IF NOT EXISTS match_analytics_coverage (
   games_with_result INTEGER NOT NULL DEFAULT 0,
   games_with_opening_hand INTEGER NOT NULL DEFAULT 0,
   games_with_play_draw INTEGER NOT NULL DEFAULT 0,
+  games_with_turn_stats INTEGER NOT NULL DEFAULT 0,
   deck_snapshot_available INTEGER NOT NULL DEFAULT 0,
   deck_version_available INTEGER NOT NULL DEFAULT 0,
   overall_confidence TEXT NOT NULL DEFAULT 'unknown',

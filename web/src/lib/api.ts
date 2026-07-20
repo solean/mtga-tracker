@@ -74,8 +74,10 @@ export const api = {
     if (params.facet) search.set("facet", params.facet);
     if (params.keptSize != null) search.set("keptSize", String(params.keptSize));
     if (params.mulligans != null) search.set("mulligans", String(params.mulligans));
+    if (params.turns != null) search.set("turns", String(params.turns));
     if (params.game) search.set("game", params.game);
     if (params.playDraw) search.set("playDraw", params.playDraw);
+    if (params.landDrops) search.set("landDrops", params.landDrops);
     const query = search.toString();
     return getJSON<DeckAnalyticsGameRef[]>(
       query ? `/api/decks/${deckId}/analytics/games?${query}` : `/api/decks/${deckId}/analytics/games`,
