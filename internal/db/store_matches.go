@@ -5,10 +5,24 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/solean/ponder/internal/model"
 )
+
+var basicLandNames = map[string]struct{}{
+	"plains": {}, "island": {}, "swamp": {}, "mountain": {}, "forest": {}, "wastes": {},
+}
+
+// isBasicLandName recognizes basic lands (including Snow-Covered variants) by
+// name — the only cards that can legally appear more than four times in a deck.
+func isBasicLandName(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	normalized = strings.TrimPrefix(normalized, "snow-covered ")
+	_, ok := basicLandNames[normalized]
+	return ok
+}
 
 const matchBestOfSQL = `
 	CASE
@@ -611,16 +625,25 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 			FROM match_opponent_card_instances oc
 			WHERE oc.match_id = ?
 			GROUP BY oc.card_id, oc.game_number
+		),
+		fallback AS (
+			SELECT pg.card_id, MAX(pg.quantity_in_game) AS quantity
+			FROM per_game pg
+			GROUP BY pg.card_id
 		)
 		SELECT
-			pg.card_id,
-			MAX(pg.quantity_in_game) AS quantity,
+			f.card_id,
+			-- Prefer the simultaneous-copies estimate from replay frames, which
+			-- is not inflated by a single card's instance id churning across
+			-- zones; fall back to distinct instances per game when no frames.
+			COALESCE(mcc.max_copies, f.quantity) AS quantity,
 			COALESCE(cc.name, '')
-		FROM per_game pg
-		LEFT JOIN card_catalog cc ON cc.arena_id = pg.card_id
-		GROUP BY pg.card_id, cc.name
-		ORDER BY quantity DESC, cc.name ASC, pg.card_id ASC
-	`, matchID)
+		FROM fallback f
+		LEFT JOIN match_opponent_card_counts mcc
+			ON mcc.match_id = ? AND mcc.card_id = f.card_id
+		LEFT JOIN card_catalog cc ON cc.arena_id = f.card_id
+		ORDER BY quantity DESC, cc.name ASC, f.card_id ASC
+	`, matchID, matchID)
 	if err != nil {
 		return out, fmt.Errorf("get observed opponent cards: %w", err)
 	}
@@ -631,11 +654,27 @@ func (s *Store) GetMatchDetail(ctx context.Context, matchID int64) (model.MatchD
 		if err := rows.Scan(&card.CardID, &card.Quantity, &card.CardName); err != nil {
 			return out, fmt.Errorf("scan observed opponent card: %w", err)
 		}
+		// Only basic lands can legally appear more than four times; cap everything
+		// else so a frameless match's inflated distinct-instance fallback still
+		// reports a legal copy count.
+		if card.Quantity > 4 && !isBasicLandName(card.CardName) {
+			card.Quantity = 4
+		}
 		out.OpponentObservedCards = append(out.OpponentObservedCards, card)
 	}
 	if err := rows.Err(); err != nil {
 		return out, fmt.Errorf("iterate observed opponent cards: %w", err)
 	}
+	sort.SliceStable(out.OpponentObservedCards, func(i, j int) bool {
+		a, b := out.OpponentObservedCards[i], out.OpponentObservedCards[j]
+		if a.Quantity != b.Quantity {
+			return a.Quantity > b.Quantity
+		}
+		if a.CardName != b.CardName {
+			return a.CardName < b.CardName
+		}
+		return a.CardID < b.CardID
+	})
 
 	out.CardPlays, err = s.ListMatchCardPlays(ctx, matchID)
 	if err != nil {

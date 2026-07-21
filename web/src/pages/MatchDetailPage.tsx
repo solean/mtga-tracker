@@ -19,13 +19,14 @@ import { createPortal } from "react-dom";
 import { EventLabel } from "../components/EventLabel";
 import { MatchDeckColors } from "../components/MatchDeckColors";
 import { ManaSymbol } from "../components/ManaSymbol";
+import { RarityDot } from "../components/RarityDot";
 import { ResultPill } from "../components/ResultPill";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import { useEventSets } from "../lib/useEventSets";
 import { fetchCardPreview } from "../lib/scryfall";
-import type { CardPreview } from "../lib/scryfall";
+import type { CardPreview, CardRarity } from "../lib/scryfall";
 import type {
   GameAnalytics,
   GameTurnStat,
@@ -114,6 +115,86 @@ type OpponentDeckCard = {
   cardName?: string;
   quantity: number;
 };
+
+type OpponentCardCategory =
+  | "creatures"
+  | "planeswalkers"
+  | "instants"
+  | "sorceries"
+  | "artifacts"
+  | "enchantments"
+  | "battles"
+  | "lands"
+  | "other";
+
+const OPPONENT_CATEGORY_LABELS: Record<OpponentCardCategory, string> = {
+  creatures: "Creatures",
+  planeswalkers: "Planeswalkers",
+  instants: "Instants",
+  sorceries: "Sorceries",
+  artifacts: "Artifacts",
+  enchantments: "Enchantments",
+  battles: "Battles",
+  lands: "Lands",
+  other: "Other",
+};
+
+const OPPONENT_CATEGORY_ORDER = Object.keys(
+  OPPONENT_CATEGORY_LABELS,
+) as OpponentCardCategory[];
+
+// classifyOpponentCard buckets an observed card by its Scryfall type line.
+// Land wins over every other type (a creature-land counts toward lands for a
+// deck read), then permanents, then the spell split. Cards without a resolved
+// type line fall to "other" until their preview loads.
+function classifyOpponentCard(typeLine: string): OpponentCardCategory {
+  const lower = typeLine.toLowerCase();
+  if (!lower) return "other";
+  if (lower.includes("land")) return "lands";
+  if (lower.includes("creature")) return "creatures";
+  if (lower.includes("planeswalker")) return "planeswalkers";
+  if (lower.includes("instant")) return "instants";
+  if (lower.includes("sorcery")) return "sorceries";
+  if (lower.includes("battle")) return "battles";
+  if (lower.includes("artifact")) return "artifacts";
+  if (lower.includes("enchantment")) return "enchantments";
+  return "other";
+}
+
+type OpponentCardGroup = {
+  category: OpponentCardCategory;
+  label: string;
+  cards: OpponentDeckCard[];
+  distinct: number;
+};
+
+// groupOpponentCardsByType splits the observed cards into type sections in a
+// fixed order, preserving the incoming (quantity-desc) card order within each.
+function groupOpponentCardsByType(
+  cards: OpponentDeckCard[],
+  typeLines: Map<number, string>,
+): OpponentCardGroup[] {
+  const byCategory = new Map<OpponentCardCategory, OpponentDeckCard[]>();
+  for (const card of cards) {
+    const category = classifyOpponentCard(typeLines.get(card.cardId) ?? "");
+    const bucket = byCategory.get(category) ?? [];
+    bucket.push(card);
+    byCategory.set(category, bucket);
+  }
+  return OPPONENT_CATEGORY_ORDER.flatMap((category) => {
+    const bucket = byCategory.get(category);
+    if (!bucket || bucket.length === 0) return [];
+    return [
+      {
+        category,
+        label: OPPONENT_CATEGORY_LABELS[category],
+        cards: bucket,
+        distinct: bucket.length,
+      },
+    ];
+  });
+}
+
 type PopoverPlacement = "left" | "right";
 type TimelineDisplayMode = "board" | "list";
 type MatchReplayZoneDialogState =
@@ -3903,6 +3984,30 @@ export function MatchDetailPage() {
     return out;
   }, [opponentCards, opponentCardPreviewQueries]);
 
+  const opponentTypeLinesByCardID = useMemo(() => {
+    const out = new Map<number, string>();
+    for (let i = 0; i < opponentCards.length; i += 1) {
+      const card = opponentCards[i];
+      const preview = opponentCardPreviewQueries[i]?.data;
+      out.set(card.cardId, preview?.typeLine?.trim() ?? "");
+    }
+    return out;
+  }, [opponentCards, opponentCardPreviewQueries]);
+
+  const opponentRaritiesByCardID = useMemo(() => {
+    const out = new Map<number, CardRarity | undefined>();
+    for (let i = 0; i < opponentCards.length; i += 1) {
+      const card = opponentCards[i];
+      out.set(card.cardId, opponentCardPreviewQueries[i]?.data?.rarity);
+    }
+    return out;
+  }, [opponentCards, opponentCardPreviewQueries]);
+
+  const opponentCardGroups = useMemo(
+    () => groupOpponentCardsByType(opponentCards, opponentTypeLinesByCardID),
+    [opponentCards, opponentTypeLinesByCardID],
+  );
+
   const isOpponentCardMetadataLoading = opponentCardPreviewQueries.some(
     (previewQuery) => previewQuery.isPending,
   );
@@ -4454,40 +4559,39 @@ export function MatchDetailPage() {
             No public opponent cards observed for this match yet.
           </StatusMessage>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Qty</th>
-                  <th>Card</th>
-                  <th>Mana</th>
-                </tr>
-              </thead>
-              <tbody>
-                {opponentCards.map((card) => (
-                  <tr key={card.cardId}>
-                    <td>{card.quantity}</td>
-                    <td>
+          <div className="grid-cards">
+            {opponentCardGroups.map((group) => (
+              <article className="deck-card" key={group.category}>
+                <h4>
+                  {group.label} ({group.distinct})
+                </h4>
+                <ul>
+                  {group.cards.map((card) => (
+                    <li key={card.cardId}>
+                      <span className="deck-card-qty">{card.quantity}x</span>
                       <CardPreviewName card={card} />
-                    </td>
-                    <td>
                       <span className="deck-card-mana">
                         <ManaCostDisplay
                           manaCost={
                             opponentManaCostsByCardID.get(card.cardId) ?? ""
                           }
                         />
+                        <RarityDot rarity={opponentRaritiesByCardID.get(card.cardId)} />
                       </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
           </div>
         )}
         {isOpponentCardMetadataLoading ? (
           <StatusMessage>Loading card previews and mana details…</StatusMessage>
         ) : null}
+        <p className="analytics-method-note">
+          Copies show the most seen at once during the match — a lower bound on
+          how many the deck runs, not a full decklist.
+        </p>
       </section>
         </div>
       ) : null}

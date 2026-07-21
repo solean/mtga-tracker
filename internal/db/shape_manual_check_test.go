@@ -6,6 +6,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -52,6 +53,42 @@ func TestManualShapeBackfill(t *testing.T) {
 	}
 	t.Logf("games=%d gamesWithTurnStats=%d turnRows=%d judgedTurnRows=%d missedDropTurns=%d gamesWithMinLife=%d",
 		games, gamesWithStats, turnRows, judgedRows, missedDropTurns, minLifeGames)
+
+	// Opponent copy-count sanity: the worst previous overcounts, now capped to
+	// simultaneous maxima, next to the old distinct-instance-per-game maxima.
+	copyRows, err := database.QueryContext(ctx, `
+		WITH per_game AS (
+			SELECT match_id, card_id, game_number, COUNT(*) AS q
+			FROM match_opponent_card_instances
+			GROUP BY match_id, card_id, game_number
+		),
+		old AS (SELECT match_id, card_id, MAX(q) AS old_max FROM per_game GROUP BY match_id, card_id)
+		SELECT old.match_id, COALESCE(cc.name, old.card_id), old.old_max, mcc.max_copies
+		FROM old
+		LEFT JOIN match_opponent_card_counts mcc ON mcc.match_id = old.match_id AND mcc.card_id = old.card_id
+		LEFT JOIN card_catalog cc ON cc.arena_id = old.card_id
+		WHERE old.old_max > 4
+		ORDER BY old.old_max DESC LIMIT 15
+	`)
+	if err != nil {
+		t.Fatalf("copy rows: %v", err)
+	}
+	for copyRows.Next() {
+		var matchID int64
+		var name string
+		var oldMax int64
+		var newMax *int64
+		if err := copyRows.Scan(&matchID, &name, &oldMax, &newMax); err != nil {
+			copyRows.Close()
+			t.Fatalf("scan copy row: %v", err)
+		}
+		shown := "fallback(no frames)"
+		if newMax != nil {
+			shown = fmt.Sprintf("%d", *newMax)
+		}
+		t.Logf("match=%d %-32s old=%d new=%s", matchID, name, oldMax, shown)
+	}
+	copyRows.Close()
 
 	rows, err := database.QueryContext(ctx, `
 		SELECT ts.match_id, ts.turn_number, ts.self_life, ts.opponent_life, ts.lands_played,

@@ -115,6 +115,10 @@ func Init(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	if err := prepareOpponentCopiesBackfill(ctx, conn); err != nil {
+		return err
+	}
+
 	if err := backfillDeckVersions(ctx, conn); err != nil {
 		return err
 	}

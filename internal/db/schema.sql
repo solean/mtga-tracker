@@ -236,6 +236,20 @@ CREATE TABLE IF NOT EXISTS game_turn_stats (
 
 CREATE INDEX IF NOT EXISTS idx_game_turn_stats_match ON game_turn_stats(match_id);
 
+-- Best per-match estimate of how many copies of each opponent card exist: the
+-- most instances of that card seen at once in any single replay frame (a true
+-- lower bound on copies, robust to instance IDs churning as a card changes
+-- zones). Only populated for matches with replay frames; the match detail
+-- falls back to distinct-instance-per-game counts otherwise.
+CREATE TABLE IF NOT EXISTS match_opponent_card_counts (
+  match_id INTEGER NOT NULL,
+  card_id INTEGER NOT NULL,
+  max_copies INTEGER NOT NULL,
+  derived_at TEXT NOT NULL,
+  PRIMARY KEY(match_id, card_id),
+  FOREIGN KEY(match_id) REFERENCES matches(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS game_opening_hands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   game_id INTEGER NOT NULL,

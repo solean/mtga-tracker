@@ -117,6 +117,60 @@ func classifySelfPlay(play selfCardPlay, landByCard map[int64]bool) (isLand, isS
 	return true, false
 }
 
+// copyCleanZones are the zones where a card sits as its own physical self and
+// leaves when it moves: the battlefield and the hand. Instance IDs churn every
+// time a card changes zones, and the transit/discard zones (graveyard, exile,
+// limbo, stack) accumulate a recast card's stale instances, so only these
+// zones give an honest copy count.
+var copyCleanZones = map[string]struct{}{
+	"battlefield": {},
+	"hand":        {},
+}
+
+// deriveOpponentCardCopies estimates how many copies of each opponent card
+// exist: the most non-token instances of that card the opponent had in the
+// clean zones (battlefield plus hand) at once in any single frame. This is a
+// true lower bound on copies and is not inflated by a single card churning
+// through instance ids as it dies and is recast. Any opponent card seen at all
+// floors to one so a spell only ever glimpsed in the graveyard still reports a
+// copy rather than falling back to the inflated distinct-instance count.
+func deriveOpponentCardCopies(frames []model.MatchReplayFrameRow) map[int64]int64 {
+	maxByCard := make(map[int64]int64)
+	seen := make(map[int64]bool)
+	for _, frame := range frames {
+		perCard := make(map[int64]map[int64]struct{})
+		for _, object := range frame.Objects {
+			if object.PlayerSide != "opponent" || object.IsToken {
+				continue
+			}
+			if object.CardID <= 0 || object.InstanceID <= 0 {
+				continue
+			}
+			seen[object.CardID] = true
+			if _, clean := copyCleanZones[strings.ToLower(strings.TrimSpace(object.ZoneType))]; !clean {
+				continue
+			}
+			instances := perCard[object.CardID]
+			if instances == nil {
+				instances = make(map[int64]struct{})
+				perCard[object.CardID] = instances
+			}
+			instances[object.InstanceID] = struct{}{}
+		}
+		for cardID, instances := range perCard {
+			if count := int64(len(instances)); count > maxByCard[cardID] {
+				maxByCard[cardID] = count
+			}
+		}
+	}
+	for cardID := range seen {
+		if maxByCard[cardID] < 1 {
+			maxByCard[cardID] = 1
+		}
+	}
+	return maxByCard
+}
+
 // deriveGameTurnStats reduces one game's replay frames and self card plays to
 // per-turn shape rows. Life, hand size, and land-in-hand come from the last
 // frame observed in each turn; a turn with plays but no frame still gets a row

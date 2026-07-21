@@ -98,6 +98,66 @@ func TestDeriveGameTurnStatsClassifiesLandsSpellsAndHands(t *testing.T) {
 	}
 }
 
+func TestDeriveOpponentCardCopiesUsesSimultaneousMaximum(t *testing.T) {
+	t.Parallel()
+
+	const (
+		shiko   = int64(95749) // recast repeatedly: many instance ids, 1 at a time
+		bat     = int64(200)   // two copies coexist once
+		myCard  = int64(300)   // self card, never counted
+		tokenID = int64(400)   // opponent token, never counted
+	)
+	const spell = int64(500) // only ever seen dying to the graveyard
+	oppObject := func(instanceID, cardID int64, zone string, token bool) model.MatchReplayFrameObjectRow {
+		return model.MatchReplayFrameObjectRow{
+			InstanceID: instanceID,
+			CardID:     cardID,
+			PlayerSide: "opponent",
+			ZoneType:   zone,
+			IsToken:    token,
+		}
+	}
+	frames := []model.MatchReplayFrameRow{
+		{Objects: []model.MatchReplayFrameObjectRow{
+			oppObject(1, shiko, "battlefield", false),
+			{InstanceID: 9, CardID: myCard, PlayerSide: "self", ZoneType: "battlefield"},
+		}},
+		// Same Shiko recast under a new instance id — still only one at a time.
+		{Objects: []model.MatchReplayFrameObjectRow{oppObject(2, shiko, "battlefield", false)}},
+		// A recast Shiko leaves stale instances scattered across transit zones;
+		// none of these count because they are not clean zones.
+		{Objects: []model.MatchReplayFrameObjectRow{
+			oppObject(3, shiko, "battlefield", false),
+			oppObject(4, shiko, "graveyard", false),
+			oppObject(5, shiko, "limbo", false),
+			oppObject(6, shiko, "exile", false),
+			// Two Bats on the battlefield at once establishes at least two copies.
+			oppObject(11, bat, "battlefield", false),
+			oppObject(12, bat, "battlefield", false),
+			oppObject(99, tokenID, "battlefield", true),
+			// A spell only ever seen in the graveyard still floors to one.
+			oppObject(20, spell, "graveyard", false),
+		}},
+	}
+
+	copies := deriveOpponentCardCopies(frames)
+	if copies[shiko] != 1 {
+		t.Fatalf("shiko copies = %d, want 1 (only one battlefield instance at a time)", copies[shiko])
+	}
+	if copies[spell] != 1 {
+		t.Fatalf("graveyard-only spell copies = %d, want 1 (floor)", copies[spell])
+	}
+	if copies[bat] != 2 {
+		t.Fatalf("bat copies = %d, want 2 (two coexisted)", copies[bat])
+	}
+	if _, ok := copies[myCard]; ok {
+		t.Fatalf("self card must not be counted: %v", copies)
+	}
+	if _, ok := copies[tokenID]; ok {
+		t.Fatalf("opponent token must not be counted: %v", copies)
+	}
+}
+
 func TestDeriveGameFlagsSkipsFinalTurnAndUnknownTurns(t *testing.T) {
 	t.Parallel()
 

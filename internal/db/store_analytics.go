@@ -869,6 +869,24 @@ func (s *Store) RefreshMatchAnalytics(ctx context.Context, matchID int64) error 
 		return fmt.Errorf("upsert analytics coverage: %w", err)
 	}
 
+	if _, err := tx.ExecContext(ctx, `DELETE FROM match_opponent_card_counts WHERE match_id = ?`, matchID); err != nil {
+		return fmt.Errorf("clear opponent card counts: %w", err)
+	}
+	opponentCopies := deriveOpponentCardCopies(frames)
+	copyCardIDs := make([]int64, 0, len(opponentCopies))
+	for cardID := range opponentCopies {
+		copyCardIDs = append(copyCardIDs, cardID)
+	}
+	sort.Slice(copyCardIDs, func(i, j int) bool { return copyCardIDs[i] < copyCardIDs[j] })
+	for _, cardID := range copyCardIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO match_opponent_card_counts (match_id, card_id, max_copies, derived_at)
+			VALUES (?, ?, ?, ?)
+		`, matchID, cardID, opponentCopies[cardID], now); err != nil {
+			return fmt.Errorf("insert opponent card count: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit match analytics: %w", err)
 	}
